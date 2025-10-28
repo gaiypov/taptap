@@ -1,0 +1,73 @@
+{
+  "name": "360auto-backend",
+  "version": "1.0.0",
+  "description": "360⁰ Marketplace Backend API for Kyrgyzstan",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node src/index.ts",
+    "dev:watch": "nodemon",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "lint": "eslint src/**/*.ts",
+    "lint:fix": "eslint src/**/*.ts --fix",
+    "format": "prettier --write src/**/*.ts",
+    "type-check": "tsc --noEmit",
+    "test": "jest",
+    "setup": "echo 'Setup complete! Run npm install if needed.'"
+  },
+  "keywords": [
+    "marketplace",
+    "kyrgyzstan",
+    "cars",
+    "horses",
+    "real-estate",
+    "api",
+    "express"
+  ],
+  "author": "360⁰ Marketplace Team",
+  "license": "MIT",
+  "dependencies": {
+    "shared": "file:../shared",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "@prisma/client": "^5.7.0",
+    "bull": "^4.12.0",
+    "redis": "^4.6.11",
+    "jsonwebtoken": "^9.0.2",
+    "bcrypt": "^5.1.1",
+    "dotenv": "^16.3.1",
+    "zod": "^3.22.4",
+    "@supabase/supabase-js": "^2.75.0",
+    "compression": "^1.7.4",
+    "express-rate-limit": "^7.4.1",
+    "axios": "^1.13.0",
+    "uuid": "^13.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.10.5",
+    "@types/express": "^4.17.21",
+    "@types/cors": "^2.8.17",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/bcrypt": "^5.0.2",
+    "@types/compression": "^1.7.5",
+    "@types/uuid": "^9.0.8",
+    "prisma": "^5.7.0",
+    "ts-node": "^10.9.2",
+    "nodemon": "^3.0.2",
+    "eslint": "^8.55.0",
+    "prettier": "^3.1.1",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-prettier": "^5.2.1",
+    "jest": "^29.7.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  }
+}

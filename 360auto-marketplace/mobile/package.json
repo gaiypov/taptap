@@ -1,0 +1,47 @@
+{
+  "name": "360auto-mobile",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "description": "360⁰ Marketplace Mobile App",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "lint": "eslint . --ext .ts,.tsx",
+    "lint:fix": "eslint . --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json}\"",
+    "reset-project": "node ./create-360-icons.js"
+  },
+  "dependencies": {
+    "shared": "file:../shared",
+    "@expo/vector-icons": "^15.0.2",
+    "@react-native-async-storage/async-storage": "^2.2.0",
+    "@react-navigation/native": "^7.1.8",
+    "@supabase/supabase-js": "^2.75.0",
+    "@tanstack/react-query": "^5.15.0",
+    "axios": "^1.6.2",
+    "expo": "~51.0.0",
+    "expo-av": "~14.0.0",
+    "expo-camera": "~15.0.0",
+    "expo-image-picker": "~15.0.0",
+    "expo-linear-gradient": "^15.0.7",
+    "expo-router": "~3.5.0",
+    "react": "18.2.0",
+    "react-native": "0.74.0",
+    "react-native-gesture-handler": "~2.28.0",
+    "react-native-reanimated": "~4.1.1",
+    "react-native-safe-area-context": "^5.6.0",
+    "react-native-screens": "^4.16.0",
+    "zustand": "^4.4.7"
+  },
+  "devDependencies": {
+    "@types/react": "~18.2.45",
+    "@types/react-native": "^0.73.0",
+    "eslint": "^9.25.0",
+    "eslint-config-expo": "~10.0.0",
+    "typescript": "^5.3.3"
+  },
+  "private": true
+}

@@ -1,228 +1,459 @@
-// User types
+// ============================================
+// 360⁰ Marketplace - Unified Types
+// Production Ready for Kyrgyzstan Launch
+// ============================================
+
+// ============================================
+// CORE TYPES
+// ============================================
+
+export type ListingCategory = 'car' | 'horse' | 'real_estate';
+
+export type ListingStatus = 'pending_review' | 'active' | 'rejected' | 'archived';
+
+export type VideoStatus = 'uploading' | 'processing' | 'ready' | 'failed';
+
+export type PaymentStatus = 'pending' | 'paid' | 'failed';
+
+export type ModerationAction = 'auto_flag' | 'approve' | 'reject';
+
+export type BusinessMemberRole = 'admin' | 'seller';
+
+export type PropertyType = 'apartment' | 'house' | 'land' | 'commercial';
+
+// ============================================
+// USER & AUTH TYPES
+// ============================================
+
 export interface User {
   id: string;
-  email: string;
+  phone: string;
   name: string;
-  avatar?: string;
-  bio?: string;
-  followersCount: number;
-  followingCount: number;
-  videosCount: number;
-  createdAt: string;
-  updatedAt: string;
+  age?: number;
+  avatar_url?: string;
+  created_at: string;
+  updated_at: string;
 }
 
-// Video types
-export interface Video {
+export interface AuthToken {
+  userId: string;
+  role: string;
+  phone: string;
+  iat: number;
+  exp: number;
+}
+
+// ============================================
+// BUSINESS ACCOUNT TYPES
+// ============================================
+
+export interface BusinessAccount {
   id: string;
-  uri: string;
-  thumbnailUri?: string;
+  name: string;
+  tax_id?: string; // ИНН for Kyrgyzstan entities
+  avatar_url?: string;
+  verified: boolean;
+  phone_public?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BusinessMember {
+  business_id: string;
+  user_id: string;
+  role: BusinessMemberRole;
+  created_at: string;
+}
+
+// ============================================
+// LISTING TYPES
+// ============================================
+
+export interface BaseListing {
+  id: string;
+  seller_user_id: string | null;   // for private seller
+  business_id: string | null;      // for business accounts
+  category: ListingCategory;
   title: string;
-  description?: string;
-  duration: number;
-  views: number;
-  likes: number;
-  comments: number;
-  shares: number;
-  createdAt: string;
-  updatedAt: string;
-  carInfo: CarInfo;
-  owner: User;
-  tags: string[];
-  isPublic: boolean;
-  isLiked?: boolean;
+  description: string;
+  price: number;
+  currency: string;
+  location_text: string;
+  latitude: number | null;
+  longitude: number | null;
+  video_id: string | null;         // api.video reference
+  video_status: VideoStatus;
+  status: ListingStatus;
+  is_boosted: boolean;             // derived from promotions
+  created_at: string;
+  updated_at: string;
 }
 
-// Car types
-export interface CarInfo {
-  id: string;
+export interface CarDetails {
   make: string;
   model: string;
   year: number;
-  price?: number;
-  mileage?: number;
-  condition: 'excellent' | 'good' | 'fair' | 'poor';
-  color?: string;
-  transmission?: 'manual' | 'automatic' | 'cvt';
-  fuelType?: 'gasoline' | 'diesel' | 'electric' | 'hybrid';
-  features: string[];
-  location?: {
-    city: string;
-    state: string;
-    country: string;
-    coordinates?: {
-      lat: number;
-      lng: number;
-    };
+  mileage_km: number;
+  vin?: string;
+  damage_report?: string;  // AI output
+}
+
+export interface HorseDetails {
+  breed: string;
+  age_years: number;
+  gender?: string;
+  training_level?: string;
+  health_notes?: string;
+}
+
+export interface RealEstateDetails {
+  property_type: PropertyType;
+  rooms?: number;
+  area_m2?: number;
+  address_text?: string;
+  is_owner?: boolean; // is owner or agent
+}
+
+export interface Listing extends BaseListing {
+  // Seller info
+  seller?: {
+    id: string;
+    name: string;
+    phone: string;
+    avatar_url?: string;
+  };
+  
+  // Business info
+  business?: {
+    id: string;
+    name: string;
+    verified: boolean;
+    phone_public?: string;
+  };
+  
+  // Category-specific details
+  car_details?: CarDetails;
+  horse_details?: HorseDetails;
+  real_estate_details?: RealEstateDetails;
+  
+  // Stats
+  views_count: number;
+  likes_count: number;
+  comments_count: number;
+  messages_count: number;
+}
+
+// ============================================
+// CHAT TYPES
+// ============================================
+
+export interface ChatThread {
+  id: string;
+  listing_id: string;
+  buyer_id: string;
+  seller_id: string;
+  last_message_at: string;
+  created_at: string;
+  
+  // Related data
+  listing?: {
+    id: string;
+    title: string;
+    price: number;
+    currency: string;
+    thumbnail_url?: string;
+  };
+  
+  buyer?: {
+    id: string;
+    name: string;
+    avatar_url?: string;
+  };
+  
+  seller?: {
+    id: string;
+    name: string;
+    avatar_url?: string;
+  };
+  
+  unread_count: number;
+}
+
+export interface ChatMessage {
+  id: string;
+  thread_id: string;
+  sender_id: string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+  
+  // Sender info
+  sender?: {
+    id: string;
+    name: string;
+    avatar_url?: string;
   };
 }
 
-// Comment types
-export interface Comment {
-  id: string;
-  content: string;
-  createdAt: string;
-  updatedAt: string;
-  author: User;
-  videoId: string;
-  likes: number;
-  replies?: Comment[];
-  isLiked?: boolean;
-}
+// ============================================
+// PROMOTION TYPES
+// ============================================
 
-// Message types
-export interface Message {
+export interface Promotion {
   id: string;
-  content: string;
-  type: 'text' | 'image' | 'video' | 'car_link';
-  createdAt: string;
-  sender: User;
-  receiver: User;
-  isRead: boolean;
-  metadata?: {
-    carId?: string;
-    videoId?: string;
-    imageUri?: string;
+  listing_id: string;
+  started_at: string;
+  ends_at: string;
+  payment_status: PaymentStatus;
+  created_at: string;
+  
+  // Related data
+  listing?: {
+    id: string;
+    title: string;
+    price: number;
+    currency: string;
   };
 }
 
-export interface Chat {
+// ============================================
+// MODERATION TYPES
+// ============================================
+
+export interface ModerationEvent {
   id: string;
-  participants: User[];
-  lastMessage?: Message;
-  unreadCount: number;
-  createdAt: string;
-  updatedAt: string;
+  listing_id: string;
+  moderator_id: string | null; // null = auto AI flag
+  action: ModerationAction;
+  reason: string;
+  created_at: string;
+  
+  // Related data
+  listing?: {
+    id: string;
+    title: string;
+    category: ListingCategory;
+  };
+  
+  moderator?: {
+    id: string;
+    name: string;
+  };
 }
 
-// Upload types
-export interface UploadProgress {
-  loaded: number;
-  total: number;
-  percentage: number;
-}
+// ============================================
+// API RESPONSE TYPES
+// ============================================
 
-export interface UploadState {
-  isUploading: boolean;
-  progress: UploadProgress;
-  error?: string;
-  videoId?: string;
-}
-
-// Navigation types
-export type RootStackParamList = {
-  '(tabs)': undefined;
-  'car/[id]': { id: string };
-  '+not-found': undefined;
-};
-
-export type TabParamList = {
-  index: undefined;
-  upload: undefined;
-  search: undefined;
-  messages: undefined;
-  profile: undefined;
-};
-
-// API Response types
-export interface ApiResponse<T> {
-  data: T;
-  message?: string;
+export interface ApiResponse<T = any> {
   success: boolean;
+  data?: T;
+  error?: string;
+  details?: any;
 }
 
-export interface PaginatedResponse<T> {
-  data: T[];
+export interface PaginatedResponse<T> extends ApiResponse<T[]> {
   pagination: {
     page: number;
     limit: number;
     total: number;
     totalPages: number;
-    hasNext: boolean;
-    hasPrev: boolean;
   };
 }
 
-// Error types
 export interface ApiError {
-  message: string;
-  code: string;
+  success: false;
+  error: string;
   details?: any;
 }
 
-// Theme types
-export interface Theme {
-  colors: {
-    primary: string;
-    secondary: string;
-    background: string;
-    surface: string;
-    text: string;
-    textSecondary: string;
-    border: string;
-    error: string;
-    success: string;
-    warning: string;
-  };
-  spacing: {
-    xs: number;
-    sm: number;
-    md: number;
-    lg: number;
-    xl: number;
-  };
-  borderRadius: {
-    sm: number;
-    md: number;
-    lg: number;
-  };
+// ============================================
+// REQUEST TYPES
+// ============================================
+
+export interface CreateListingRequest {
+  category: ListingCategory;
+  title: string;
+  description: string;
+  price: number;
+  currency: string;
+  location_text: string;
+  latitude?: number;
+  longitude?: number;
+  carDetails?: CarDetails;
+  horseDetails?: HorseDetails;
+  realEstateDetails?: RealEstateDetails;
 }
 
-// Camera types
-export interface CameraSettings {
-  quality: 'low' | 'medium' | 'high';
-  flashMode: 'off' | 'on' | 'auto';
-  focusMode: 'auto' | 'manual';
-  whiteBalance: 'auto' | 'sunny' | 'cloudy' | 'fluorescent' | 'incandescent';
+export interface UpdateListingRequest {
+  title?: string;
+  description?: string;
+  price?: number;
+  currency?: string;
+  location_text?: string;
+  latitude?: number;
+  longitude?: number;
+  carDetails?: Partial<CarDetails>;
+  horseDetails?: Partial<HorseDetails>;
+  realEstateDetails?: Partial<RealEstateDetails>;
 }
 
-// Location types
-export interface Location {
-  latitude: number;
-  longitude: number;
-  accuracy?: number;
-  altitude?: number;
-  heading?: number;
-  speed?: number;
+export interface CreateBusinessAccountRequest {
+  name: string;
+  tax_id?: string;
+  phone_public?: string;
 }
 
-// Notification types
+export interface AddBusinessMemberRequest {
+  user_id: string;
+  role: BusinessMemberRole;
+}
+
+export interface SendMessageRequest {
+  body: string;
+}
+
+export interface StartPromotionRequest {
+  listing_id: string;
+  duration_days: number;
+}
+
+// ============================================
+// SEARCH & FILTER TYPES
+// ============================================
+
+export interface SearchFilters {
+  category?: ListingCategory;
+  searchQuery?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  location?: string;
+  sortBy?: 'newest' | 'price_asc' | 'price_desc' | 'popular';
+  page?: number;
+  limit?: number;
+  
+  // Car-specific filters
+  carMake?: string;
+  carModel?: string;
+  carYear?: number;
+  carMinYear?: number;
+  carMaxYear?: number;
+  carMinMileage?: number;
+  carMaxMileage?: number;
+  
+  // Horse-specific filters
+  horseBreed?: string;
+  horseMinAge?: number;
+  horseMaxAge?: number;
+  horseGender?: string;
+  
+  // Real estate-specific filters
+  propertyType?: PropertyType;
+  minRooms?: number;
+  maxRooms?: number;
+  minArea?: number;
+  maxArea?: number;
+}
+
+export interface SearchResult extends Listing {
+  relevance_score?: number;
+}
+
+// ============================================
+// MOBILE APP TYPES
+// ============================================
+
+export interface FeedItem extends Listing {
+  video_url?: string;
+  thumbnail_url?: string;
+  is_liked?: boolean;
+  is_saved?: boolean;
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: User | null;
+  token: string | null;
+}
+
+export interface AppState {
+  auth: AuthState;
+  feed: {
+    items: FeedItem[];
+    loading: boolean;
+    refreshing: boolean;
+    category: ListingCategory;
+  };
+  filters: SearchFilters;
+  offlineDrafts: CreateListingRequest[];
+}
+
+// ============================================
+// LEGAL COMPLIANCE TYPES
+// ============================================
+
+export interface LegalConsent {
+  offer_agreement: boolean;
+  personal_data_processing: boolean;
+  marketing_communications?: boolean;
+  created_at: string;
+}
+
+export interface UserConsent {
+  user_id: string;
+  consent_type: 'offer_agreement' | 'personal_data_processing' | 'marketing_communications';
+  granted: boolean;
+  granted_at: string;
+  ip_address?: string;
+  user_agent?: string;
+}
+
+// ============================================
+// AUDIT & LOGGING TYPES
+// ============================================
+
+export interface AuditLog {
+  id: string;
+  user_id: string | null;
+  action: string;
+  resource_type: string;
+  resource_id: string;
+  details: any;
+  ip_address?: string;
+  user_agent?: string;
+  created_at: string;
+}
+
+// ============================================
+// NOTIFICATION TYPES
+// ============================================
+
 export interface Notification {
   id: string;
-  type: 'like' | 'comment' | 'follow' | 'mention' | 'system';
+  user_id: string;
   title: string;
-  message: string;
-  isRead: boolean;
-  createdAt: string;
+  body: string;
+  type: 'chat_message' | 'listing_approved' | 'listing_rejected' | 'promotion_expired';
+  data?: any;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface PushNotification {
+  userId: string;
+  title: string;
+  body: string;
   data?: any;
 }
 
-// Search types
-export interface SearchFilters {
-  make?: string;
-  model?: string;
-  yearMin?: number;
-  yearMax?: number;
-  priceMin?: number;
-  priceMax?: number;
-  location?: string;
-  condition?: string[];
-  features?: string[];
-}
+// ============================================
+// EXPORT ALL TYPES
+// ============================================
 
-export interface SearchResult {
-  videos: Video[];
-  cars: CarInfo[];
-  users: User[];
-  totalResults: number;
-}
+export type {
+    AddBusinessMemberRequest, ApiError, ApiResponse, AppState, AuditLog, AuthState, AuthToken, BaseListing, BusinessAccount,
+    BusinessMember, BusinessMemberRole, CarDetails, ChatMessage, ChatThread, CreateBusinessAccountRequest, CreateListingRequest, FeedItem, HorseDetails, LegalConsent, Listing, ListingCategory,
+    ListingStatus, ModerationAction, ModerationEvent, Notification, PaginatedResponse, PaymentStatus, Promotion, PropertyType, PushNotification, RealEstateDetails, SearchFilters,
+    SearchResult, SendMessageRequest,
+    StartPromotionRequest, UpdateListingRequest, User, UserConsent, VideoStatus
+};

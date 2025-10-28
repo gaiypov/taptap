@@ -13,7 +13,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.redpetroleum.auto360",
+      "bundleIdentifier": "com.superapp.auto360",
       "infoPlist": {
         "NSCameraUsageDescription": "Приложению нужна камера для съемки автомобилей",
         "NSMicrophoneUsageDescription": "Приложению нужен микрофон для видео",
@@ -25,7 +25,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#000000"
       },
-      "package": "com.redpetroleum.auto360",
+      "package": "com.superapp.auto360",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",

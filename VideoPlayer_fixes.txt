@@ -1,0 +1,54 @@
+// Временное исправление для VideoPlayer.tsx
+// Замените все функции с videoRef на player
+
+// 1. Замените toggleMute функцию:
+const toggleMute = () => {
+  const nextMuted = !isMuted;
+  if (player) {
+    player.muted = nextMuted;
+    setIsMuted(nextMuted);
+  }
+};
+
+// 2. Замените play функцию:
+const play = async () => {
+  if (player) {
+    player.play();
+  }
+};
+
+// 3. Замените pause функцию:
+const pause = async () => {
+  if (player) {
+    player.pause();
+  }
+};
+
+// 4. Замените togglePlayPause функцию:
+const togglePlayPause = async () => {
+  if (player) {
+    if (player.playing) {
+      player.pause();
+    } else {
+      player.play();
+    }
+  }
+};
+
+// 5. Замените replay функцию:
+const replay = async () => {
+  if (player) {
+    player.seekTo(0);
+    player.play();
+  }
+};
+
+// 6. Обновите useImperativeHandle:
+useImperativeHandle(ref, () => ({
+  play,
+  pause,
+  togglePlayPause,
+  toggleMute,
+  replay,
+  getStatus: () => ({ isLoaded: true, isPlaying: player?.playing || false }),
+}));

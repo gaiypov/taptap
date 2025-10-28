@@ -13,6 +13,7 @@ export interface Car {
   year: number;
   price: number;
   mileage: number;
+  color?: string;
   location: string;
   
   // AI анализ
@@ -47,7 +48,6 @@ export interface User {
   name: string;
   phone: string;
   avatar?: string;
-  redPetroleumId?: string;
   rating: number;
   totalSales: number;
   isVerified: boolean;

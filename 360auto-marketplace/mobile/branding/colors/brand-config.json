@@ -1,0 +1,83 @@
+{
+  "brand": {
+    "name": "360°",
+    "tagline": "Полный обзор",
+    "description": "Приложение для продажи автомобилей и лошадей с 360° видео"
+  },
+  "colors": {
+    "primary": {
+      "main": "#FF6B35",
+      "light": "#FF8A65",
+      "dark": "#E64A19",
+      "gradient": ["#FF6B35", "#FF8A65"]
+    },
+    "secondary": {
+      "main": "#007AFF",
+      "light": "#4FC3F7",
+      "dark": "#0056CC",
+      "gradient": ["#007AFF", "#4FC3F7"]
+    },
+    "neutral": {
+      "black": "#000000",
+      "white": "#FFFFFF",
+      "gray": {
+        "100": "#F5F5F5",
+        "200": "#EEEEEE",
+        "300": "#E0E0E0",
+        "400": "#BDBDBD",
+        "500": "#9E9E9E",
+        "600": "#757575",
+        "700": "#616161",
+        "800": "#424242",
+        "900": "#212121"
+      }
+    },
+    "status": {
+      "success": "#4CAF50",
+      "warning": "#FF9800",
+      "error": "#F44336",
+      "info": "#2196F3"
+    }
+  },
+  "typography": {
+    "fontFamily": {
+      "primary": "System",
+      "secondary": "System"
+    },
+    "fontSize": {
+      "xs": 12,
+      "sm": 14,
+      "base": 16,
+      "lg": 18,
+      "xl": 20,
+      "2xl": 24,
+      "3xl": 30,
+      "4xl": 36,
+      "5xl": 48
+    },
+    "fontWeight": {
+      "light": "300",
+      "normal": "400",
+      "medium": "500",
+      "semibold": "600",
+      "bold": "700"
+    }
+  },
+  "spacing": {
+    "xs": 4,
+    "sm": 8,
+    "md": 16,
+    "lg": 24,
+    "xl": 32,
+    "2xl": 48,
+    "3xl": 64
+  },
+  "borderRadius": {
+    "sm": 4,
+    "md": 8,
+    "lg": 12,
+    "xl": 16,
+    "2xl": 24,
+    "full": 9999
+  }
+}
