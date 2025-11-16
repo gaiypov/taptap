@@ -2,7 +2,10 @@
 import Constants from 'expo-constants';
 
 // Google Cloud Vision API
-const GOOGLE_VISION_API_KEY = Constants.expoConfig?.extra?.GOOGLE_VISION_API_KEY || '';
+const GOOGLE_VISION_API_KEY = 
+  Constants.expoConfig?.extra?.GOOGLE_VISION_API_KEY || 
+  process.env.GOOGLE_VISION_API_KEY || 
+  '';
 
 export interface ModerationResult {
   isApproved: boolean;

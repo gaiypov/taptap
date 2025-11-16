@@ -83,13 +83,9 @@
       "EXPO_PUBLIC_USE_MOCK": "false",
       "EXPO_PUBLIC_SUPABASE_URL": "https://thqlfkngyipdscckbhor.supabase.co",
       "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRocWxma25neWlwZHNjY2tiaG9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjYyMTksImV4cCI6MjA3NTYwMjIxOX0.vpFYGGSs81wgiJgedBe8_VSqle575fPMeTqdJwKHtlE",
-      "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRocWxma25neWlwZHNjY2tiaG9yIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDAyNjIxOSwiZXhwIjoyMDc1NjAyMjE5fQ.SwC4ynmRy7kMgU2CyK_wcd1mqLjo8mVB8xADP7Cck_c",
-      "GOOGLE_VISION_API_KEY": "AIzaSyCDq7xTy4yrPvBr5JjGNUEXaXZ70fVyJGg",
       "EXPO_PUBLIC_SMS_LOGIN": "superapp",
-      "EXPO_PUBLIC_SMS_PASSWORD": "83fb772ee0799a422cce18ffd5f497b9",
       "EXPO_PUBLIC_SMS_API_URL": "https://smspro.nikita.kg/api/message",
-      "EXPO_PUBLIC_SMS_SENDER": "bat-bat.kg",
-      "EXPO_PUBLIC_APIVIDEO_API_KEY": "OhnRGcRvd7YS7H7TV6uwXRNgLvocjuAfGfR2qAebSKv"
+      "EXPO_PUBLIC_SMS_SENDER": "bat-bat.kg"
     }
   }
 }

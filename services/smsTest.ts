@@ -11,7 +11,8 @@ export async function testSMSService() {
   // Получаем конфигурацию
   const config = {
     login: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_LOGIN || 'superapp',
-    password: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_PASSWORD || '83fb772ee0799a422cce18ffd5f497b9',
+    password: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_PASSWORD || 
+              process.env.EXPO_PUBLIC_SMS_PASSWORD || '',
     sender: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_SENDER || 'bat-bat.kg',
     apiUrl: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_API_URL || 'https://smspro.nikita.kg/api/message'
   };
@@ -56,7 +57,8 @@ export async function testVerificationCode() {
   
   const config = {
     login: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_LOGIN || 'superapp',
-    password: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_PASSWORD || '83fb772ee0799a422cce18ffd5f497b9',
+    password: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_PASSWORD || 
+              process.env.EXPO_PUBLIC_SMS_PASSWORD || '',
     sender: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_SENDER || 'bat-bat.kg',
     apiUrl: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_API_URL || 'https://smspro.nikita.kg/api/message'
   };
