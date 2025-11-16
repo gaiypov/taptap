@@ -213,6 +213,25 @@ export async function searchListings(params: SearchParams): Promise<SearchResult
 
     return result;
   } catch (error: any) {
+    // Проверка на сетевые ошибки
+    const isNetworkError = 
+      error?.message?.includes('Network request failed') ||
+      error?.message?.includes('Failed to fetch') ||
+      error?.message?.includes('network') ||
+      error?.code === 'PGRST301' ||
+      error?.code === 'ENOTFOUND' ||
+      error?.code === 'ETIMEDOUT';
+    
+    if (isNetworkError) {
+      console.warn('Search error (network):', error?.message || 'Network request failed');
+      // Для сетевых ошибок возвращаем пустой результат
+      return {
+        data: [],
+        total: 0,
+        hasMore: false
+      };
+    }
+    
     console.error('Search error:', error);
     
     // Если ошибка связана с правами доступа (42501), возвращаем моковые данные
@@ -245,8 +264,7 @@ async function searchAuto(
   let queryBuilder = supabase
     .from('listings')
     .select('*, seller:users!seller_id(id, name, avatar_url, is_verified)', { count: 'exact' })
-    .eq('category', 'car')
-    .eq('status', 'active');
+    .eq('category', 'car');
 
   // Текстовый поиск
   if (query) {
@@ -282,6 +300,24 @@ async function searchAuto(
   const { data, error, count } = await queryBuilder;
 
   if (error) {
+    // Проверка на сетевые ошибки
+    const isNetworkError = 
+      error.message?.includes('Network request failed') ||
+      error.message?.includes('Failed to fetch') ||
+      error.message?.includes('network') ||
+      error.code === 'PGRST301' ||
+      error.code === 'ENOTFOUND' ||
+      error.code === 'ETIMEDOUT';
+    
+    if (isNetworkError) {
+      console.warn('Search error (network):', error.message || 'Network request failed');
+      return {
+        data: [],
+        total: 0,
+        hasMore: false
+      };
+    }
+    
     console.error('Search error:', error);
     // Если ошибка RLS (permission denied), используем mock данные
     if (error.code === '42501' || error.message?.includes('permission denied')) {
@@ -312,8 +348,7 @@ async function searchHorse(
   let queryBuilder = supabase
     .from('listings')
     .select('*, seller:users!seller_id(id, name, avatar_url, is_verified)', { count: 'exact' })
-    .eq('category', 'horse')
-    .eq('status', 'active');
+    .eq('category', 'horse');
 
   // Текстовый поиск
   if (query) {
@@ -348,6 +383,24 @@ async function searchHorse(
   const { data, error, count } = await queryBuilder;
 
   if (error) {
+    // Проверка на сетевые ошибки
+    const isNetworkError = 
+      error.message?.includes('Network request failed') ||
+      error.message?.includes('Failed to fetch') ||
+      error.message?.includes('network') ||
+      error.code === 'PGRST301' ||
+      error.code === 'ENOTFOUND' ||
+      error.code === 'ETIMEDOUT';
+    
+    if (isNetworkError) {
+      console.warn('Search error (network):', error.message || 'Network request failed');
+      return {
+        data: [],
+        total: 0,
+        hasMore: false
+      };
+    }
+    
     console.error('Search error:', error);
     // Если ошибка RLS (permission denied), используем mock данные
     if (error.code === '42501' || error.message?.includes('permission denied')) {
@@ -378,8 +431,7 @@ async function searchRealEstate(
   let queryBuilder = supabase
     .from('listings')
     .select('*, seller:users!seller_id(id, name, avatar_url, is_verified)', { count: 'exact' })
-    .eq('category', 'real_estate')
-    .eq('status', 'active');
+    .eq('category', 'real_estate');
 
   // Текстовый поиск
   if (query) {
@@ -413,6 +465,24 @@ async function searchRealEstate(
   const { data, error, count } = await queryBuilder;
 
   if (error) {
+    // Проверка на сетевые ошибки
+    const isNetworkError = 
+      error.message?.includes('Network request failed') ||
+      error.message?.includes('Failed to fetch') ||
+      error.message?.includes('network') ||
+      error.code === 'PGRST301' ||
+      error.code === 'ENOTFOUND' ||
+      error.code === 'ETIMEDOUT';
+    
+    if (isNetworkError) {
+      console.warn('Search error (network):', error.message || 'Network request failed');
+      return {
+        data: [],
+        total: 0,
+        hasMore: false
+      };
+    }
+    
     console.error('Search error:', error);
     // Если ошибка RLS (permission denied), используем mock данные
     if (error.code === '42501' || error.message?.includes('permission denied')) {

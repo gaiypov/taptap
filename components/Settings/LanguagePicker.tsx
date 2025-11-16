@@ -35,7 +35,7 @@ export default function LanguagePicker({ visible, onClose }: LanguagePickerProps
 
           {/* Languages */}
           <View style={styles.languagesContainer}>
-            {(Object.keys(KYRGYZSTAN_LOCALES) as Array<'ru' | 'ky'>).map((lang) => (
+            {(Object.keys(KYRGYZSTAN_LOCALES) as ('ru' | 'ky')[]).map((lang) => (
               <Pressable
                 key={lang}
                 onPress={() => handleSelectLanguage(lang)}

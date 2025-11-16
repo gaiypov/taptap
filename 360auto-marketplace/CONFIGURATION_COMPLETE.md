@@ -5,6 +5,7 @@ All configuration files have been updated with the specified settings.
 ## Updated Files
 
 ### Backend
+
 - ✅ `backend/package.json` - Updated with all dependencies
 - ✅ `backend/tsconfig.json` - TypeScript configuration
 - ✅ `backend/.eslintrc.json` - ESLint configuration
@@ -14,11 +15,13 @@ All configuration files have been updated with the specified settings.
 - ✅ `backend/.env.example` - Environment variables template
 
 ### Mobile
+
 - ✅ `mobile/package.json` - Updated with Expo dependencies
 
 ## Key Features
 
 ### Backend Dependencies
+
 - Express.js web framework
 - Prisma ORM for database
 - Bull + Redis for job queue
@@ -27,6 +30,7 @@ All configuration files have been updated with the specified settings.
 - TypeScript for type safety
 
 ### Mobile Dependencies
+
 - Expo SDK 51
 - Expo Router for navigation
 - React Query for data fetching
@@ -37,11 +41,13 @@ All configuration files have been updated with the specified settings.
 ## Next Steps
 
 1. **Install dependencies:**
+
    ```bash
    ./setup.sh
    ```
 
 2. **Configure environment:**
+
    ```bash
    cd backend
    cp .env.example .env
@@ -49,6 +55,7 @@ All configuration files have been updated with the specified settings.
    ```
 
 3. **Start development:**
+
    ```bash
    # Backend
    cd backend
@@ -60,4 +67,3 @@ All configuration files have been updated with the specified settings.
    ```
 
 All configuration is complete and ready for development! 🚀
-

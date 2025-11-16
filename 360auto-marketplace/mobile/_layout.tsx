@@ -43,7 +43,7 @@ export default function RootLayout() {
         errorTracking.init();
         
         // Отслеживаем запуск приложения
-        errorTracking.addBreadcrumb('App Launched', 'lifecycle');
+        errorTracking.addBreadcrumb('App Launched', 'lifecycle', { timestamp: new Date().toISOString() });
 
         // Проверяем onboarding и согласия пользователя
         await checkOnboardingAndConsents();

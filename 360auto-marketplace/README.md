@@ -15,7 +15,7 @@
 
 ---
 
-## ✅ Что Готово:
+## ✅ Что Готово
 
 - ✅ **3 отдельных репозитория** разделены по функциям
 - ✅ **Backend** - полностью настроен с Supabase
@@ -28,7 +28,8 @@
 
 ## 🚀 Быстрый Старт
 
-### 1. Установите зависимости:
+### 1. Установите зависимости
+
 ```bash
 # Backend
 cd backend && npm install
@@ -40,12 +41,14 @@ cd mobile && npm install
 cd shared && npm install
 ```
 
-### 2. Запустите Redis:
+### 2. Запустите Redis
+
 ```bash
 redis-server
 ```
 
-### 3. Запустите Backend:
+### 3. Запустите Backend
+
 ```bash
 cd backend
 npm run dev
@@ -53,7 +56,8 @@ npm run dev
 # ✅ http://localhost:3001
 ```
 
-### 4. Запустите Mobile:
+### 4. Запустите Mobile
+
 ```bash
 cd mobile
 npm start
@@ -75,11 +79,13 @@ npm start
 ## 🔑 Настроенные Ключи
 
 **Supabase:**
+
 - URL: `https://thqlfkngyipdscckbhor.supabase.co`
 - Service Role Key: настроен
 - Anon Key: настроен
 
 **Другие API:**
+
 - ✅ SMS Service (smspro.nikita.kg)
 - ✅ API.Video
 - ✅ Google Vision API
@@ -88,7 +94,8 @@ npm start
 
 ## 📱 Скрипты
 
-### Backend:
+### Backend
+
 ```bash
 npm run dev         # Разработка
 npm run dev:watch   # С автоперезагрузкой
@@ -98,7 +105,8 @@ npm run lint        # Проверка кода
 npm run lint:fix    # Автоисправление
 ```
 
-### Mobile:
+### Mobile
+
 ```bash
 npm start           # Запуск Expo
 npm run android     # Android
@@ -112,6 +120,7 @@ npm run lint:fix    # Исправить ошибки
 ## 🏗️ Архитектура
 
 ### Backend (`backend/`)
+
 - Express.js API Server
 - Supabase для базы данных
 - Bull Queue для задач
@@ -119,6 +128,7 @@ npm run lint:fix    # Исправить ошибки
 - SMS сервис для подтверждения номера
 
 ### Mobile (`mobile/`)
+
 - React Native + Expo
 - Expo Router (навигация)
 - Zustand (состояние)
@@ -126,6 +136,7 @@ npm run lint:fix    # Исправить ошибки
 - Камера + видео
 
 ### Shared (`shared/`)
+
 - TypeScript типы
 - Общие константы
 - Утилиты

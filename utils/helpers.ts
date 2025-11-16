@@ -1,10 +1,14 @@
 import { Dimensions } from 'react-native';
+import { SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_SCALE } from './constants';
 
-// Device utilities
-export const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-export const isTablet = () => {
-  const pixelDensity = Dimensions.get('window').scale;
+/**
+ * Определяет является ли устройство планшетом
+ * Использует размеры экрана и pixel density для точного определения
+ * 
+ * @returns {boolean} - true если устройство является планшетом
+ */
+export const isTablet = (): boolean => {
+  const pixelDensity = SCREEN_SCALE;
   const adjustedWidth = SCREEN_WIDTH * pixelDensity;
   const adjustedHeight = SCREEN_HEIGHT * pixelDensity;
   
@@ -17,7 +21,31 @@ export const isTablet = () => {
   }
 };
 
-export const isLandscape = () => SCREEN_WIDTH > SCREEN_HEIGHT;
+/**
+ * Проверяет текущую ориентацию экрана
+ * 
+ * @deprecated Используйте useScreenDimensions().isLandscape для динамической проверки
+ * или getScreenDimensions().isLandscape для синхронной проверки
+ * 
+ * @returns {boolean} - true если устройство в landscape режиме
+ */
+export const isLandscape = (): boolean => {
+  const dims = Dimensions.get('window');
+  return dims.width > dims.height;
+};
+
+/**
+ * Проверяет текущую ориентацию экрана (portrait)
+ * 
+ * @deprecated Используйте useScreenDimensions().isPortrait для динамической проверки
+ * или getScreenDimensions().isPortrait для синхронной проверки
+ * 
+ * @returns {boolean} - true если устройство в portrait режиме
+ */
+export const isPortrait = (): boolean => {
+  const dims = Dimensions.get('window');
+  return dims.height >= dims.width;
+};
 
 // String utilities
 export const capitalize = (str: string): string => {

@@ -4,14 +4,28 @@ import apiVideoService from '@/services/apiVideo';
 import { auth } from '@/services/auth';
 import { db } from '@/services/supabase';
 import type { Car } from '@/types';
+import { formatPriceWithUSD } from '@/constants/currency';
 import { Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
+
+// Helper component for price display
+function PriceDisplay({ price }: { price: number }) {
+  const priceInfo = formatPriceWithUSD(price);
+  return (
+    <View>
+      <Text style={styles.carPrice}>{priceInfo.kgs}</Text>
+      <Text style={styles.carPriceUSD}>{priceInfo.usd}</Text>
+    </View>
+  );
+}
+import { VideoView, useVideoPlayer } from 'expo-video';
+import { Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
-    Dimensions,
     FlatList,
     Pressable,
     StyleSheet,
@@ -20,7 +34,7 @@ import {
     View,
 } from 'react-native';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
 
 interface VideoFeedProps {
   initialCarId?: string;
@@ -34,14 +48,7 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
   const flatListRef = useRef<FlatList>(null);
   const router = useRouter();
 
-  useEffect(() => {
-    loadCars();
-  }, []);
-
-  /**
-   * Загрузка автомобилей с видео
-   */
-  const loadCars = async () => {
+  const loadCars = useCallback(async () => {
     try {
       setLoading(true);
       const { data, error } = await db.getCars({ limit: 20 });
@@ -64,12 +71,17 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
           }
         }
       }
-    } catch (error) {
-      console.error('Error loading cars:', error);
+    } catch {
+      // Silent error - will retry on next load
     } finally {
       setLoading(false);
     }
-  };
+  }, [initialCarId]);
+
+  useEffect(() => {
+    loadCars();
+  }, [loadCars]);
+
 
   /**
    * Обработчик изменения видимого элемента
@@ -133,8 +145,8 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
             : c
         )
       );
-    } catch (error) {
-      console.error('Error liking car:', error);
+    } catch {
+      // Silent error
     }
   };
 
@@ -143,41 +155,77 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
    */
   const handleShare = async (car: Car) => {
     // TODO: Implement native share
-    console.log('Share car:', car.id);
   };
 
   /**
    * Открыть чат
    */
   const handleChat = (car: Car) => {
-    router.push(`/chat/${car.id}`);
+    router.push({
+      pathname: '/chat/[conversationId]',
+      params: { conversationId: car.id },
+    });
   };
 
   /**
    * Открыть детали авто
    */
   const handleOpenDetails = (car: Car) => {
-    router.push(`/car/${car.id}`);
+    router.push({ pathname: '/car/[id]', params: { id: car.id } });
   };
 
   /**
-   * Рендер одного видео
+   * Компонент для отдельного видео элемента (чтобы использовать hooks)
+   * Мемоизирован для оптимизации производительности
    */
-  const renderVideoItem = ({ item: car, index }: { item: Car; index: number }) => {
-    const isActive = index === currentIndex;
+  const VideoItem = React.memo(function VideoItem({ car, index, isActive }: { car: Car; index: number; isActive: boolean }) {
     const videoUrl = car.video_url || (car.video_id ? apiVideoService.getHLSUrl(car.video_id) : null);
+    const videoPlayer = useVideoPlayer(videoUrl || '');
+    
+    const details = car.details ?? {
+      brand: car.brand,
+      model: car.model,
+      year: car.year,
+      mileage: car.mileage,
+    };
+    const brand = car.brand ?? details.brand ?? 'Авто';
+    const model = car.model ?? details.model ?? '';
+    const year = car.year ?? details.year ?? 'N/A';
+    const mileage = car.mileage ?? details.mileage ?? 0;
+
+    // Control video playback based on active state
+    useEffect(() => {
+      if (videoUrl) {
+        videoPlayer.loop = true;
+        videoPlayer.muted = false;
+        if (isActive) {
+          videoPlayer.play();
+        } else {
+          videoPlayer.pause();
+        }
+      }
+      return () => {
+        if (videoPlayer) {
+          videoPlayer.pause();
+        }
+      };
+    }, [isActive, videoUrl, videoPlayer]);
+
+    const handlePress = () => {
+      router.push({
+        pathname: '/car/[id]',
+        params: { id: car.id },
+      });
+    };
 
     return (
       <View style={styles.videoContainer}>
         {videoUrl ? (
-          <Video
-            source={{ uri: videoUrl }}
+          <VideoView
+            player={videoPlayer}
             style={styles.video}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={isActive}
-            isLooping
-            isMuted={false}
-            volume={1.0}
+            contentFit="cover"
+            allowsFullscreen
           />
         ) : (
           <View style={[styles.video, styles.placeholderVideo]}>
@@ -198,13 +246,11 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
           onPress={() => handleOpenDetails(car)}
         >
           <Text style={styles.carTitle}>
-            {car.brand} {car.model}
+            {brand} {model}
           </Text>
-          <Text style={styles.carPrice}>
-            {car.price?.toLocaleString()} сом
-          </Text>
+          <PriceDisplay price={car.price || 0} />
           <Text style={styles.carDetails}>
-            {car.year} год • {car.mileage?.toLocaleString()} км
+            {year} год • {mileage.toLocaleString()} км
           </Text>
           {car.description && (
             <Text style={styles.carDescription} numberOfLines={2}>
@@ -275,28 +321,30 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
         </View>
       </View>
     );
-  };
+  });
 
   if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#FF3B30" />
-        <Text style={styles.loadingText}>Загрузка видео...</Text>
-      </View>
-    );
+    return <LoadingOverlay message="Загрузка видео..." />;
   }
 
   if (cars.length === 0) {
     return (
-      <View style={styles.emptyContainer}>
-        <Ionicons name="videocam-off" size={64} color="#666" />
-        <Text style={styles.emptyText}>Нет доступных видео</Text>
-      </View>
+      <EmptyState
+        title="Нет видео"
+        subtitle="Пока нет активных объявлений"
+        icon="videocam-off"
+        backgroundColor="#fafafa"
+      />
     );
   }
 
+  const renderVideoItem = useCallback(({ item, index }: { item: Car; index: number }) => {
+    return <VideoItem car={item} index={index} isActive={index === currentIndex} />;
+  }, [currentIndex, cars]);
+
   return (
-    <FlatList
+    <View style={{ flex: 1, backgroundColor: '#fafafa' }}>
+      <FlatList
       ref={flatListRef}
       data={cars}
       renderItem={renderVideoItem}
@@ -316,16 +364,20 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
         length: SCREEN_HEIGHT,
         offset: SCREEN_HEIGHT * index,
         index,
-      })}
-    />
+        })}
+      />
+    </View>
   );
 }
+
+// Set displayName for better debugging
+TikTokStyleFeed.displayName = 'TikTokStyleFeed';
 
 const styles = StyleSheet.create({
   videoContainer: {
     height: SCREEN_HEIGHT,
     width: SCREEN_WIDTH,
-    backgroundColor: '#000',
+    backgroundColor: '#000', // Видео должно быть на черном фоне для контраста
     position: 'relative',
   },
   video: {
@@ -354,24 +406,57 @@ const styles = StyleSheet.create({
     bottom: 100,
     left: 16,
     right: 80,
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: 12,
+    padding: 12,
   },
   carTitle: {
     fontSize: 24,
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    ...Platform.select({
+      web: {
+        textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
+      },
+      default: {
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+      },
+    }),
   },
   carPrice: {
     fontSize: 20,
     fontWeight: '700',
     color: '#FF3B30',
     marginBottom: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.5)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 4,
+    ...Platform.select({
+      web: {
+        textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
+      },
+      default: {
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+      },
+    }),
+  },
+  carPriceUSD: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: '#8E8E93',
+    marginTop: 2,
+    ...Platform.select({
+      web: {
+        textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
+      },
+      default: {
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
+      },
+    }),
   },
   carDetails: {
     fontSize: 14,
@@ -429,27 +514,4 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-  },
-  loadingText: {
-    color: '#FFFFFF',
-    marginTop: 16,
-    fontSize: 14,
-  },
-  emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#000',
-  },
-  emptyText: {
-    color: '#666',
-    marginTop: 16,
-    fontSize: 14,
-  },
 });
-

@@ -7,7 +7,7 @@
 
 ## 🗑️ Types Deleted
 
-### Removed from `mobile/types/index.ts`:
+### Removed from `mobile/types/index.ts`
 
 1. ❌ **User** - Now from `@shared/types`
 2. ❌ **Car** - Use `Listing` from `@shared/types`
@@ -26,7 +26,7 @@
 
 ## ✅ New Structure
 
-### `mobile/types/index.ts`:
+### `mobile/types/index.ts`
 
 ```typescript
 // Re-export ALL types from shared
@@ -47,6 +47,7 @@ export interface TabNavigationParams { ... }
 ## 🔧 Configuration Updates
 
 ### 1. `mobile/package.json`
+
 ```json
 {
   "dependencies": {
@@ -57,6 +58,7 @@ export interface TabNavigationParams { ... }
 ```
 
 ### 2. `mobile/tsconfig.json`
+
 ```json
 {
   "compilerOptions": {
@@ -69,6 +71,7 @@ export interface TabNavigationParams { ... }
 ```
 
 ### 3. `npm install`
+
 ```bash
 ✅ Success - added 2 packages
 ```
@@ -77,7 +80,7 @@ export interface TabNavigationParams { ... }
 
 ## 📊 Usage in Mobile
 
-### Import from shared:
+### Import from shared
 
 ```typescript
 // ✅ Now use:
@@ -87,7 +90,7 @@ import { User, Listing, ApiResponse } from '../types';
 import { User } from '@shared/types';
 ```
 
-### Mobile-specific types:
+### Mobile-specific types
 
 ```typescript
 import { UploadProgress, CameraSettings } from '../types';
@@ -110,6 +113,7 @@ import { UploadProgress, CameraSettings } from '../types';
 **Migration Needed:**
 
 Old imports that need updating:
+
 ```typescript
 // ❌ OLD:
 import { Car } from '../types';
@@ -119,6 +123,7 @@ import { Listing } from '../types';  // or @shared/types
 ```
 
 **Search and replace:**
+
 - `Car` → `Listing`
 - `avatar` → `avatarUrl`
 - `created_at` → `createdAt`
@@ -138,4 +143,3 @@ import { Listing } from '../types';  // or @shared/types
 ---
 
 **Mobile now uses shared types!** 🎉
-

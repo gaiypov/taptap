@@ -3,6 +3,11 @@
 // Production Ready for Kyrgyzstan Launch
 // ============================================
 
+import dotenv from 'dotenv';
+
+// Load environment variables
+dotenv.config();
+
 import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
@@ -17,6 +22,7 @@ import chatRoutes from './api/v1/chat';
 import listingsRoutes from './api/v1/listings';
 import moderationRoutes from './api/v1/moderation';
 import promoteRoutes from './api/v1/promote';
+import videoSlideshowRoutes from './api/v1/video-slideshow';
 
 // ============================================
 // ENVIRONMENT VALIDATION
@@ -89,7 +95,7 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 // Request ID middleware
 app.use((req: any, res, next) => {
-  req.id = Math.random().toString(36).substr(2, 9);
+  (req as any).id = Math.random().toString(36).substr(2, 9);
   next();
 });
 
@@ -99,7 +105,7 @@ app.use((req: any, res, next) => {
   
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log(`${req.method} ${req.path} - ${res.statusCode} - ${duration}ms - ${req.ip}`);
+    console.log(`${(req as any).method} ${(req as any).path} - ${res.statusCode} - ${duration}ms - ${(req as any).ip}`);
   });
   
   next();
@@ -140,6 +146,7 @@ app.use('/api/v1/business', businessRoutes);
 app.use('/api/v1/chat', chatRoutes);
 app.use('/api/v1/promote', promoteRoutes);
 app.use('/api/v1/moderation', moderationRoutes);
+app.use('/api/v1/video', videoSlideshowRoutes);
 
 // ============================================
 // ERROR HANDLING

@@ -5,11 +5,11 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { AuthenticatedRequest, authenticateToken, requireRole } from '../middleware/auth';
-import { asyncHandler, auditLog, CustomError, NotFoundError } from '../middleware/errorHandler';
-import { defaultLimiter } from '../middleware/rateLimit';
-import { approveListingSchema, rejectListingSchema, validateBody, validateParams } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import { AuthenticatedRequest, authenticateToken, requireRole } from '../../middleware/auth';
+import { asyncHandler, auditLog, CustomError, NotFoundError } from '../../middleware/errorHandler';
+import { defaultLimiter } from '../../middleware/rateLimit';
+import { approveListingSchema, rejectListingSchema, validateBody, validateParams } from '../../middleware/validate';
+import { supabase } from '../../services/supabaseClient';
 
 const router = Router();
 
@@ -59,7 +59,7 @@ router.post('/approve',
       .from('moderation_events')
       .insert({
         listing_id,
-        moderator_id,
+        moderator_id: req.user!.id,
         action: 'approve',
         reason: 'Listing approved by moderator'
       });
@@ -125,7 +125,7 @@ router.post('/reject',
       .from('moderation_events')
       .insert({
         listing_id,
-        moderator_id,
+        moderator_id: req.user!.id,
         action: 'reject',
         reason
       });

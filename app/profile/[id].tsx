@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    Dimensions,
     FlatList,
     Image,
     ScrollView,
@@ -18,8 +17,8 @@ import {
     View,
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
-const CAR_CARD_WIDTH = (width - 48) / 2; // 2 колонки с отступами
+import { SCREEN_WIDTH } from '@/utils/constants';
+const CAR_CARD_WIDTH = (SCREEN_WIDTH - 48) / 2; // 2 колонки с отступами
 
 export default function SellerProfileScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -149,7 +148,7 @@ export default function SellerProfileScreen() {
           {/* Статистика */}
           <View style={styles.statsContainer}>
             <View style={styles.statItem}>
-              <Text style={styles.statValue}>{seller.total_sales}</Text>
+              <Text style={styles.statValue}>{seller.total_sales ?? 0}</Text>
               <Text style={styles.statLabel}>Продано</Text>
             </View>
             <View style={styles.statDivider} />
@@ -160,7 +159,7 @@ export default function SellerProfileScreen() {
             <View style={styles.statDivider} />
             <View style={styles.statItem}>
               <Text style={styles.statValue}>
-                {seller.rating > 0 ? seller.rating.toFixed(1) : '-'}
+                {(seller.rating ?? 0) > 0 ? (seller.rating ?? 0).toFixed(1) : '-'}
               </Text>
               <Text style={styles.statLabel}>Рейтинг</Text>
             </View>
@@ -242,13 +241,24 @@ function CarCard({ car, sold = false }: { car: Car; sold?: boolean }) {
     return `${(price / 1000).toFixed(0)} тыс`;
   };
 
+  const details = car.details ?? {
+    brand: car.brand,
+    model: car.model,
+    year: car.year,
+    mileage: car.mileage,
+  };
+  const brand = car.brand ?? details.brand ?? 'Авто';
+  const model = car.model ?? details.model ?? '';
+  const year = car.year ?? details.year ?? 'N/A';
+  const mileage = car.mileage ?? details.mileage ?? 0;
+
   return (
     <TouchableOpacity
       style={[styles.carCard, sold && styles.carCardSold]}
       onPress={() => router.push(`/car/${car.id}`)}
     >
       <Image
-        source={{ uri: car.thumbnail_url }}
+        source={{ uri: car.thumbnail_url ?? 'https://picsum.photos/600/400' }}
         style={styles.carImage}
         resizeMode="cover"
       />
@@ -261,12 +271,14 @@ function CarCard({ car, sold = false }: { car: Car; sold?: boolean }) {
       
       <View style={styles.carInfo}>
         <Text style={styles.carBrand} numberOfLines={1}>
-          {car.brand || 'Авто'} {car.model || ''}
+          {brand} {model}
         </Text>
         <Text style={styles.carDetails} numberOfLines={1}>
-          {car.year || 'N/A'} • {car.mileage ? (car.mileage / 1000).toFixed(0) : '0'}k км
+          {year} • {(mileage / 1000).toFixed(0)}k км
         </Text>
-        <Text style={styles.carPrice}>{formatPrice(car.price)} сом</Text>
+        <Text style={styles.carPrice} numberOfLines={1}>
+          {formatPrice(car.price ?? 0)} сом
+        </Text>
       </View>
     </TouchableOpacity>
   );

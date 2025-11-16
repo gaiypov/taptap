@@ -24,6 +24,27 @@ export interface YOLOResult {
 }
 
 /**
+ * Простая обертка для промпта: detectWithYolo(imageUri)
+ * Согласно CursorAI-Prompt.md
+ */
+export async function detectWithYolo(
+  imageUri: string
+): Promise<any> {
+  try {
+    // Конвертируем imageUri в base64 если нужно
+    const imageBase64 = imageUri.startsWith('data:') 
+      ? imageUri 
+      : `data:image/jpeg;base64,${imageUri}`;
+    
+    return await analyzeWithYOLO(imageBase64);
+  } catch {
+    // Fallback на тестовый режим
+    const { useTestMode } = await import('./testMode');
+    return useTestMode('yolo');
+  }
+}
+
+/**
  * Анализ изображения с помощью Roboflow YOLO
  */
 export async function analyzeWithYOLO(

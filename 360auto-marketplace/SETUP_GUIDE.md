@@ -64,6 +64,7 @@ npm run setup
 ### Backend Dependencies
 
 **Production:**
+
 - `express` - Web framework
 - `@supabase/supabase-js` - Database client
 - `bull` + `redis` - Job queue
@@ -73,6 +74,7 @@ npm run setup
 - `compression` - Response compression
 
 **Development:**
+
 - `typescript` - Type safety
 - `ts-node` - Run TypeScript
 - `nodemon` - Auto-reload
@@ -116,12 +118,14 @@ npx expo install
 ### Mobile Dependencies
 
 **Core:**
+
 - `expo-router` - File-based routing
 - `@react-navigation/native` - Navigation
 - `@tanstack/react-query` - Data fetching
 - `zustand` - State management
 
 **Expo SDK:**
+
 - `expo-av` - Video playback
 - `expo-image-picker` - Image selection
 - `expo-camera` - Camera access
@@ -159,6 +163,7 @@ npm run build
 ### Shared Dependencies
 
 **Development:**
+
 - `typescript` - Type definitions
 
 ---
@@ -274,6 +279,7 @@ echo "🎉 All done! Run 'npm start' in each directory to begin."
 ```
 
 Make executable:
+
 ```bash
 chmod +x setup.sh
 ./setup.sh
@@ -317,18 +323,21 @@ npm start
 ## 🐛 Common Issues
 
 ### Port already in use
+
 ```bash
 # Kill process on port 3001
 lsof -ti:3001 | xargs kill -9
 ```
 
 ### Metro bundler cache
+
 ```bash
 cd mobile
 npm start -- --reset-cache
 ```
 
 ### TypeScript errors
+
 ```bash
 # Clear and rebuild
 rm -rf node_modules package-lock.json
@@ -353,12 +362,14 @@ npm install
    - Add SMS API key for authentication
 
 4. **Run Migrations:**
+
    ```bash
    cd backend/supabase
    # Execute SQL files in Supabase SQL editor
    ```
 
 5. **Start Development:**
+
    ```bash
    # Terminal 1: Backend
    cd backend && npm run dev
@@ -370,4 +381,3 @@ npm install
 ---
 
 **Ready to code! 🎉**
-

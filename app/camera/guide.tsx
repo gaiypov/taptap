@@ -9,7 +9,10 @@ export default function GuideScreen() {
   const { category = 'car' } = useLocalSearchParams<{ category?: 'car' | 'horse' }>();
 
   const handleStart = () => {
-    router.push(`/camera/record?category=${category}` as any);
+    router.push({
+      pathname: '/camera/record',
+      params: { category },
+    });
   };
 
   const handleBack = () => {

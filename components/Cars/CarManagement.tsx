@@ -60,11 +60,12 @@ export default function CarManagement({
     try {
       // Помечаем объявление как архивированное (soft delete)
       const { error } = await supabase
-        .from('cars')
+        .from('listings')
         .update({
           status: 'archived',
           updated_at: new Date().toISOString(),
         })
+        .eq('category', 'car')
         .eq('id', carId);
 
       if (error) throw error;
@@ -88,9 +89,10 @@ export default function CarManagement({
   const handleMarkAsSold = async () => {
     try {
       const { error } = await supabase
-        .from('cars')
+        .from('listings')
         .update({ status: 'sold' })
-        .eq('id', carId);
+        .eq('id', carId)
+        .eq('category', 'car');
 
       if (error) throw error;
 

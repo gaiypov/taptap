@@ -1,61 +1,83 @@
 // Сервис для управления BOOST монетизацией
 
-import type { ActiveBoost, BoostPlan, BoostTransaction, BoostType } from '@/types/boost';
+import type { ActiveBoost, BoostPlan, BoostTransaction, BoostType } from '../../types/boost';
 import { supabase } from '../supabase';
 import { createPayment, type PaymentMethod } from './index';
 
 // Тарифные планы BOOST
+// Updated according to CURSOR AI RULES (Jan 30, 2025): 50/200/700/1500 сом
+import { BOOST_PRICES } from '../../constants/boostPricing';
+
 export const BOOST_PLANS: BoostPlan[] = [
   {
-    id: 'basic',
-    name: 'Выделение',
-    emoji: '⭐',
-    price: 50,
-    duration: 24, // часов
+    id: '3h',
+    name: '3 часа',
+    emoji: '⚡',
+    price: BOOST_PRICES['3h'].price, // 50 сом
+    duration: BOOST_PRICES['3h'].durationSeconds / 3600, // hours
     features: [
-      'Оранжевая рамка',
+      'Выделение в ленте',
       'Приоритет в поиске',
-      'На 1 день',
-      '×2 просмотры',
+      'На 3 часа',
+      'Оранжевая рамка',
     ],
     multiplier: 2,
     color: '#FFA500',
     gradient: ['#FFA500', '#FF8C00'],
   },
   {
-    id: 'top',
-    name: 'ТОП',
+    id: '24h',
+    name: '24 часа',
     emoji: '🔥',
-    price: 150,
-    duration: 72, // часов
+    price: BOOST_PRICES['24h'].price, // 200 сом
+    duration: BOOST_PRICES['24h'].durationSeconds / 3600, // hours
     features: [
       'Красная рамка',
       'ТОП позиция',
-      'На 3 дня',
-      '×5 просмотры',
+      'На 24 часа',
+      '×3 просмотры',
       'Значок "Горячее"',
     ],
-    multiplier: 5,
+    multiplier: 3,
     color: '#FF3B30',
     gradient: ['#FF3B30', '#FF0000'],
   },
   {
-    id: 'premium',
-    name: 'Премиум',
+    id: '7d',
+    name: '7 дней',
     emoji: '💎',
-    price: 300,
-    duration: 168, // часов (7 дней)
+    price: BOOST_PRICES['7d'].price, // 700 сом
+    duration: BOOST_PRICES['7d'].durationSeconds / 3600, // hours (168 hours)
     features: [
       'Золотая рамка',
       'Закреплено вверху',
       'На 7 дней',
-      '×10 просмотры',
+      '×5 просмотры',
       'Все значки',
       'Промо на главной',
     ],
-    multiplier: 10,
+    multiplier: 5,
     color: '#FFD700',
     gradient: ['#FFD700', '#FFA500'],
+  },
+  {
+    id: '30d',
+    name: '30 дней',
+    emoji: '👑',
+    price: BOOST_PRICES['30d'].price, // 1500 сом
+    duration: BOOST_PRICES['30d'].durationSeconds / 3600, // hours (720 hours)
+    features: [
+      'Платиновая рамка',
+      'Максимальный приоритет',
+      'На 30 дней',
+      '×10 просмотры',
+      'Все значки',
+      'Постоянная промо',
+      'VIP статус',
+    ],
+    multiplier: 10,
+    color: '#9D4EDD',
+    gradient: ['#9D4EDD', '#7B2CBF'],
   },
 ];
 
@@ -90,12 +112,13 @@ export const boostService = {
 
       // Получаем текущие просмотры автомобиля
       const { data: car } = await supabase
-        .from('cars')
-        .select('views')
+        .from('listings')
+        .select('views_count')
         .eq('id', carId)
+        .eq('category', 'car')
         .single();
 
-      const viewsBefore = car?.views || 0;
+      const viewsBefore = car?.views_count || 0;
 
       // Создаем транзакцию в БД
       const { data: transaction, error } = await supabase
@@ -232,9 +255,10 @@ export const boostService = {
   async getActiveBoost(carId: string): Promise<ActiveBoost | null> {
     try {
       const { data: car } = await supabase
-        .from('cars')
-        .select('boost_type, boost_activated_at, boost_expires_at, views, views_before_boost')
+        .from('listings')
+        .select('boost_type, boost_activated_at, boost_expires_at, views_count')
         .eq('id', carId)
+        .eq('category', 'car')
         .single();
 
       if (!car || !car.boost_type || !car.boost_expires_at) {
@@ -257,8 +281,8 @@ export const boostService = {
         activated_at: car.boost_activated_at || '',
         expires_at: car.boost_expires_at,
         hours_remaining: hoursRemaining,
-        views_before: car.views_before_boost || 0,
-        current_views: car.views || 0,
+        views_before: 0, // views_before_boost удалено, используем views_count
+        current_views: car.views_count || 0,
       };
     } catch (error) {
       console.error('Error getting active boost:', error);

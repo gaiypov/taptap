@@ -2,7 +2,9 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { canCreateListing } from '@/services/listingPricing';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -53,14 +55,58 @@ const categoryConfig = {
 export default function ListingForm({ category, videoUri, onBack }: ListingFormProps) {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pricingInfo, setPricingInfo] = useState<{ allowed: boolean; reason: string; price?: number } | null>(null);
+  const [checkingPricing, setCheckingPricing] = useState(true);
+  const router = useRouter();
   
   const config = categoryConfig[category];
+
+  // Check pricing before allowing submission
+  useEffect(() => {
+    const checkPricing = async () => {
+      try {
+        const { auth } = await import('../../services/auth');
+        const user = await auth.getCurrentUser();
+        if (!user) {
+          setPricingInfo({ allowed: false, reason: 'Необходима авторизация' });
+          setCheckingPricing(false);
+          return;
+        }
+        
+        const result = await canCreateListing(user.id);
+        setPricingInfo(result);
+      } catch (error) {
+        console.error('Error checking pricing:', error);
+        setPricingInfo({ allowed: true, reason: 'Проверка цены не удалась' });
+      } finally {
+        setCheckingPricing(false);
+      }
+    };
+
+    checkPricing();
+  }, []);
 
   const handleInputChange = (key: string, value: string) => {
     setFormData(prev => ({ ...prev, [key]: value }));
   };
 
   const handleSubmit = async () => {
+    // Check pricing first
+    if (!pricingInfo || !pricingInfo.allowed) {
+      Alert.alert(
+        'Не удалось создать объявление',
+        pricingInfo?.reason || 'Необходима авторизация',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          {
+            text: 'Стать бизнесом',
+            onPress: () => router.push('/(business)/upgrade'),
+          },
+        ]
+      );
+      return;
+    }
+
     // Validate required fields
     const requiredFields = config.fields.filter(field => field.key !== 'description');
     const missingFields = requiredFields.filter(field => !formData[field.key]);
@@ -71,6 +117,22 @@ export default function ListingForm({ category, videoUri, onBack }: ListingFormP
         `Необходимо заполнить: ${missingFields.map(f => f.label).join(', ')}`
       );
       return;
+    }
+
+    // Show pricing info if not free
+    if (pricingInfo.price && pricingInfo.price > 0) {
+      const confirm = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          'Подтверждение',
+          `Создание объявления стоит ${pricingInfo.price} сом. Продолжить?`,
+          [
+            { text: 'Отмена', onPress: () => resolve(false), style: 'cancel' },
+            { text: 'Продолжить', onPress: () => resolve(true) },
+          ]
+        );
+      });
+
+      if (!confirm) return;
     }
 
     setIsSubmitting(true);
@@ -162,6 +224,27 @@ export default function ListingForm({ category, videoUri, onBack }: ListingFormP
           ))}
         </View>
 
+        {/* Pricing Info */}
+        {!checkingPricing && pricingInfo && (
+          <View style={styles.pricingContainer}>
+            {pricingInfo.allowed ? (
+              <>
+                <Text style={styles.pricingTitle}>
+                  {pricingInfo.price === 0 ? '✅ Бесплатно' : `💰 Стоимость: ${pricingInfo.price} сом`}
+                </Text>
+                <Text style={styles.pricingSubtext}>{pricingInfo.reason}</Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.pricingError}>⚠️ {pricingInfo.reason}</Text>
+                <Text style={styles.pricingSubtext}>
+                  Для продолжения перейдите на бизнес-аккаунт
+                </Text>
+              </>
+            )}
+          </View>
+        )}
+
         {/* Tips */}
         <View style={styles.tipsContainer}>
           <Text style={styles.tipsTitle}>💡 Советы для лучшего объявления:</Text>
@@ -180,19 +263,25 @@ export default function ListingForm({ category, videoUri, onBack }: ListingFormP
           activeOpacity={0.8}
         >
           <LinearGradient
-            colors={isFormValid() ? config.gradientColors as any : ['#666', '#555']}
+            colors={isFormValid() && pricingInfo?.allowed ? config.gradientColors as any : ['#666', '#555']}
             style={[
               styles.submitButton,
-              (!isFormValid() || isSubmitting) && styles.submitButtonDisabled
+              (!isFormValid() || isSubmitting || !pricingInfo?.allowed) && styles.submitButtonDisabled
             ]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
           >
             {isSubmitting ? (
               <Text style={styles.submitButtonText}>Создаем объявление...</Text>
+            ) : !pricingInfo?.allowed ? (
+              <Text style={styles.submitButtonText}>Недоступно</Text>
             ) : (
               <>
-                <Text style={styles.submitButtonText}>Опубликовать объявление</Text>
+                <Text style={styles.submitButtonText}>
+                  {pricingInfo.price === 0 
+                    ? 'Опубликовать бесплатно' 
+                    : `Опубликовать за ${pricingInfo.price} сом`}
+                </Text>
                 <Ionicons name="checkmark-circle" size={24} color="#FFF" />
               </>
             )}
@@ -296,6 +385,31 @@ const styles = StyleSheet.create({
     height: 100,
     textAlignVertical: 'top',
   },
+  pricingContainer: {
+    margin: 16,
+    padding: 16,
+    backgroundColor: '#1C1C1E',
+    borderRadius: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: '#FF3B30',
+  },
+  pricingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FFF',
+    marginBottom: 4,
+  },
+  pricingSubtext: {
+    fontSize: 14,
+    color: '#8E8E93',
+    marginTop: 4,
+  },
+  pricingError: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#FF3B30',
+    marginBottom: 4,
+  },
   tipsContainer: {
     backgroundColor: '#1A1A1A',
     borderRadius: 12,
@@ -326,11 +440,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 10,
+    // Safe Platform check for SSR/web compatibility
+    ...(Platform?.OS === 'web' ? {
+      boxShadow: '0px 8px 16px rgba(0, 0, 0, 0.3)',
+    } : {
+      shadowColor: '#000',
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 16,
+      elevation: 8,
+    }),
   },
   submitButtonDisabled: {
     opacity: 0.5,

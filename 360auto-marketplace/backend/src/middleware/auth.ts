@@ -3,7 +3,7 @@
 // Production Ready for Kyrgyzstan Launch
 // ============================================
 
-import { NextFunction, Request, Response } from 'express';
+import express, { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 
 // Ensure JWT_SECRET is set

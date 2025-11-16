@@ -1,6 +1,6 @@
 // services/ai.ts
 import { Car } from '@/types';
-import { analyzeWithClaude } from './ai/claude';
+import { analyzeWithClaude, quickIdentifyWithClaude } from './ai/claude';
 import { AI_CONFIG, checkAPIKeys, logAPICost, selectAvailableAI } from './ai/config';
 import { analyzeWithGoogleVision } from './ai/google';
 import { analyzeWithOpenAI } from './ai/openai';
@@ -124,27 +124,44 @@ async function runMockAnalysis(
 }
 
 function getMockCarData(): Partial<Car> {
-  return {
+  const details = {
     brand: 'Toyota',
     model: 'Camry',
     year: 2020,
     mileage: 45120,
-    location: 'Бишкек',
+    color: 'Черный',
+    transmission: 'automatic' as const,
+    damages: [
+      {
+        type: 'scratch',
+        severity: 'minor' as const,
+        location: 'правая дверь',
+        confidence: 0.87,
+      },
+    ],
+    features: ['Кожаный салон', 'Камера'],
+  };
+
+  return {
+    category: 'car',
+    details,
+    brand: details.brand,
+    model: details.model,
+    year: details.year,
+    mileage: details.mileage,
+    color: details.color,
+    transmission: details.transmission,
+    city: 'Бишкек',
     video_url: 'mock://video',
-    thumbnailUrl: 'https://picsum.photos/800/600',
+    thumbnail_url: 'https://picsum.photos/800/600',
+    created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     aiAnalysis: {
       condition: 'good',
       conditionScore: 85,
-      damages: [
-        {
-          type: 'scratch',
-          severity: 'minor',
-          location: 'правая дверь',
-          confidence: 0.87,
-        },
-      ],
+      damages: details.damages,
       estimatedPrice: { min: 2400000, max: 2600000 },
-      features: ['Кожаный салон', 'Камера'],
+      features: details.features ?? [],
     },
   };
 }
@@ -153,20 +170,37 @@ function getMockCarData(): Partial<Car> {
 
 // Конвертация Google Vision результата в стандартный формат
 function convertGoogleToAIResult(googleData: any): Partial<Car> {
-  return {
+  const details = {
     brand: googleData.brand || 'Unknown',
     model: googleData.model || 'Unknown',
     year: googleData.year || 2020,
     mileage: googleData.mileage || 0,
-    location: 'Бишкек',
+    color: googleData.color,
+    transmission: googleData.transmission,
+    damages: googleData.damages || [],
+    features: googleData.features || [],
+  };
+
+  return {
+    category: 'car',
+    details,
+    brand: details.brand,
+    model: details.model,
+    year: details.year,
+    mileage: details.mileage,
+    color: details.color,
+    transmission: details.transmission,
+    city: 'Бишкек',
     video_url: 'mock://video',
-    thumbnailUrl: 'https://picsum.photos/800/600',
+    thumbnail_url: 'https://picsum.photos/800/600',
+    created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
     aiAnalysis: {
       condition: googleData.condition || 'good',
       conditionScore: googleData.conditionScore || 80,
-      damages: googleData.damages || [],
+      damages: details.damages ?? [],
       estimatedPrice: googleData.estimatedPrice || { min: 2000000, max: 2500000 },
-      features: googleData.features || [],
+      features: details.features ?? [],
     },
   };
 }
@@ -175,12 +209,14 @@ function convertGoogleToAIResult(googleData: any): Partial<Car> {
 function formatFinalResult(aiResult: any, frames: any[]): Partial<Car> {
   return {
     ...aiResult,
-    thumbnailUrl: frames[0]?.uri || frames[0]?.base64 || 'https://picsum.photos/800/600',
+    thumbnail_url:
+      frames[0]?.uri || frames[0]?.base64 || aiResult.thumbnail_url || 'https://picsum.photos/800/600',
+    created_at: new Date().toISOString(),
     createdAt: new Date().toISOString(),
     views: 0,
     likes: 0,
     saves: 0,
-    isVerified: false,
+    is_verified: false,
   };
 }
 
@@ -198,6 +234,11 @@ export async function quickIdentifyCar(imageUri: string): Promise<{
   color: string;
   confidence: number;
 }> {
+  if (!imageUri || typeof imageUri !== 'string' || !imageUri.trim()) {
+    throw new Error('Некорректный URI изображения');
+  }
+
+  const normalizedUri = imageUri.trim();
   const selectedAI = selectAvailableAI();
   
   if (selectedAI === 'mock' || AI_CONFIG.USE_MOCK) {
@@ -212,23 +253,36 @@ export async function quickIdentifyCar(imageUri: string): Promise<{
   
   // Реальная логика для быстрой идентификации
   let base64Image: string;
-  if (imageUri.startsWith('data:image')) {
-    base64Image = imageUri;
+  if (normalizedUri.startsWith('data:image')) {
+    base64Image = normalizedUri;
   } else {
-    base64Image = await imageUriToBase64(imageUri);
+    base64Image = await imageUriToBase64(normalizedUri);
   }
 
   const frameBase64s = [base64Image];
   
   if (selectedAI === 'claude') {
-    const result = await analyzeWithClaude(frameBase64s, {});
-    return {
-      brand: result.brand || 'Unknown',
-      model: result.model || 'Unknown',
-      year: result.year || 2020,
-      color: 'Белый',
-      confidence: 0.9,
-    };
+    const result = await quickIdentifyWithClaude(base64Image);
+    logAPICost('claude', frameBase64s.length);
+    return normalizeQuickIdentifyResult(result);
+  }
+  
+  if (selectedAI === 'openai') {
+    const result = await analyzeWithOpenAI(frameBase64s, 'quick_identify', {});
+    logAPICost('openai', frameBase64s.length);
+    return normalizeQuickIdentifyResult(result);
+  }
+
+  if (selectedAI === 'google') {
+    const result = await analyzeWithGoogleVision(base64Image, 'full');
+    logAPICost('google', frameBase64s.length);
+    return normalizeQuickIdentifyResult({
+      brand: result.brand,
+      model: result.model,
+      year: result.year,
+      color: result.color,
+      confidence: 0.7,
+    });
   }
   
   return {
@@ -289,5 +343,32 @@ export async function compareCars(car1: any, car2: any): Promise<{
   return {
     betterChoice: car1.id || 'car1',
     comparison: {},
+  };
+}
+
+function normalizeQuickIdentifyResult(result: any): {
+  brand: string;
+  model: string;
+  year: number;
+  color: string;
+  confidence: number;
+} {
+  const parsedYear = typeof result.year === 'number'
+    ? result.year
+    : parseInt(result.year, 10);
+
+  const rawConfidence = typeof result.confidence === 'number'
+    ? result.confidence
+    : Number(result.confidence);
+
+  return {
+    brand: result.brand || 'Unknown',
+    model: result.model || 'Unknown',
+    year: Number.isFinite(parsedYear) ? parsedYear : 2020,
+    color: result.color || 'Unknown',
+    confidence:
+      Number.isFinite(rawConfidence)
+        ? Math.min(Math.max(rawConfidence, 0), 1)
+        : 0.8,
   };
 }

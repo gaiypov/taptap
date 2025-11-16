@@ -1,347 +1,782 @@
-# 360⁰ Marketplace - Architecture Overview
+# 🏗️ Архитектура приложения 360° Auto MVP
 
-## 🏗️ System Architecture
+## 📋 Оглавление
+1. [Общий обзор](#общий-обзор)
+2. [Навигация и роуты](#навигация-и-роуты)
+3. [API и интеграции](#api-и-интеграции)
+4. [Алгоритмы работы](#алгоритмы-работы)
+5. [Путь покупателя](#путь-покупателя)
+6. [Путь продавца](#путь-продавца)
+7. [Технический стек](#технический-стек)
 
-### High-Level Architecture
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Mobile App    │    │   Backend API   │    │   Supabase DB   │
-│   (Expo/RN)     │◄──►│   (Express.js)  │◄──►│   (PostgreSQL)  │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   SMS Service   │    │   AI Services   │    │   RLS Policies │
-│   (Kyrgyzstan)  │    │   (Anthropic)   │    │   (Security)    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+---
 
-## 📱 Mobile App Architecture
+## 🎯 Общий обзор
 
-### Expo Router Structure
+**360° Auto MVP** — TikTok-style видеомаркетплейс для покупки и продажи:
+- 🚗 Автомобилей
+- 🐎 Лошадей
+- 🏠 Недвижимости
+
+### Ключевые особенности
+- Вертикальная видео-лента (TikTok-style)
+- AI-анализ видео для автоматического заполнения данных
+- Реал-тайм чаты между покупателями и продавцами
+- HLS стриминг через api.video
+- SMS-авторизация (Кыргызстан, Казахстан, Россия, Узбекистан, Таджикистан)
+
+---
+
+## 🗺️ Навигация и роуты
+
+### Структура роутов (Expo Router)
+
 ```
 app/
-├── _layout.tsx              # Root layout with auth check
-├── (auth)/                 # Authentication flow
-│   ├── login.tsx
-│   └── verify.tsx
-├── (tabs)/                 # Main app tabs
-│   ├── index.tsx           # Home feed (TikTok-style)
-│   ├── search.tsx          # Search & filters
-│   ├── upload.tsx          # Create listing
-│   └── profile.tsx         # User profile
-├── (business)/             # Business account features
-│   ├── upgrade.tsx
-│   └── team.tsx
-├── camera/                 # Video recording
-│   └── record.tsx
-├── chat/                   # Chat system
-│   └── [conversationId].tsx
-└── legal/                  # Legal documents
+├── splash.tsx                          # Splash screen (2 сек)
+├── _layout.tsx                         # Root layout с Redux Provider
+│
+├── (onboarding)/                      # Онбординг (группа)
+│   ├── IntroCarousel.tsx             # 3 слайда онбординга
+│   ├── welcome.tsx                    # Старый экран приветствия
+│   └── permissions.tsx                # Запрос разрешений
+│
+├── (auth)/                            # Авторизация (группа)
+│   ├── intro.tsx                      # Экран входа
+│   ├── phone.tsx                      # Ввод номера телефона
+│   └── verify.tsx                     # Ввод 4-значного кода
+│
+├── (tabs)/                            # Главные табы
+│   ├── index.tsx                      # 📱 Главная (видео-лента)
+│   ├── search.tsx                     # 🔍 Поиск и фильтры
+│   ├── upload.tsx                     # ➕ Создать объявление
+│   ├── favorites.tsx                  # ❤️ Избранное
+│   ├── messages.tsx                   # 💬 Сообщения
+│   └── profile.tsx                    # 👤 Профиль
+│
+├── camera.tsx                         # Экран записи видео
+├── camera/
+│   └── process.tsx                    # Обработка и AI-анализ видео
+│
+├── chat/
+│   └── [conversationId].tsx          # Чат с продавцом
+│
+├── profile/
+│   ├── [id].tsx                       # Профиль пользователя
+│   ├── edit.tsx                        # Редактирование профиля
+│   └── my-listings.tsx                # Мои объявления
+│
+└── legal/                             # Юридические страницы
+    ├── terms.tsx
+    ├── privacy.tsx
     └── consent.tsx
 ```
 
-### State Management (Zustand)
+### Навигационные потоки
+
+#### 🚀 Первый запуск
+```
+Splash (2 сек) 
+  → IntroCarousel (3 слайда)
+    → Главная лента /(tabs)/index
+```
+
+#### 🔐 Авторизация
+```
+Главная лента
+  → Попытка действия (лайк, комментарий, чат)
+    → (auth)/intro
+      → (auth)/phone (выбор страны, ввод номера)
+        → (auth)/verify (4-значный код)
+          → Возврат на главную
+```
+
+#### 📹 Создание объявления
+```
+(upload) → Запрос разрешений
+  → camera.tsx (запись/выбор видео)
+    → camera/process.tsx (AI-анализ)
+      → Предпросмотр
+        → Публикация
+          → Главная лента
+```
+
+#### 💬 Чат
+```
+Видео карточка → Написать продавцу
+  → chat/[conversationId].tsx
+    → Supabase Realtime подписка
+```
+
+---
+
+## 🔌 API и интеграции
+
+### Backend API (Express.js на порту 3001)
+
+**Base URL:** `http://192.168.1.16:3001/api` (dev) или production URL
+
+#### 🔐 Authentication API
+
+```
+POST /api/auth/request-code
+  Body: { phone: "+996..." }
+  Response: { success: true, data: { phone, message } }
+
+POST /api/auth/verify-code
+  Body: { phone: "+996...", code: "1234" }
+  Response: { success: true, data: { user, token, codeLength } }
+
+POST /api/auth/validate
+  Headers: { Authorization: "Bearer <token>" }
+  Response: { success: true, user: {...} }
+```
+
+#### 📋 Listings API
+
+```
+GET /api/listings/feed
+  Query: { category?: "car"|"horse"|"real_estate", limit, offset }
+  Response: { success: true, data: Listing[] }
+
+GET /api/listings/:id
+  Response: { success: true, data: Listing }
+
+POST /api/listings
+  Headers: { Authorization: "Bearer <token>" }
+  Body: { category, video_id, title, price, details, ... }
+  Response: { success: true, data: Listing }
+
+PUT /api/listings/:id
+DELETE /api/listings/:id
+```
+
+#### 💬 Chat API
+
+```
+GET /api/chat/threads
+  Headers: { Authorization: "Bearer <token>" }
+  Response: { success: true, data: ChatThread[] }
+
+POST /api/chat/start
+  Body: { listing_id, buyer_id, seller_id }
+  Response: { success: true, data: { thread_id } }
+
+GET /api/chat/thread/:id/messages
+  Response: { success: true, data: Message[] }
+
+POST /api/chat/thread/:id/message
+  Body: { body: "текст сообщения" }
+  Response: { success: true, data: Message }
+```
+
+#### 🤖 AI Analysis API
+
+```
+POST /api/analyze-car
+  Body: { videoFrames: string[] (base64), metadata: {...} }
+  Response: { 
+    brand, model, year, mileage_km, 
+    price_estimate, damages, condition, ...
+  }
+```
+
+#### 📹 Video Slideshow API
+
+```
+POST /api/video/create-from-photos
+  Body: { photos: string[], musicType: string }
+  Response: { jobId: string }
+
+GET /api/video/video-status/:jobId
+  Response: { status: "processing"|"completed", videoUrl?, error? }
+```
+
+### Внешние интеграции
+
+#### 🎥 api.video (HLS Streaming)
+- **Создание видео:** `POST https://ws.api.video/videos`
+- **Загрузка:** `POST https://ws.api.video/videos/{videoId}/source`
+- **HLS URL:** `https://cdn.api.video/vod/{videoId}/hls/manifest.m3u8`
+- **Thumbnail:** `https://cdn.api.video/vod/{videoId}/thumbnail.jpg`
+
+**Сервис:** `services/apiVideo.ts`
+
+#### 🗄️ Supabase
+- **База данных:** PostgreSQL (RLS policies)
+- **Storage:** Видео и изображения (buckets: `videos`, `thumbnails`, `avatars`)
+- **Realtime:** WebSocket подписки на `chat_messages`
+- **Auth:** JWT токены (через backend)
+
+**Сервис:** `services/supabase.ts`
+
+#### 📱 SMS (nikita.kg API)
+- **URL:** `https://smspro.nikita.kg/api/message`
+- **Метод:** POST
+- **Auth:** Basic Auth (login/password)
+- **Sender:** `bat-bat.kg`
+
+**Сервис:** `backend/services/smsService.ts`
+
+#### 🤖 AI Services
+- **OpenAI GPT-4 Vision:** Распознавание марки/модели
+- **Google Vision OCR:** Распознавание пробега (одометр)
+- **Google Vision Detection:** Обнаружение повреждений
+- **Claude (Anthropic):** Альтернатива OpenAI
+
+**Сервисы:** 
+- `services/ai.ts` (мобильный)
+- `backend/services/aiService.ts` (backend)
+
+---
+
+## ⚙️ Алгоритмы работы
+
+### 1️⃣ Загрузка и публикация видео
+
+```
+1. Пользователь нажимает "Создать" → (upload)
+2. Выбор категории (авто/лошадь/недвижимость)
+3. Запись или выбор видео → camera.tsx
+4. Переход в camera/process.tsx:
+   
+   a) Извлечение кадров из видео (expo-video-thumbnails)
+      → 5 кадров: [0s, 5s, 10s, 20s, 30s]
+   
+   b) AI-анализ (параллельно):
+      - OpenAI: определение марки/модели/года
+      - Google OCR: распознавание пробега
+      - Google Vision: обнаружение повреждений
+      → Результат: Partial<Car> объект
+   
+   c) Загрузка видео на api.video:
+      - Создание записи видео → получение videoId + uploadToken
+      - Chunked upload файла
+      - Получение HLS URL и thumbnail
+   
+   d) Предпросмотр с AI-данными
+      → Пользователь редактирует/подтверждает
+   
+   e) Публикация:
+      - POST /api/listings
+      - Сохранение в Supabase (listings + car_details/horse_details/real_estate_details)
+      - Уведомление: "Объявление опубликовано"
+```
+
+### 2️⃣ Видео-лента (Feed)
+
+```
+1. Загрузка списка (app/(tabs)/index.tsx):
+   - Redux: activeCategory ('car' | 'horse' | 'real_estate')
+   - GET /api/listings/feed?category={category}
+   - Маппинг в FeedListing[]
+
+2. Оптимизированный рендеринг:
+   - FlatList с windowSize={3}
+   - OptimizedVideoPlayer для каждого видео
+   - Прелоадер: загрузка следующего видео в фоне
+
+3. Автовоспроизведение:
+   - Только активное видео (isActive=true)
+   - Остальные на паузе
+   - При скролле: pause старого, play нового
+
+4. Управление звуком:
+   - Redux: mutedVideoIds[]
+   - toggleMuteVideo(id) → добавляет/убирает из массива
+   - OptimizedVideoPlayer реагирует на isMuted
+
+5. Кэширование:
+   - Redux: videoCache { id: { url, cachedAt } }
+   - SQLite: offline cache для оффлайн просмотра
+```
+
+### 3️⃣ AI-анализ видео
+
 ```typescript
-interface AppState {
-  auth: AuthState;
-  feed: FeedState;
-  filters: SearchFilters;
-  offlineDrafts: CreateListingRequest[];
+Алгоритм analyzeCarVideo(videoUri):
+
+1. Извлечение кадров:
+   - extractFramesFromVideo(videoUri)
+   - Результат: string[] (base64 кадры)
+
+2. Параллельный анализ (Promise.all):
+
+   a) OpenAI GPT-4 Vision:
+      - Вход: первый кадр (data URL)
+      - Промпт: "Определи марку, модель, год, цвет"
+      - Ответ: { brand, model, year, color }
+
+   b) Google Vision OCR:
+      - Вход: кадр с одометром (кадр #3 или #0)
+      - API: documents.detect_text
+      - Поиск паттерна: /^\d+.*км/i
+      - Результат: mileage_km (число)
+
+   c) Google Vision Object Detection:
+      - Вход: первый кадр
+      - API: images.annotate (objectLocalization)
+      - Поиск: повреждения, царапины, вмятины
+      - Результат: damages[] array
+
+3. Формирование результата:
+   {
+     brand: string,
+     model: string,
+     year: number,
+     mileage_km: number,
+     damages: Damage[],
+     condition: "excellent" | "good" | "fair" | "poor",
+     conditionScore: number (0-100)
+   }
+
+4. Кэширование результата:
+   - Ключ: videoUri hash
+   - Значение: результат анализа
+   - TTL: 24 часа
+```
+
+### 4️⃣ Чат (Realtime)
+
+```
+1. Создание чата:
+   - Покупатель нажимает "Написать продавцу"
+   - Проверка авторизации
+   - POST /api/chat/start
+     { listing_id, buyer_id, seller_id }
+   - Получение thread_id
+
+2. Загрузка сообщений:
+   - GET /api/chat/thread/:thread_id/messages
+   - Отображение в FlatList
+
+3. Realtime подписка:
+   - Supabase channel: `chat:${thread_id}`
+   - Слушаем: INSERT на `chat_messages` where `thread_id=eq.${thread_id}`
+   - При новом сообщении: добавление в state + автоскролл
+
+4. Отправка сообщения:
+   - POST /api/chat/thread/:thread_id/message
+   - Body: { body: "текст" }
+   - Оптимистичное обновление UI
+   - Realtime уведомит других участников
+```
+
+### 5️⃣ Поиск и фильтры
+
+```
+1. Полнотекстовый поиск (FTS):
+   - Supabase: pg_trgm extension
+   - Индексы на: title, description, brand, model
+   - Запрос: .textSearch('fts_vector', query)
+
+2. Фильтры:
+   - Цена: .gte('price', minPrice).lte('price', maxPrice)
+   - Год: .gte('year', minYear).lte('year', maxYear)
+   - Регион: .eq('city', city)
+   - Состояние: .eq('condition', condition)
+
+3. Комбинированный запрос:
+   ```
+   supabase
+     .from('listings')
+     .select('*, seller:users(*), car_details(*)')
+     .textSearch('fts_vector', query)
+     .gte('price', minPrice)
+     .eq('category', 'car')
+     .order('created_at', { ascending: false })
+   ```
+```
+
+---
+
+## 🛒 Путь покупателя
+
+### Флоу покупателя (неавторизованного)
+
+```
+1. Splash Screen (2 сек)
+   ↓
+2. IntroCarousel (3 слайда)
+   ↓
+3. Главная лента (app/(tabs)/index.tsx)
+   - Категории: 🚗 Авто / 🐎 Лошади / 🏠 Недвижимость
+   - Вертикальная прокрутка видео
+   - Автовоспроизведение активного видео
+   
+4. Просмотр видео:
+   - Двойной тап → лайк (локально, без сохранения)
+   - Переключение звука → Redux state
+   - Просмотр без ограничений
+   
+5. Попытка действия:
+   - Комментарий → редирект на (auth)/intro
+   - Избранное → редирект на (auth)/intro
+   - Написать продавцу → редирект на (auth)/intro
+```
+
+### Флоу покупателя (авторизованного)
+
+```
+1. Авторизация:
+   (auth)/intro
+     → (auth)/phone (ввод номера + выбор страны)
+       → SMS код отправлен
+         → (auth)/verify (ввод 4-значного кода)
+           → JWT токен сохранен
+             → Возврат на главную
+
+2. Главная лента (полный функционал):
+   - ❤️ Лайк → POST /api/listings/:id/like (сохранение в БД)
+   - 💬 Комментарии → BottomSheet с комментариями
+   - ⭐ Избранное → POST /api/favorites/:id
+   - 📤 Поделиться → Share API
+   - ✉️ Написать продавцу → chat/[conversationId]
+   - 🔇 Без звука → Redux toggle
+
+3. Поиск (app/(tabs)/search.tsx):
+   - Поле поиска по тексту
+   - Фильтры: цена, год, регион, состояние
+   - Результаты в формате ленты
+
+4. Избранное (app/(tabs)/favorites.tsx):
+   - GET /api/favorites
+   - Список сохраненных объявлений
+
+5. Чат (chat/[conversationId].tsx):
+   - Список диалогов → (tabs)/messages.tsx
+   - Открытие чата → Supabase Realtime
+   - Отправка сообщений
+   - Уведомления о новых сообщениях
+```
+
+---
+
+## 🏪 Путь продавца
+
+### Флоу продавца
+
+```
+1. Авторизация (аналогично покупателю)
+
+2. Создание объявления:
+   (tabs)/upload.tsx
+     ↓
+   Выбор категории (авто/лошадь/недвижимость)
+     ↓
+   camera.tsx
+     - Запись видео (expo-camera)
+     - Или выбор из галереи (expo-image-picker)
+     ↓
+   camera/process.tsx
+     
+     a) Извлечение кадров (5 кадров)
+     b) AI-анализ:
+        - Определение характеристик
+        - Распознавание пробега (для авто)
+        - Обнаружение повреждений
+     c) Загрузка на api.video:
+        - Создание видео → videoId
+        - Upload файла → HLS URL
+     d) Предпросмотр:
+        - AI-данные (редактируемые)
+        - Цена, описание
+        - Локация
+     ↓
+   Публикация:
+     POST /api/listings
+     {
+       category: "car",
+       video_id: "vi...",
+       title: "Mercedes-Benz C200",
+       price: 1500000,
+       car_details: {
+         brand: "Mercedes-Benz",
+         model: "C200",
+         year: 2020,
+         mileage_km: 45000,
+         damages: [...]
+       },
+       seller_user_id: currentUser.id
+     }
+     ↓
+   Успех → Уведомление
+     ↓
+   Главная лента (объявление видно всем)
+
+3. Управление объявлениями:
+   (tabs)/profile.tsx
+     → "Мои объявления"
+       → profile/my-listings.tsx
+         - GET /api/listings?seller_id=...
+         - Редактирование (PUT)
+         - Удаление (DELETE)
+         - Статистика: просмотры, лайки
+
+4. Общение с покупателями:
+   (tabs)/messages.tsx
+     - Список активных чатов
+     - Уведомления о новых сообщениях
+     - Ответы покупателям
+```
+
+### AI-анализ для продавца
+
+**Для автомобилей:**
+```typescript
+{
+  brand: "Mercedes-Benz",      // OpenAI GPT-4
+  model: "C200",               // OpenAI GPT-4
+  year: 2020,                  // OpenAI GPT-4
+  mileage_km: 45000,           // Google OCR
+  damages: [                    // Google Vision
+    { type: "scratch", location: "front_bumper", severity: "minor" },
+    { type: "dent", location: "rear_door", severity: "moderate" }
+  ],
+  condition: "good",            // Вычисляется на основе damages
+  conditionScore: 75           // 0-100
 }
 ```
 
-### Key Components
-- **VideoFeed**: TikTok-style vertical scrolling
-- **ListingCard**: Individual listing display
-- **AuthGate**: Login prompt for restricted actions
-- **BusinessUpgrade**: Subscription management
-- **ChatInterface**: Real-time messaging
-
-## 🔧 Backend Architecture
-
-### API Structure
-```
-backend/src/
-├── index.ts                # Main server entry point
-├── api/v1/                 # API version 1
-│   ├── auth.ts            # Authentication endpoints
-│   ├── listings.ts        # Listing management
-│   ├── business.ts        # Business accounts
-│   ├── chat.ts           # Chat system
-│   ├── promote.ts        # Promotions
-│   └── moderation.ts     # Content moderation
-├── middleware/            # Express middleware
-│   ├── auth.ts           # JWT authentication
-│   ├── validate.ts       # Input validation
-│   ├── errorHandler.ts   # Error handling
-│   └── rateLimit.ts     # Rate limiting
-└── services/             # Business logic
-    └── supabaseClient.ts # Database client
+**Для лошадей:**
+```typescript
+{
+  breed: "Arabian",            // AI распознавание породы
+  age_years: 5,                // Оценка по внешнему виду
+  height_cm: 150,              // AI измерение
+  color: "bay",                // AI распознавание
+  healthStatus: "healthy"      // AI оценка здоровья
+}
 ```
 
-### Middleware Pipeline
-```
-Request → CORS → Helmet → Compression → Rate Limit → Auth → Validation → Route Handler → Error Handler → Response
-```
-
-### Authentication Flow
-```
-1. User enters phone number
-2. SMS code sent via external service
-3. User verifies code
-4. JWT token generated with user info
-5. Token used for subsequent requests
-6. Token refresh mechanism
+**Для недвижимости:**
+```typescript
+{
+  property_type: "apartment",  // AI классификация
+  area_m2: 65,                 // AI измерение
+  rooms: 2,                    // AI подсчет
+  floor: 5,                    // OCR (если видно)
+  condition: "good"            // AI оценка состояния
+}
 ```
 
-## 🗄️ Database Architecture
+---
 
-### Core Schema Design
+## 🛠️ Технический стек
+
+### Frontend (Mobile)
+- **Framework:** React Native 0.81 + Expo SDK 54
+- **Routing:** Expo Router (file-based)
+- **State Management:** Redux Toolkit
+- **UI:** React Native компоненты + Ionicons
+- **Video Player:** expo-video (useVideoPlayer hook)
+- **Camera:** expo-camera, expo-image-picker
+- **Storage:** AsyncStorage + SQLite (оффлайн кэш)
+- **HTTP Client:** Fetch API + axios
+- **Animations:** react-native-reanimated, Animated API
+- **Haptics:** expo-haptics
+
+### Backend
+- **Framework:** Express.js (Node.js)
+- **Database:** Supabase (PostgreSQL)
+- **Storage:** Supabase Storage (S3-compatible)
+- **Realtime:** Supabase Realtime (WebSocket)
+- **Auth:** JWT tokens
+- **SMS:** nikita.kg API
+- **Video:** api.video (HLS streaming)
+- **AI:** OpenAI GPT-4 Vision, Google Vision API, Claude
+
+### Инфраструктура
+- **Database:** Supabase PostgreSQL
+- **File Storage:** Supabase Storage buckets
+- **CDN:** api.video CDN (для видео)
+- **Backend Hosting:** (настраивается)
+
+---
+
+## 📊 База данных (Supabase)
+
+### Основные таблицы
+
 ```sql
--- Universal listings table
-CREATE TABLE listings (
+-- Пользователи
+users (
+  id UUID PRIMARY KEY,
+  phone VARCHAR UNIQUE,
+  name VARCHAR,
+  avatar_url TEXT,
+  created_at TIMESTAMP
+)
+
+-- Объявления
+listings (
   id UUID PRIMARY KEY,
   seller_user_id UUID REFERENCES users(id),
-  business_id UUID REFERENCES business_accounts(id),
-  category VARCHAR(20) CHECK (category IN ('car', 'horse', 'real_estate')),
-  title VARCHAR(255) NOT NULL,
-  description TEXT NOT NULL,
-  price DECIMAL(12,2) NOT NULL,
-  currency VARCHAR(5) DEFAULT 'KZT',
-  status VARCHAR(20) DEFAULT 'pending_review',
-  is_boosted BOOLEAN DEFAULT FALSE,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+  category VARCHAR, -- 'car', 'horse', 'real_estate'
+  video_id VARCHAR, -- api.video ID
+  video_url TEXT,
+  thumbnail_url TEXT,
+  title VARCHAR,
+  price DECIMAL,
+  city VARCHAR,
+  status VARCHAR, -- 'draft', 'published', 'sold'
+  created_at TIMESTAMP
+)
 
--- Category-specific details
-CREATE TABLE car_details (
-  listing_id UUID REFERENCES listings(id) PRIMARY KEY,
-  make VARCHAR(100) NOT NULL,
-  model VARCHAR(100) NOT NULL,
-  year INTEGER NOT NULL,
-  mileage_km INTEGER NOT NULL,
-  vin VARCHAR(17),
-  damage_report TEXT
-);
+-- Детали автомобиля
+car_details (
+  id UUID PRIMARY KEY,
+  listing_id UUID REFERENCES listings(id),
+  brand VARCHAR,
+  model VARCHAR,
+  year INTEGER,
+  mileage_km INTEGER,
+  damages JSONB,
+  condition VARCHAR,
+  condition_score INTEGER
+)
+
+-- Детали лошади
+horse_details (
+  id UUID PRIMARY KEY,
+  listing_id UUID REFERENCES listings(id),
+  breed VARCHAR,
+  age_years INTEGER,
+  height_cm INTEGER,
+  color VARCHAR
+)
+
+-- Детали недвижимости
+real_estate_details (
+  id UUID PRIMARY KEY,
+  listing_id UUID REFERENCES listings(id),
+  property_type VARCHAR,
+  area_m2 DECIMAL,
+  rooms INTEGER,
+  floor INTEGER
+)
+
+-- Чат-треды
+chat_threads (
+  id UUID PRIMARY KEY,
+  listing_id UUID REFERENCES listings(id),
+  buyer_id UUID REFERENCES users(id),
+  seller_id UUID REFERENCES users(id),
+  last_message_at TIMESTAMP,
+  created_at TIMESTAMP
+)
+
+-- Сообщения
+chat_messages (
+  id UUID PRIMARY KEY,
+  thread_id UUID REFERENCES chat_threads(id),
+  sender_id UUID REFERENCES users(id),
+  body TEXT,
+  created_at TIMESTAMP
+)
+
+-- Избранное
+favorites (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  listing_id UUID REFERENCES listings(id),
+  created_at TIMESTAMP,
+  UNIQUE(user_id, listing_id)
+)
+
+-- Лайки
+likes (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  listing_id UUID REFERENCES listings(id),
+  created_at TIMESTAMP,
+  UNIQUE(user_id, listing_id)
+)
+
+-- Коды верификации
+verification_codes (
+  id UUID PRIMARY KEY,
+  phone VARCHAR,
+  code VARCHAR,
+  expires_at TIMESTAMP,
+  is_used BOOLEAN
+)
 ```
 
-### Row Level Security (RLS)
-```sql
--- Public can view active listings
-CREATE POLICY "Anyone can view active listings" ON listings
-  FOR SELECT USING (status = 'active');
+### RLS (Row Level Security) Policies
 
--- Users can manage their own listings
-CREATE POLICY "Users can manage own listings" ON listings
-  FOR ALL USING (auth.uid() = seller_user_id);
+- **listings:** Все могут читать, только владелец может изменять
+- **chat_threads:** Участники могут читать
+- **chat_messages:** Участники треда могут читать/писать
+- **favorites:** Пользователь видит только свои
+- **users:** Публичные поля доступны всем, приватные только владельцу
 
--- Business members can manage business listings
-CREATE POLICY "Business members can manage business listings" ON listings
-  FOR ALL USING (
-    business_id IS NOT NULL AND
-    EXISTS (
-      SELECT 1 FROM business_members
-      WHERE business_id = listings.business_id
-      AND user_id = auth.uid()
-      AND role IN ('admin', 'seller')
-    )
-  );
-```
+---
 
-## 🔄 Data Flow Architecture
+## 🔄 Redux Store Structure
 
-### Listing Creation Flow
-```
-1. User uploads video → API.video
-2. User fills form → Validation → Backend
-3. Backend creates listing → Database (status: pending_review)
-4. Listing added to moderation queue
-5. AI pre-check → Moderation event
-6. Human moderator review → Approve/Reject
-7. If approved → status: active → Visible in feed
-```
-
-### Chat System Flow
-```
-1. User taps "Message seller" → Check auth
-2. Create/get chat thread → Database
-3. Real-time subscription → Supabase Realtime
-4. Send message → Database → Realtime broadcast
-5. Push notification → Expo Push API
-6. Mark as read → Database update
-```
-
-### Promotion System Flow
-```
-1. User starts promotion → Create promotion record
-2. Payment processing → External payment service
-3. Mark as paid → Update promotion status
-4. Update listing → is_boosted = true
-5. Feed sorting → Boosted listings first
-6. Expiration handling → Cron job cleanup
-```
-
-## 🔒 Security Architecture
-
-### Multi-Layer Security
-```
-┌─────────────────────────────────────────┐
-│              Client Side                │
-│  • Input validation                     │
-│  • Secure storage                       │
-│  • Token management                     │
-└─────────────────────────────────────────┘
-                    │
-┌─────────────────────────────────────────┐
-│            Network Layer                │
-│  • HTTPS/TLS                           │
-│  • CORS policies                       │
-│  • Rate limiting                       │
-└─────────────────────────────────────────┘
-                    │
-┌─────────────────────────────────────────┐
-│            Application Layer            │
-│  • JWT authentication                  │
-│  • Input sanitization                   │
-│  • Role-based access control            │
-└─────────────────────────────────────────┘
-                    │
-┌─────────────────────────────────────────┐
-│             Database Layer              │
-│  • Row Level Security (RLS)            │
-│  • SQL injection prevention            │
-│  • Audit logging                        │
-└─────────────────────────────────────────┘
-```
-
-### Authentication Architecture
 ```typescript
-// JWT Token Structure
-interface JWTPayload {
-  userId: string;
-  role: 'user' | 'moderator' | 'admin';
-  phone: string;
-  iat: number;
-  exp: number;
-}
-
-// Middleware Chain
-authenticateToken → requireRole → validateInput → routeHandler
-```
-
-## 📊 Monitoring Architecture
-
-### Observability Stack
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Application   │    │   Prometheus    │    │    Grafana      │
-│   (Metrics)     │───►│   (Collector)   │───►│  (Dashboard)    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Application   │    │      Loki       │    │    Grafana      │
-│   (Logs)        │───►│  (Aggregator)   │───►│   (Logs UI)     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
-
-### Key Metrics
-- **API Performance**: Response times, error rates
-- **Database Performance**: Query times, connection pool
-- **Business Metrics**: Listings created, promotions active
-- **User Metrics**: Active users, chat messages sent
-
-## 🌍 Kyrgyzstan Market Architecture
-
-### Localization Layer
-```typescript
-// Phone number validation
-const phoneRegex = /^\+996[0-9]{9}$/;
-
-// Currency handling
-const DEFAULT_CURRENCY = 'KZT';
-
-// Legal compliance
-interface UserConsent {
-  offer_agreement: boolean;
-  personal_data_processing: boolean;
-  marketing_communications?: boolean;
+{
+  feed: {
+    currentIndex: number,           // Индекс текущего видео
+    activeCategory: 'car' | 'horse' | 'real_estate',
+    preloadedIndexes: number[]      // Индексы прелоаженных видео
+  },
+  
+  video: {
+    activeVideoId: string | null,
+    playingVideoIds: string[],      // Видео в воспроизведении
+    mutedVideoIds: string[],        // Видео без звука
+    videoCache: {                   // Кэш URL видео
+      [id: string]: { url: string, cachedAt: number }
+    }
+  },
+  
+  user: {
+    currentUser: User | null,
+    token: string | null
+  },
+  
+  favorites: {
+    items: string[]                 // ID избранных объявлений
+  }
 }
 ```
 
-### Business Model Architecture
-```
-┌─────────────────────────────────────────┐
-│            User Tiers                   │
-├─────────────────────────────────────────┤
-│  Free User: 5 listings max             │
-│  Business Account: Unlimited listings   │
-│  Team Management: Admin/Seller roles    │
-└─────────────────────────────────────────┘
-                    │
-┌─────────────────────────────────────────┐
-│         Revenue Streams                │
-├─────────────────────────────────────────┤
-│  • Business account subscriptions       │
-│  • Promotion/boost payments            │
-│  • Premium features                     │
-└─────────────────────────────────────────┘
-```
+---
 
-## 🚀 Scalability Architecture
+## 🎯 Ключевые алгоритмы производительности
 
-### Horizontal Scaling Strategy
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Load Balancer │    │   Backend API   │    │   Database      │
-│   (Nginx)       │───►│   (Multiple)    │───►│   (Supabase)    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   CDN           │    │   Redis Cache   │    │   File Storage  │
-│   (Static)      │    │   (Sessions)    │    │   (Videos)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+### 1. Прелоадинг видео
+- Загружаем следующее видео в фоне, когда пользователь смотрит текущее
+- Используем `isPreloaded` флаг для оптимизации
 
-### Performance Optimizations
-- **Database**: Indexes on frequently queried fields
-- **Caching**: Redis for session data and frequently accessed data
-- **CDN**: Static assets and video content
-- **Image Optimization**: Automatic resizing and compression
-- **Lazy Loading**: Progressive image and video loading
+### 2. Виртуализация списка
+- `FlatList` с `windowSize={3}` (показываем только 3 экрана)
+- `removeClippedSubviews={true}` для освобождения памяти
 
-## 🔧 Development Architecture
+### 3. Кэширование
+- Redux кэш для часто используемых данных
+- SQLite кэш для оффлайн режима
+- AsyncStorage для токенов и настроек
 
-### Code Organization
-```
-types/                    # Shared TypeScript interfaces
-├── index.ts             # All type definitions
-├── auth.ts              # Authentication types
-├── business.ts          # Business account types
-└── listings.ts          # Listing types
+### 4. Оптимизация изображений
+- Компрессия перед загрузкой
+- Ленивая загрузка превью
+- Placeholder'ы во время загрузки
 
-backend/src/             # Backend source code
-├── api/v1/              # API routes
-├── middleware/          # Express middleware
-├── services/            # Business logic
-└── types/               # Backend-specific types
+---
 
-app/src/                 # Mobile app source code
-├── screens/             # App screens
-├── components/          # Reusable components
-├── state/               # State management
-├── api/                 # API client
-└── utils/               # Utility functions
-```
+## 📝 Заключение
 
-### Build Process
-```
-TypeScript Compilation → ESLint → Prettier → Testing → Docker Build → Deployment
-```
+Приложение использует современный стек технологий и оптимизировано для производительности. Основные принципы:
 
-This architecture ensures scalability, security, and maintainability while being optimized for the Kyrgyzstan market requirements.
+- ✅ Модульная архитектура
+- ✅ Разделение ответственности (mobile/backend)
+- ✅ Оптимизация для мобильных устройств
+- ✅ Оффлайн поддержка
+- ✅ Реал-тайм коммуникация
+- ✅ AI-автоматизация
+
+**Версия:** 1.0.0  
+**Обновлено:** 28 января 2025

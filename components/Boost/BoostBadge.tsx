@@ -3,13 +3,34 @@
 import type { BoostType } from '@/types/boost';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 
 interface BoostBadgeProps {
   type: BoostType;
 }
 
-const BOOST_CONFIG = {
+const BOOST_CONFIG: Record<string, { emoji: string; label: string; colors: string[] }> = {
+  '3h': {
+    emoji: '⚡',
+    label: '3 часа',
+    colors: ['#FFA500', '#FF8C00'],
+  },
+  '24h': {
+    emoji: '🔥',
+    label: '24 часа',
+    colors: ['#FF3B30', '#FF0000'],
+  },
+  '7d': {
+    emoji: '💎',
+    label: '7 дней',
+    colors: ['#FFD700', '#FFA500'],
+  },
+  '30d': {
+    emoji: '👑',
+    label: '30 дней',
+    colors: ['#9370DB', '#8A2BE2'],
+  },
+  // Legacy support
   basic: {
     emoji: '⭐',
     label: 'Выделено',
@@ -28,7 +49,7 @@ const BOOST_CONFIG = {
 };
 
 export default function BoostBadge({ type }: BoostBadgeProps) {
-  const config = BOOST_CONFIG[type];
+  const config = BOOST_CONFIG[type] || BOOST_CONFIG['3h'];
 
   if (!config) return null;
 
@@ -55,11 +76,18 @@ const styles = StyleSheet.create({
     zIndex: 10,
     borderRadius: 12,
     overflow: 'hidden',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 2px 3.84px rgba(0, 0, 0, 0.25)',
+      },
+      default: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 3.84,
+        elevation: 5,
+      },
+    }),
   },
   gradient: {
     flexDirection: 'row',
@@ -75,8 +103,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: '#FFFFFF',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+    ...Platform.select({
+      web: {
+        textShadow: '0 1px 2px rgba(0, 0, 0, 0.3)',
+      },
+      default: {
+        textShadowColor: 'rgba(0, 0, 0, 0.3)',
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 2,
+      },
+    }),
   },
 });

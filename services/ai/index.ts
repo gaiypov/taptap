@@ -152,6 +152,51 @@ export async function validateVideoQuality(videoUri: string): Promise<{
 // AI ПРОВАЙДЕРЫ
 // ==============================================
 
+function buildPartialCarAnalysis(input: {
+  brand: string;
+  model: string;
+  year: number;
+  mileage: number;
+  location?: string;
+  videoUrl?: string;
+  thumbnailUrl?: string;
+  color?: string;
+  transmission?: string;
+  aiAnalysis: NonNullable<Car['aiAnalysis']>;
+}): Partial<Car> {
+  const details = {
+    brand: input.brand,
+    model: input.model,
+    year: input.year,
+    mileage: input.mileage,
+    color: input.color,
+    transmission: input.transmission,
+    damages: input.aiAnalysis.damages,
+    features: input.aiAnalysis.features,
+  };
+
+  return {
+    category: 'car',
+    details,
+    brand: input.brand,
+    model: input.model,
+    year: input.year,
+    mileage: input.mileage,
+    color: input.color,
+    transmission: input.transmission,
+    city: input.location,
+    video_url: input.videoUrl ?? 'mock-video-url',
+    thumbnail_url: input.thumbnailUrl,
+    views: 0,
+    likes: 0,
+    saves: 0,
+    created_at: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    is_verified: false,
+    aiAnalysis: input.aiAnalysis,
+  };
+}
+
 // Claude анализ
 async function analyzeWithClaude(frames: string[], onProgress?: (step: string, progress: number) => void): Promise<Partial<Car>> {
   onProgress?.('Claude analysis...', 50);
@@ -160,19 +205,13 @@ async function analyzeWithClaude(frames: string[], onProgress?: (step: string, p
   // Для демо возвращаем мок данные
   await new Promise(resolve => setTimeout(resolve, 2000));
   
-  return {
+  return buildPartialCarAnalysis({
     brand: 'Toyota',
     model: 'Camry',
     year: 2020,
     mileage: 45000,
     location: 'Бишкек',
-    videoUrl: 'mock-video-url',
     thumbnailUrl: frames[0],
-    views: 0,
-    likes: 0,
-    saves: 0,
-    createdAt: new Date().toISOString(),
-    isVerified: false,
     aiAnalysis: {
       condition: 'good',
       conditionScore: 82,
@@ -194,7 +233,7 @@ async function analyzeWithClaude(frames: string[], onProgress?: (step: string, p
         'Подогрев сидений',
       ],
     },
-  };
+  });
 }
 
 // OpenAI анализ
@@ -204,19 +243,13 @@ async function analyzeWithOpenAI(frames: string[], onProgress?: (step: string, p
   // Здесь будет реальный вызов OpenAI API
   await new Promise(resolve => setTimeout(resolve, 1500));
   
-  return {
+  return buildPartialCarAnalysis({
     brand: 'BMW',
     model: 'X5',
     year: 2019,
     mileage: 38000,
     location: 'Бишкек',
-    videoUrl: 'mock-video-url',
     thumbnailUrl: frames[0],
-    views: 0,
-    likes: 0,
-    saves: 0,
-    createdAt: new Date().toISOString(),
-    isVerified: false,
     aiAnalysis: {
       condition: 'excellent',
       conditionScore: 91,
@@ -232,7 +265,7 @@ async function analyzeWithOpenAI(frames: string[], onProgress?: (step: string, p
         'Автоматическая коробка',
       ],
     },
-  };
+  });
 }
 
 // Google Vision анализ
@@ -242,19 +275,13 @@ async function analyzeWithGoogle(frames: string[], onProgress?: (step: string, p
   // Здесь будет реальный вызов Google Vision API
   await new Promise(resolve => setTimeout(resolve, 1000));
   
-  return {
+  return buildPartialCarAnalysis({
     brand: 'Mercedes',
     model: 'E-Class',
     year: 2021,
     mileage: 25000,
     location: 'Бишкек',
-    videoUrl: 'mock-video-url',
     thumbnailUrl: frames[0],
-    views: 0,
-    likes: 0,
-    saves: 0,
-    createdAt: new Date().toISOString(),
-    isVerified: false,
     aiAnalysis: {
       condition: 'excellent',
       conditionScore: 95,
@@ -270,7 +297,7 @@ async function analyzeWithGoogle(frames: string[], onProgress?: (step: string, p
         'Burmester звук',
       ],
     },
-  };
+  });
 }
 
 // Mock анализ
@@ -282,19 +309,13 @@ async function analyzeWithMock(frames: string[], onProgress?: (step: string, pro
   const brands = ['Toyota', 'BMW', 'Mercedes', 'Audi', 'Lexus'];
   const models = ['Camry', 'X5', 'E-Class', 'A6', 'ES'];
   
-  return {
+  return buildPartialCarAnalysis({
     brand: brands[Math.floor(Math.random() * brands.length)],
     model: models[Math.floor(Math.random() * models.length)],
     year: 2018 + Math.floor(Math.random() * 6),
     mileage: Math.floor(Math.random() * 80000) + 20000,
     location: 'Бишкек',
-    videoUrl: 'mock-video-url',
     thumbnailUrl: frames[0],
-    views: 0,
-    likes: 0,
-    saves: 0,
-    createdAt: new Date().toISOString(),
-    isVerified: false,
     aiAnalysis: {
       condition: 'good',
       conditionScore: 75 + Math.floor(Math.random() * 20),
@@ -309,7 +330,7 @@ async function analyzeWithMock(frames: string[], onProgress?: (step: string, pro
         'Электростеклоподъемники',
       ],
     },
-  };
+  });
 }
 
 // Быстрая идентификация с Claude
@@ -386,4 +407,3 @@ async function imageUriToBase64(uri: string): Promise<string> {
 // Экспорт конфигурации
 export { AI_CONFIG } from './config';
 export { aiUtils } from './utils';
-

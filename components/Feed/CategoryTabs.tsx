@@ -22,7 +22,7 @@ export default function CategoryTabs({ selectedCategory, onCategoryChange }: Cat
           styles.tabText,
           selectedCategory === 'car' && styles.tabTextActive,
         ]}>
-          🚗 Автомобили
+          🚗 Авто
         </Text>
       </TouchableOpacity>
 
@@ -37,7 +37,22 @@ export default function CategoryTabs({ selectedCategory, onCategoryChange }: Cat
           styles.tabText,
           selectedCategory === 'horse' && styles.tabTextActive,
         ]}>
-          🐴 Лошади
+          🐎 Лошади
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={[
+          styles.tab,
+          selectedCategory === 'real_estate' && styles.tabActive,
+        ]}
+        onPress={() => onCategoryChange('real_estate')}
+      >
+        <Text style={[
+          styles.tabText,
+          selectedCategory === 'real_estate' && styles.tabTextActive,
+        ]}>
+          🏠 Недвижимость
         </Text>
       </TouchableOpacity>
     </View>

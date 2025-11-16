@@ -103,7 +103,7 @@ export default function UpgradeModal({
               style={styles.upgradeButton}
               onPress={() => {
                 onClose();
-                router.push('/business/upgrade' as any);
+                router.push('/(business)/upgrade');
               }}
               activeOpacity={0.8}
             >

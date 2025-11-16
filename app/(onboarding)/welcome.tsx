@@ -4,7 +4,6 @@ import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
-    Dimensions,
     Platform,
     Pressable,
     StyleSheet,
@@ -12,7 +11,7 @@ import {
     View,
 } from 'react-native';
 
-const { width } = Dimensions.get('window');
+import { SCREEN_WIDTH } from '@/utils/constants';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -184,7 +183,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: '#8E8E93',
     textAlign: 'center',
-    maxWidth: width - 80,
+    maxWidth: SCREEN_WIDTH - 80,
   },
   bottom: {
     padding: 24,

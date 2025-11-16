@@ -1,27 +1,51 @@
-// Простой SMS сервис для тестирования
-// Этот файл можно использовать для отправки реальных SMS
+/**
+ * SMS Service для отправки реальных SMS через smspro.nikita.kg API
+ * Поддерживает режим mock для тестирования
+ */
 
-interface SMSConfig {
+export interface SMSConfig {
   login: string;
   password: string;
   sender: string;
   apiUrl: string;
 }
 
-interface SMSResponse {
+export interface SMSResponse {
   success: boolean;
   messageId?: string;
   error?: string;
+  info?: string;
 }
 
-class SMSService {
+export class SMSService {
   private config: SMSConfig;
+  private isMockMode: boolean;
 
   constructor(config: SMSConfig) {
     this.config = config;
+    // Проверяем, есть ли реальные credentials для определения режима
+    this.isMockMode = !config.login || !config.password || 
+                      config.login === 'test' || config.password === 'test' ||
+                      process.env.EXPO_PUBLIC_SMS_TEST_MODE === 'true';
   }
 
+  /**
+   * Отправка SMS
+   * В mock режиме только логирует сообщение
+   * В реальном режиме отправляет через API
+   */
   async sendSMS(phone: string, message: string): Promise<SMSResponse> {
+    // Mock режим для тестирования
+    if (this.isMockMode) {
+      console.log(`🧪 Mock SMS sent to ${phone}: ${message}`);
+      return {
+        success: true,
+        info: 'Mock SMSService used (dev/test mode)',
+        messageId: `mock-${Date.now()}`,
+      };
+    }
+
+    // Реальный режим - отправка через API
     try {
       // Для smspro.nikita.kg API
       const requestBody = {
@@ -112,32 +136,19 @@ class SMSService {
     testCode?: string;
     error?: string;
   }> {
-    // Генерируем случайный код
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    // Этот метод теперь не используется напрямую
+    // Frontend должен использовать /api/auth/request-code для отправки кода
+    // Код отправки перенесен на backend
     
-    const message = `Ваш код подтверждения: ${code}. Не сообщайте его никому.`;
-    
-    const result = await this.sendSMS(phone, message);
-    
-    if (result.success) {
-      return {
-        success: true,
-        testCode: code // В реальном приложении не возвращаем код
-      };
-    }
-    
-    // Если SMS API не работает, используем mock режим
-    console.log('🚧 SMS API failed, using mock mode');
+    // Возвращаем ошибку, чтобы использовать только backend API
     return {
-      success: true,
-      testCode: code // Возвращаем код для тестирования
+      success: false,
+      error: 'Use backend API endpoint /api/auth/request-code instead'
     };
   }
 }
 
-// Экспорт для использования
-export { SMSService };
-export type { SMSConfig, SMSResponse };
+// Экспорты уже объявлены выше через export class и export interface
 
 // Пример использования:
 /*

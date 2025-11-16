@@ -3,7 +3,7 @@
 import apiVideoService, { type UploadProgress } from '@/services/apiVideo';
 import { db } from '@/services/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
@@ -20,6 +20,24 @@ interface VideoUploaderProps {
   onUploadComplete?: (videoId: string, videoUrl: string) => void;
   onUploadError?: (error: Error) => void;
   carId?: string; // Если загружается для конкретного авто
+}
+
+// Component for video preview
+function VideoPreviewComponent({ videoUri }: { videoUri: string }) {
+  const player = useVideoPlayer(videoUri);
+  
+  return (
+    <View style={styles.previewContainer}>
+      <Text style={styles.previewTitle}>Предпросмотр</Text>
+      <VideoView
+        player={player}
+        style={styles.videoPreview}
+        nativeControls
+        contentFit="contain"
+        allowsFullscreen
+      />
+    </View>
+  );
 }
 
 export default function VideoUploader({
@@ -200,16 +218,9 @@ export default function VideoUploader({
 
       {/* Предпросмотр выбранного видео */}
       {videoUri && !videoId && (
-        <View style={styles.previewContainer}>
-          <Text style={styles.previewTitle}>Предпросмотр</Text>
+        <>
+          <VideoPreviewComponent videoUri={videoUri} />
           
-          <Video
-            source={{ uri: videoUri }}
-            style={styles.videoPreview}
-            useNativeControls
-            resizeMode={ResizeMode.CONTAIN}
-          />
-
           {/* Прогресс загрузки */}
           {isUploading && (
             <View style={styles.progressContainer}>
@@ -251,7 +262,7 @@ export default function VideoUploader({
               </TouchableOpacity>
             </View>
           )}
-        </View>
+        </>
       )}
 
       {/* Успешная загрузка */}

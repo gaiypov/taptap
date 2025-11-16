@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View } from 'react-native';
+import { Animated, Platform, StyleSheet, View } from 'react-native';
 
 // Elevated Create Button Component
 function ElevatedCreateButton({ focused }: { focused: boolean }) {
@@ -22,7 +22,7 @@ function ElevatedCreateButton({ focused }: { focused: boolean }) {
         useNativeDriver: true,
       }).start();
     }
-  }, [focused]);
+  }, [focused, scaleAnim]);
 
   return (
     <View style={styles.createButtonContainer}>
@@ -54,10 +54,17 @@ export default function TabLayout() {
           borderTopWidth: 1,
           borderTopColor: '#1C1C1E',
           backgroundColor: '#000',
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: -2 },
-          shadowOpacity: 0.1,
-          shadowRadius: 3,
+          ...Platform.select({
+            web: {
+              boxShadow: '0px -2px 3px rgba(0, 0, 0, 0.1)',
+            },
+            default: {
+              shadowColor: '#000',
+              shadowOffset: { width: 0, height: -2 },
+              shadowOpacity: 0.1,
+              shadowRadius: 3,
+            },
+          }),
         },
         tabBarLabelStyle: {
           fontSize: 10,
@@ -70,7 +77,7 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Главная',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
           ),
         }}
@@ -81,7 +88,7 @@ export default function TabLayout() {
         name="search"
         options={{
           title: 'Поиск',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <Ionicons name={focused ? 'search' : 'search-outline'} size={24} color={color} />
           ),
         }}
@@ -92,19 +99,30 @@ export default function TabLayout() {
         name="upload"
         options={{
           title: 'Создать',
-          tabBarIcon: ({ focused }) => (
+          tabBarIcon: ({ focused }: { focused: boolean }) => (
             <ElevatedCreateButton focused={focused} />
           ),
           tabBarLabel: () => null,
         }}
       />
       
-      {/* 4. Profile */}
+      {/* 4. Favorites */}
+      <Tabs.Screen
+        name="favorites"
+        options={{
+          title: 'Избранное',
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
+            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={24} color={color} />
+          ),
+        }}
+      />
+      
+      {/* 5. Profile */}
       <Tabs.Screen
         name="profile"
         options={{
           title: 'Профиль',
-          tabBarIcon: ({ color, focused }) => (
+          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
             <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
           ),
         }}
@@ -125,11 +143,18 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#667eea',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 8,
-    elevation: 8,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 4px 8px rgba(102, 126, 234, 0.4)',
+      },
+      default: {
+        shadowColor: '#667eea',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.4,
+        shadowRadius: 8,
+        elevation: 8,
+      },
+    }),
     borderWidth: 4,
     borderColor: '#000',
   },

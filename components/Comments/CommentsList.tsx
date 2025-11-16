@@ -50,6 +50,7 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
   useEffect(() => {
     loadUser();
     loadComments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [carId]);
 
   useEffect(() => {

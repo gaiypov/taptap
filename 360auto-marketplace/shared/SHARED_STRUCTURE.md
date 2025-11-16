@@ -36,6 +36,7 @@ shared/
 ## What Was Created
 
 ### Types (`src/types/`)
+
 - ✅ `user.types.ts` - User, Auth, BusinessAccount, UserConsent
 - ✅ `listing.types.ts` - Listing, CarDetails, HorseDetails, FeedItem
 - ✅ `chat.types.ts` - ChatThread, ChatMessage
@@ -43,12 +44,14 @@ shared/
 - ✅ `index.ts` - Exports all types
 
 ### Constants (`src/constants/`)
+
 - ✅ `categories.ts` - Listing categories, property types, labels
 - ✅ `statuses.ts` - Listing, video, payment statuses
 - ✅ `errors.ts` - Error codes and messages
 - ✅ `index.ts` - Exports all constants
 
 ### Utils (`src/utils/`)
+
 - ✅ `validation.ts` - Phone, email, TIN, price, coordinates validation
 - ✅ `formatting.ts` - Currency, date, phone, file size formatting
 - ✅ `index.ts` - Exports all utils
@@ -85,4 +88,3 @@ import { formatCurrency } from '@360auto/shared/utils/formatting';
 
 **Created:** January 20, 2025  
 **Status:** ✅ Ready for Use
-

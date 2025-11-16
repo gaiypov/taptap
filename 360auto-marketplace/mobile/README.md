@@ -15,11 +15,13 @@ React Native mobile application for the 360⁰ Marketplace platform.
 ## Setup
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Start Expo development server:
+
 ```bash
 npm start
 ```
@@ -58,4 +60,3 @@ mobile/
 ## License
 
 MIT
-

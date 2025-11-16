@@ -9,7 +9,6 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    Dimensions,
     Modal,
     StyleSheet,
     Text,
@@ -17,7 +16,7 @@ import {
     View
 } from 'react-native';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { SCREEN_WIDTH } from '@/utils/constants';
 
 interface Category {
   id: 'car' | 'horse' | 'realty';
@@ -92,7 +91,10 @@ export default function CategorySelectionModal({ visible, onClose }: CategorySel
       const currentUser = await auth.getCurrentUser();
       if (!currentUser) {
         // Если не авторизован, всё равно разрешаем создать (будет prompt авторизации)
-        router.push(`/listing/new?category=${category.id}` as any);
+        router.push({
+          pathname: '/listing/new',
+          params: { category: category.id },
+        });
         onClose();
         return;
       }
@@ -108,12 +110,18 @@ export default function CategorySelectionModal({ visible, onClose }: CategorySel
       }
 
       // Всё ОК - создаём объявление
-      router.push(`/listing/new?category=${category.id}` as any);
+      router.push({
+        pathname: '/listing/new',
+        params: { category: category.id },
+      });
       onClose();
     } catch (error) {
       console.error('Error checking limits:', error);
       // При ошибке всё равно разрешаем создать
-      router.push(`/listing/new?category=${category.id}` as any);
+      router.push({
+        pathname: '/listing/new',
+        params: { category: category.id },
+      });
       onClose();
     }
   };

@@ -3,8 +3,9 @@
 ## 🎯 Product Overview
 
 360⁰ is a vertical video marketplace designed specifically for the Kyrgyzstan market, featuring three main categories:
+
 - **Cars** (авто)
-- **Horses** (лошади) 
+- **Horses** (лошади)
 - **Real Estate** (недвижимость)
 
 ## 📱 User Journey Flow
@@ -12,11 +13,13 @@
 ### 1. App Installation & Onboarding
 
 #### Splash Screen
+
 - App logo and branding
 - Loading animation
 - Automatic permission requests
 
 #### Permission Requests (Critical)
+
 ```
 1. Camera Permission
    - Required for video recording
@@ -35,6 +38,7 @@
 ```
 
 #### First Launch Experience
+
 ```
 Splash Screen → Permissions → Home Feed (Guest Mode)
 ```
@@ -42,12 +46,14 @@ Splash Screen → Permissions → Home Feed (Guest Mode)
 ### 2. Home Feed Experience
 
 #### TikTok-Style Vertical Feed
+
 - **Default Category**: Cars
 - **Navigation**: Swipe up/down to browse
 - **Category Tabs**: Cars | Horses | Real Estate
 - **Fullscreen Videos**: Immersive viewing experience
 
 #### Feed Item Components
+
 ```
 ┌─────────────────────────────────┐
 │                                 │
@@ -64,6 +70,7 @@ Splash Screen → Permissions → Home Feed (Guest Mode)
 ```
 
 #### Guest User Capabilities
+
 - ✅ Scroll feed and watch videos
 - ✅ Mute/unmute videos
 - ✅ View "More details" (full listing info)
@@ -77,6 +84,7 @@ Splash Screen → Permissions → Home Feed (Guest Mode)
 ### 3. Authentication Flow
 
 #### SMS-Based Authentication
+
 ```
 Enter Phone → Send SMS Code → Verify Code → Name & Age → Legal Consent → JWT Token
 ```
@@ -84,34 +92,41 @@ Enter Phone → Send SMS Code → Verify Code → Name & Age → Legal Consent �
 #### Step-by-Step Process
 
 **Step 1: Phone Number Entry**
+
 - Format: +996XXXXXXXXX (Kyrgyzstan format)
 - Validation: Real-time format checking
 - Rate limiting: 5 attempts per 15 minutes
 
 **Step 2: SMS Code Verification**
+
 - 6-digit code sent via SMS
 - 5-minute expiration
 - 3 attempt limit
 - Auto-verification on successful entry
 
 **Step 3: User Registration**
+
 - Name: 2-100 characters
 - Age: 18+ years (legal requirement)
 - Avatar: Optional profile picture
 
 **Step 4: Legal Consent**
+
 - Offer Agreement: Must accept
 - Personal Data Processing: Must accept
 - Marketing Communications: Optional
 - IP address and timestamp logging
 
 **Step 5: JWT Token Generation**
+
 - 7-day expiration
 - Contains: userId, role, phone
 - Secure storage in device
 
 #### Auth Gate Triggers
+
 When guest users attempt restricted actions:
+
 ```
 Action Attempted → Auth Gate Modal → Login Flow → Return to Action
 ```
@@ -119,6 +134,7 @@ Action Attempted → Auth Gate Modal → Login Flow → Return to Action
 ### 4. Authenticated User Features
 
 #### Enhanced Capabilities
+
 - ✅ All guest features
 - ✅ Comment on listings
 - ✅ Chat with sellers
@@ -127,6 +143,7 @@ Action Attempted → Auth Gate Modal → Login Flow → Return to Action
 - ✅ Upgrade to Business Account
 
 #### Listing Creation Flow
+
 ```
 1. Tap "Create Listing" → Check auth
 2. Record/Upload Video → API.video processing
@@ -141,11 +158,13 @@ Action Attempted → Auth Gate Modal → Login Flow → Return to Action
 ### 5. Business Account System
 
 #### Upgrade Triggers
+
 - User exceeds 5 free listings
 - User claims to be dealer/salon/stable/agency
 - User wants team management features
 
 #### Business Account Features
+
 - **Unlimited Listings**: No quantity restrictions
 - **Company Information**: Name, tax ID (ИНН)
 - **Team Management**: Add admin/seller roles
@@ -153,6 +172,7 @@ Action Attempted → Auth Gate Modal → Login Flow → Return to Action
 - **Public Contact**: Business phone display
 
 #### Team Roles
+
 ```
 Admin Role:
 - Manage business account settings
@@ -169,17 +189,20 @@ Seller Role:
 ### 6. Moderation Pipeline
 
 #### Automatic Flow
+
 ```
 New Listing → AI Pre-check → Moderation Queue → Human Review → Approve/Reject
 ```
 
 #### AI Pre-check Features
+
 - Fraud detection
 - Explicit content detection
 - Scam pattern recognition
 - Quality assessment
 
 #### Human Moderation
+
 - **Approval**: Status → active, visible in feed
 - **Rejection**: Status → rejected, reason provided
 - **Audit Trail**: All actions logged with moderator ID
@@ -187,12 +210,14 @@ New Listing → AI Pre-check → Moderation Queue → Human Review → Approve/R
 ### 7. Promotion/Boost System
 
 #### Boost Features
+
 - **Top Placement**: Boosted listings appear first in feed
 - **Payment Required**: Cannot manually set is_boosted
 - **Duration**: 1-30 days
 - **Pricing**: Base price + daily rate (KZT)
 
 #### Boost Flow
+
 ```
 1. User selects "Boost Listing"
 2. Choose duration → Calculate price
@@ -206,17 +231,20 @@ New Listing → AI Pre-check → Moderation Queue → Human Review → Approve/R
 ### 8. Chat System
 
 #### Chat Initiation
+
 ```
 User taps "Message Seller" → Check auth → Create/Get thread → Chat interface
 ```
 
 #### Real-time Features
+
 - **Supabase Realtime**: Instant message delivery
 - **Read Status**: Message read indicators
 - **Push Notifications**: New message alerts
 - **Thread Management**: Per-listing conversations
 
 #### Chat Privacy
+
 - Only thread participants can see messages
 - RLS policies enforce privacy
 - No message history for non-participants
@@ -224,6 +252,7 @@ User taps "Message Seller" → Check auth → Create/Get thread → Chat interfa
 ### 9. Search & Discovery
 
 #### Search Features
+
 - **Text Search**: Title and description
 - **Category Filters**: Car/Horse/Real Estate
 - **Price Range**: Min/max filtering
@@ -233,18 +262,21 @@ User taps "Message Seller" → Check auth → Create/Get thread → Chat interfa
 #### Category-Specific Filters
 
 **Cars:**
+
 - Make, Model, Year
 - Mileage range
 - Fuel type, Transmission
 - Condition, Damage report
 
 **Horses:**
+
 - Breed, Age, Gender
 - Training level
 - Health status
 - Location
 
 **Real Estate:**
+
 - Property type (apartment/house/land/commercial)
 - Rooms, Area (m²)
 - Ownership status
@@ -253,6 +285,7 @@ User taps "Message Seller" → Check auth → Create/Get thread → Chat interfa
 ### 10. User States & Transitions
 
 #### User States
+
 ```
 Guest → Authenticated → Business Account
   ↓         ↓              ↓
@@ -260,6 +293,7 @@ Limited   Full Access   Team Features
 ```
 
 #### State Transitions
+
 - **Guest → Authenticated**: SMS verification
 - **Authenticated → Business**: Upgrade flow
 - **Business → Team**: Add members
@@ -267,16 +301,19 @@ Limited   Full Access   Team Features
 ### 11. Error Handling & Edge Cases
 
 #### Network Issues
+
 - Offline draft saving
 - Retry mechanisms
 - Graceful degradation
 
 #### Permission Denials
+
 - Clear error messages
 - Permission re-request flow
 - Alternative actions
 
 #### Rate Limiting
+
 - Clear feedback to users
 - Retry timers
 - Alternative approaches
@@ -284,6 +321,7 @@ Limited   Full Access   Team Features
 ### 12. Legal Compliance Flow
 
 #### Consent Management
+
 - **Offer Agreement**: Required for service use
 - **Personal Data Processing**: Required for account creation
 - **Marketing Communications**: Optional opt-in
@@ -291,6 +329,7 @@ Limited   Full Access   Team Features
 - **Withdrawal**: Right to withdraw consent
 
 #### Data Protection
+
 - **Minimal Data Collection**: Only necessary information
 - **Secure Storage**: Encrypted sensitive data
 - **Access Rights**: User data access and deletion
@@ -299,12 +338,14 @@ Limited   Full Access   Team Features
 ### 13. Performance Optimizations
 
 #### Video Handling
+
 - **Progressive Loading**: Thumbnail → Full video
 - **Compression**: Automatic video optimization
 - **Caching**: Frequently viewed content
 - **CDN**: Global content delivery
 
 #### Feed Performance
+
 - **Lazy Loading**: Load videos as needed
 - **Pagination**: Efficient data loading
 - **Caching**: Reduce API calls

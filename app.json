@@ -1,12 +1,12 @@
 {
   "expo": {
+    "userInterfaceStyle": "automatic",
     "name": "360°",
     "slug": "360-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "app360",
-    "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true,
@@ -31,6 +31,15 @@
     },
     "plugins": [
       "expo-router",
+      "expo-dev-client",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#E31E24",
+          "sounds": []
+        }
+      ],
       [
         "expo-splash-screen",
         {
@@ -51,12 +60,14 @@
         }
       ],
       [
-        "expo-av",
+        "expo-audio",
         {
           "microphonePermission": "Разрешите микрофон для записи звука"
         }
       ],
-      "expo-video"
+      "expo-video",
+      "expo-asset",
+      "expo-sqlite"
     ],
     "experiments": {
       "typedRoutes": true,
@@ -72,6 +83,7 @@
       "EXPO_PUBLIC_USE_MOCK": "false",
       "EXPO_PUBLIC_SUPABASE_URL": "https://thqlfkngyipdscckbhor.supabase.co",
       "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRocWxma25neWlwZHNjY2tiaG9yIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwMjYyMTksImV4cCI6MjA3NTYwMjIxOX0.vpFYGGSs81wgiJgedBe8_VSqle575fPMeTqdJwKHtlE",
+      "SUPABASE_SERVICE_ROLE_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRocWxma25neWlwZHNjY2tiaG9yIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MDAyNjIxOSwiZXhwIjoyMDc1NjAyMjE5fQ.SwC4ynmRy7kMgU2CyK_wcd1mqLjo8mVB8xADP7Cck_c",
       "GOOGLE_VISION_API_KEY": "AIzaSyCDq7xTy4yrPvBr5JjGNUEXaXZ70fVyJGg",
       "EXPO_PUBLIC_SMS_LOGIN": "superapp",
       "EXPO_PUBLIC_SMS_PASSWORD": "83fb772ee0799a422cce18ffd5f497b9",

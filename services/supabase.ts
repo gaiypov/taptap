@@ -15,28 +15,79 @@ const supabaseAnonKey =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
   '';
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('❌ Missing Supabase credentials!');
-  console.error('📋 Please set in app.json or .env file:');
-  console.error('   EXPO_PUBLIC_SUPABASE_URL=https://ваш-проект-id.supabase.co');
-  console.error('   EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...');
-  throw new Error('Missing Supabase credentials in app.json or .env');
+const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+if (isSupabaseConfigured) {
+  console.log('✅ Supabase configured');
 }
 
-console.log('✅ Supabase configured:', {
-  url: supabaseUrl.substring(0, 30) + '...',
-  hasKey: !!supabaseAnonKey
+// Создаем клиент Supabase с production-ready настройками
+export const supabase = createClient(
+  supabaseUrl || process.env.EXPO_PUBLIC_SUPABASE_URL || 'https://invalid.local',
+  supabaseAnonKey || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 'invalid',
+  {
+    auth: {
+      storage: Platform.OS === 'web' ? undefined : AsyncStorage,
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: Platform.OS === 'web',
+    },
+    db: {
+      schema: 'public',
+    },
+    global: {
+      headers: {
+        'x-client-info': '360auto-mobile',
+      },
+    },
+  }
+);
+
+// Автопереподключение и обработка auth state changes
+supabase.auth.onAuthStateChange((event, session) => {
+  if (event === 'TOKEN_REFRESHED') {
+    // Silent refresh - token automatically refreshed
+  }
+  if (event === 'SIGNED_OUT' && session === null) {
+    // Handle sign out - navigation will be handled by app logic
+  }
 });
 
-// Создаем клиент Supabase с поддержкой веб-версии
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: Platform.OS === 'web' ? undefined : AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: Platform.OS !== 'web',
-    detectSessionInUrl: Platform.OS === 'web',
-  },
-});
+// ============================================
+// SUPABASE PING / HEALTH CHECK
+// ============================================
+
+/**
+ * Проверяет доступность Supabase сервера
+ * @returns Promise<boolean> - true если Supabase доступен
+ */
+export async function pingSupabase(): Promise<boolean> {
+  try {
+    const { error } = await supabase.from('users').select('id').limit(1);
+    if (!error || error.code === 'PGRST116') return true;
+    if (error.code === 'PGRST301' || error.message?.includes('Failed to fetch')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Проверяет доступность Supabase с таймаутом
+ * @param timeoutMs - Таймаут в миллисекундах (по умолчанию 5000)
+ * @returns Promise<boolean>
+ */
+export async function pingSupabaseWithTimeout(timeoutMs: number = 5000): Promise<boolean> {
+  try {
+    const pingPromise = pingSupabase();
+    const timeoutPromise = new Promise<boolean>((resolve) => {
+      setTimeout(() => resolve(false), timeoutMs);
+    });
+    return await Promise.race([pingPromise, timeoutPromise]);
+  } catch {
+    return false;
+  }
+}
 
 type SupabaseError = PostgrestError | Error;
 
@@ -46,15 +97,11 @@ async function handleSupabase<R extends { data: any; error: PostgrestError | nul
 ): Promise<Omit<R, 'error'> & { error: SupabaseError | null }> {
   try {
     const response = await promise;
-    if (response.error) {
-      console.error(`[Supabase] ${operation} error:`, response.error);
-    }
     return {
       ...response,
       error: response.error ?? null,
     };
   } catch (error) {
-    console.error(`[Supabase] ${operation} unexpected failure:`, error);
     return {
       data: null,
       error: error as Error,
@@ -211,16 +258,16 @@ export const db = {
       .from('listings')
       .select(`
         *,
-        seller:users!seller_id(
+        seller:users!seller_user_id(
           id,
           name,
+          full_name,
           avatar_url,
           is_verified,
           rating
         )
       `)
       .eq('category', 'car')
-      .eq('status', 'active')
       .order('created_at', { ascending: false });
     
     // Фильтры
@@ -243,9 +290,10 @@ export const db = {
         .from('listings')
         .select(`
         *,
-        seller:users!seller_id(*),
-        is_liked:likes!listing_id(user_id),
-        is_saved:saves!listing_id(user_id)
+        seller:users!seller_user_id(id, name, avatar_url, is_verified, rating),
+        car_details(*),
+        horse_details(*),
+        real_estate_details(*)
       `)
         .eq('id', carId)
         .eq('category', 'car')
@@ -350,7 +398,6 @@ export const db = {
     try {
       await supabase.rpc('increment_listing_views', { listing_uuid: carId });
     } catch (error) {
-      console.error('Error incrementing views:', error);
       throw error;
     }
   },
@@ -360,9 +407,8 @@ export const db = {
       supabase
         .from('listings')
         .select('*')
-        .eq('seller_id', sellerId)
+        .eq('seller_user_id', sellerId)
         .eq('category', 'car')
-        .in('status', ['active', 'sold'])
         .order('created_at', { ascending: false }),
       'getSellerCars'
     );
@@ -397,10 +443,9 @@ export const db = {
       .from('listings')
       .select(`
         *,
-        seller:users!seller_id(id, name, avatar_url, is_verified)
+        seller:users!seller_user_id(id, name, avatar_url, is_verified)
       `)
       .eq('category', 'car')
-      .eq('status', 'active')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -445,91 +490,344 @@ export const db = {
   
   // ========== LIKES ==========
   
-  async likeCar(userId: string, carId: string) {
+  /**
+   * Like a listing (works for all categories: car, horse, real_estate)
+   * Counters are updated automatically via triggers
+   */
+  async likeListing(userId: string, listingId: string) {
     const { error: insertError } = await handleSupabase(
-      supabase.from('likes').insert({ user_id: userId, car_id: carId }),
-      'likeCar'
+      supabase.from('listing_likes').insert({ 
+        user_id: userId, 
+        listing_id: listingId 
+      }),
+      'likeListing'
     );
-    
-    if (!insertError) {
-      await supabase.rpc('increment_likes', { car_id: carId });
-    }
     
     return { error: insertError };
   },
   
-  async unlikeCar(userId: string, carId: string) {
+  /**
+   * Unlike a listing
+   * Counters are updated automatically via triggers
+   */
+  async unlikeListing(userId: string, listingId: string) {
     const { error: deleteError } = await handleSupabase(
-      supabase.from('likes').delete().match({ user_id: userId, car_id: carId }),
-      'unlikeCar'
+      supabase.from('listing_likes')
+        .delete()
+        .match({ user_id: userId, listing_id: listingId }),
+      'unlikeListing'
     );
-    
-    if (!deleteError) {
-      await supabase.rpc('decrement_likes', { car_id: carId });
-    }
     
     return { error: deleteError };
   },
   
+  /**
+   * Check if user liked a listing
+   */
+  async checkUserLiked(userId: string, listingId: string): Promise<boolean> {
+    const { data, error } = await handleSupabase(
+      supabase.from('listing_likes')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('listing_id', listingId)
+        .maybeSingle(),
+      'checkUserLiked'
+    );
+    
+    return !error && data !== null;
+  },
+  
+  /**
+   * Get user's liked listings
+   */
   async getUserLikes(userId: string) {
     return handleSupabase(
       supabase
-        .from('likes')
+        .from('listing_likes')
         .select(`
-        car_id,
-        created_at,
-        car:cars(*)
-      `)
+          listing_id,
+          created_at,
+          listing:listings(*)
+        `)
         .eq('user_id', userId)
         .order('created_at', { ascending: false }),
       'getUserLikes'
     );
   },
   
-  // ========== SAVES ==========
+  // ========== FAVORITES/SAVES ==========
   
-  async saveCar(userId: string, carId: string) {
+  /**
+   * Save/favorite a listing (works for all categories)
+   */
+  async saveListing(userId: string, listingId: string) {
     const { error: insertError } = await handleSupabase(
-      supabase.from('saves').insert({ user_id: userId, car_id: carId }),
-      'saveCar'
+      supabase.from('listing_saves').insert({ 
+        user_id: userId, 
+        listing_id: listingId 
+      }),
+      'saveListing'
     );
-    
-    if (!insertError) {
-      await supabase.rpc('increment_saves', { car_id: carId });
-    }
     
     return { error: insertError };
   },
   
-  async unsaveCar(userId: string, carId: string) {
+  /**
+   * Unsave a listing
+   */
+  async unsaveListing(userId: string, listingId: string) {
     const { error: deleteError } = await handleSupabase(
-      supabase.from('saves').delete().match({ user_id: userId, car_id: carId }),
-      'unsaveCar'
+      supabase.from('listing_saves')
+        .delete()
+        .match({ user_id: userId, listing_id: listingId }),
+      'unsaveListing'
     );
-    
-    if (!deleteError) {
-      await supabase.rpc('decrement_saves', { car_id: carId });
-    }
     
     return { error: deleteError };
   },
   
+  /**
+   * Check if user saved a listing
+   */
+  async checkUserSaved(userId: string, listingId: string): Promise<boolean> {
+    const { data, error } = await handleSupabase(
+      supabase.from('listing_saves')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('listing_id', listingId)
+        .maybeSingle(),
+      'checkUserSaved'
+    );
+    
+    return !error && data !== null;
+  },
+  
+  /**
+   * Get user's saved/favorited listings
+   */
   async getUserSaves(userId: string) {
     return handleSupabase(
       supabase
-        .from('saves')
+        .from('listing_saves')
         .select(`
-        car_id,
-        created_at,
-        car:cars(*)
-      `)
+          listing_id,
+          created_at,
+          listing:listings(*)
+        `)
         .eq('user_id', userId)
         .order('created_at', { ascending: false }),
       'getUserSaves'
     );
   },
   
-  // ========== CONVERSATIONS ==========
+  // ========== LEGACY COMPATIBILITY ==========
+  // Keep old methods for backward compatibility, but use new tables
+  
+  async likeCar(userId: string, carId: string) {
+    return this.likeListing(userId, carId);
+  },
+  
+  async unlikeCar(userId: string, carId: string) {
+    return this.unlikeListing(userId, carId);
+  },
+  
+  async saveCar(userId: string, carId: string) {
+    return this.saveListing(userId, carId);
+  },
+  
+  async unsaveCar(userId: string, carId: string) {
+    return this.unsaveListing(userId, carId);
+  },
+  
+  // ========== CHAT THREADS (NEW SCHEMA) ==========
+  
+  /**
+   * Get or create chat thread for a listing (NEW API)
+   */
+  async getOrCreateChatThread(listingId: string, buyerId: string) {
+    try {
+      // Try backend API first
+      const apiUrl = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001/api';
+      const token = await this.getAuthToken();
+      
+      if (token) {
+        try {
+          const response = await fetch(`${apiUrl}/v1/chat/start`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ listing_id: listingId }),
+          });
+          
+          if (response.ok) {
+            const result = await response.json();
+            return { data: result.data, error: null };
+          }
+        } catch (apiError) {
+          // Fall through to direct DB access
+        }
+      }
+      
+      // Fallback: Direct database access
+      const { data: existing } = await handleSupabase(
+        supabase
+          .from('chat_threads')
+          .select('*')
+          .eq('listing_id', listingId)
+          .eq('buyer_id', buyerId)
+          .maybeSingle(),
+        'getOrCreateChatThread.find'
+      );
+      
+      if (existing) {
+        return { data: existing, error: null };
+      }
+      
+      // Need seller_id - fetch from listing
+      const { data: listing } = await supabase
+        .from('listings')
+        .select('seller_user_id, business_id')
+        .eq('id', listingId)
+        .single();
+      
+      if (!listing) {
+        return { data: null, error: new Error('Listing not found') };
+      }
+      
+      let sellerId = listing.seller_user_id;
+      
+      // If business listing, get admin user
+      if (!sellerId && listing.business_id) {
+        const { data: businessAdmin } = await supabase
+          .from('business_members')
+          .select('user_id')
+          .eq('business_id', listing.business_id)
+          .eq('role', 'admin')
+          .single();
+        
+        if (businessAdmin) {
+          sellerId = businessAdmin.user_id;
+        }
+      }
+      
+      if (!sellerId) {
+        return { data: null, error: new Error('Seller not found') };
+      }
+      
+      const { data: thread, error } = await handleSupabase(
+        supabase
+          .from('chat_threads')
+          .insert({
+            listing_id: listingId,
+            buyer_id: buyerId,
+            seller_id: sellerId,
+          })
+          .select()
+          .single(),
+        'getOrCreateChatThread.insert'
+      );
+      
+      return { data: thread, error };
+    } catch (error) {
+      return { data: null, error: error as Error };
+    }
+  },
+  
+  /**
+   * Send message in chat thread (NEW API)
+   */
+  async sendChatMessage(threadId: string, senderId: string, body: string) {
+    const { data, error } = await handleSupabase(
+      supabase
+        .from('chat_messages')
+        .insert({
+          thread_id: threadId,
+          sender_id: senderId,
+          body,
+        })
+        .select()
+        .single(),
+      'sendChatMessage'
+    );
+    
+    // Update thread's last_message_at automatically via trigger
+    // Also update unread counts
+    if (!error) {
+      await supabase
+        .from('chat_threads')
+        .update({
+          last_message_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', threadId);
+    }
+    
+    return { data, error };
+  },
+  
+  /**
+   * Get messages for a chat thread (NEW API)
+   */
+  async getChatMessages(threadId: string) {
+    return handleSupabase(
+      supabase
+        .from('chat_messages')
+        .select(`
+          *,
+          sender:users!sender_id(id, name, avatar_url)
+        `)
+        .eq('thread_id', threadId)
+        .order('created_at', { ascending: true }),
+      'getChatMessages'
+    );
+  },
+  
+  /**
+   * Mark messages as read in a chat thread (NEW API)
+   */
+  async markChatMessagesAsRead(threadId: string, userId: string) {
+    try {
+      // Update read_at for unread messages sent to this user
+      await supabase
+        .from('chat_messages')
+        .update({ read_at: new Date().toISOString() })
+        .eq('thread_id', threadId)
+        .neq('sender_id', userId)
+        .is('read_at', null);
+      
+      // Update unread counts in thread
+      const { data: thread } = await supabase
+        .from('chat_threads')
+        .select('buyer_id, seller_id')
+        .eq('id', threadId)
+        .single();
+      
+      if (thread) {
+        const isBuyer = thread.buyer_id === userId;
+        const updateField = isBuyer ? 'unread_count_buyer' : 'unread_count_seller';
+        
+        await supabase
+          .from('chat_threads')
+          .update({ [updateField]: 0 })
+          .eq('id', threadId);
+      }
+    } catch (error) {
+    }
+  },
+  
+  // Helper to get auth token
+  async getAuthToken(): Promise<string | null> {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      return session?.access_token || null;
+    } catch {
+      return null;
+    }
+  },
+  
+  // ========== CONVERSATIONS (LEGACY COMPATIBILITY) ==========
   
   async getOrCreateConversation(
     carId: string,
@@ -953,7 +1251,6 @@ export const storage = {
     try {
       // Проверяем настройки api.video
       if (apiVideo.isConfigured()) {
-        console.log('📤 Используем api.video для загрузки...');
         
         // Создаем видео с метаданными
         const { videoId, uploadToken } = await apiVideo.createVideo(carData ? {
@@ -992,7 +1289,6 @@ export const storage = {
         thumbnailUrl: '',
       };
     } catch (error) {
-      console.error('Video upload error:', error);
       return { url: '', videoId: '', thumbnailUrl: '', error };
     }
   },
@@ -1026,7 +1322,6 @@ export const storage = {
       
       return { url: publicUrl, error: null };
     } catch (error) {
-      console.error('Video upload error:', error);
       return { url: '', error };
     }
   },
@@ -1056,7 +1351,6 @@ export const storage = {
       
       return { url: publicUrl, error: null };
     } catch (error) {
-      console.error('Thumbnail upload error:', error);
       return { url: '', error };
     }
   },
@@ -1184,7 +1478,6 @@ export const consents = {
       const response = await api.consents.getStatus();
       return response?.data?.hasConsents ?? false;
     } catch (error) {
-      console.error('Error checking user consents:', error);
       return false;
     }
   },
@@ -1198,7 +1491,6 @@ export const consents = {
       const response = await api.consents.getDetails();
       return (response?.data?.consent as UserConsent) ?? null;
     } catch (error) {
-      console.error('Error getting user consents:', error);
       return null;
     }
   },
@@ -1219,7 +1511,6 @@ export const consents = {
       });
       return { error: null };
     } catch (error) {
-      console.error('Error upserting user consents:', error);
       return { error };
     }
   },
@@ -1233,7 +1524,6 @@ export const consents = {
       await api.consents.revoke({ reason });
       return { error: null };
     } catch (error) {
-      console.error('Error revoking user consents:', error);
       return { error };
     }
   },
@@ -1250,7 +1540,6 @@ export const consents = {
       });
       return { error: null };
     } catch (error) {
-      console.error('Error creating initial consents:', error);
       return { error };
     }
   },

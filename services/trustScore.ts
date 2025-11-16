@@ -38,7 +38,7 @@ export async function calculateTrustScore(userId: string): Promise<TrustScoreFac
       .from('reports')
       .select('id', { count: 'exact', head: true })
       .eq('reported_user_id', userId)
-      .eq('status', 'action_taken'); // Только подтвержденные жалобы
+      // Status field doesn't exist in schema
 
     let score = 0;
     const factors: TrustScoreFactors = {

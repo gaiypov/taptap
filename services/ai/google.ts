@@ -2,6 +2,31 @@
 import { AI_CONFIG } from './config';
 
 /**
+ * Простая обертка для промпта: analyzeImageWithGoogle(imageUri)
+ * Согласно CursorAI-Prompt.md
+ */
+export async function analyzeImageWithGoogle(
+  imageUri: string
+): Promise<string[]> {
+  try {
+    // Конвертируем imageUri в base64 если нужно
+    const imageBase64 = imageUri.startsWith('data:') 
+      ? imageUri 
+      : `data:image/jpeg;base64,${imageUri}`;
+    
+    const result = await analyzeWithGoogleVision(imageBase64, 'object_detection');
+    
+    // Возвращаем labels как массив строк согласно промпту
+    return result.labels?.map((label: any) => label.name || label.description) || [];
+  } catch {
+    // Fallback на тестовый режим
+    const { useTestMode } = await import('./testMode');
+    const fallback = await useTestMode('google');
+    return fallback?.labels || [];
+  }
+}
+
+/**
  * Анализ автомобиля с помощью Google Cloud Vision API
  */
 export async function analyzeWithGoogleVision(
@@ -9,7 +34,7 @@ export async function analyzeWithGoogleVision(
   analysisType: 'full' | 'ocr' | 'object_detection' | 'text_detection'
 ): Promise<any> {
   try {
-    console.log('🤖 Google Vision analysis started...', { analysisType });
+    // Google Vision analysis started
     
     // Проверяем наличие API ключа
     if (!AI_CONFIG.GOOGLE_API_KEY) {

@@ -1,4 +1,4 @@
-import { Video } from 'expo-av';
+import { VideoView } from 'expo-video';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../services/api';
 
@@ -42,7 +42,7 @@ export function useVideo(): UseVideoReturn {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const videoRefs = useRef<{ [key: string]: Video }>({});
+  const videoRefs = useRef<{ [key: string]: VideoView }>({});
 
   const currentVideo = videos[currentIndex] || null;
 

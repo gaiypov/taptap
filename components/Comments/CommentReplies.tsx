@@ -67,6 +67,7 @@ export default function CommentReplies({ parentId, currentUserId, onReply }: Com
 
   useEffect(() => {
     loadRepliesCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parentId]);
 
   if (repliesCount === 0) {

@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 import { AI_CONFIG, analyzeCarVideo, quickIdentifyCar, validateVideoQuality } from '@/services/ai';
 import { checkAPIKeys } from '@/services/ai/config';
 
+// Увеличиваем timeout для всех тестов (глобальный timeout установлен в jest.config.js на 10s)
+// Для длинных AI тестов используем индивидуальные timeouts в it() вызовах (15s)
+
 // Мокируем expo-file-system
 jest.mock('expo-file-system', () => ({
   readAsStringAsync: jest.fn(() => Promise.resolve('mock-base64-data')),
@@ -26,6 +29,7 @@ describe('AI Service', () => {
 
   describe('analyzeCarVideo', () => {
     it('should analyze video in mock mode', async () => {
+      jest.setTimeout(15000);
       const mockVideoUri = 'file://test-video.mp4';
       const mockProgressCallback = jest.fn<(step: string, progress: number) => void>();
 

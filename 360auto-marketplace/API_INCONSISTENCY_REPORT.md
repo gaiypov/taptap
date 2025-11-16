@@ -10,12 +10,14 @@
 ### 1. Base URL & Path Structure
 
 **Mobile expects:**
+
 ```typescript
 const API_BASE_URL = 'https://api.360auto.com/v1';
 // Calls: /videos, /cars, /users, /auth, /favorites
 ```
 
 **Backend provides:**
+
 ```typescript
 // Routes: /api/v1/* prefix
 app.use('/api/v1/auth', authRoutes);
@@ -25,6 +27,7 @@ app.use('/api/v1/chat', chatRoutes);
 ```
 
 **❌ PROBLEM:**
+
 - Mobile expects: `https://api.360auto.com/v1/videos`
 - Backend serves: `https://api.360auto.com/api/v1/listings`
 - **Missing `/api` prefix in mobile!**
@@ -34,6 +37,7 @@ app.use('/api/v1/chat', chatRoutes);
 ### 2. Auth Endpoints
 
 **Mobile calls:**
+
 ```typescript
 auth: {
   login: (phone, password) => POST '/auth/login',
@@ -46,6 +50,7 @@ auth: {
 ```
 
 **Backend routes:**
+
 ```typescript
 // backend/src/api/v1/auth.ts
 POST '/api/v1/auth/request-code'  // ✅ Matches (sort of)
@@ -54,6 +59,7 @@ POST '/api/v1/auth/verify-code'   // ❌ Mobile expects: verify-phone
 ```
 
 **❌ PROBLEMS:**
+
 - Backend uses **SMS-based auth** (request-code, verify-code)
 - Mobile expects **password-based auth** (login, register)
 - Different auth flow entirely!
@@ -63,6 +69,7 @@ POST '/api/v1/auth/verify-code'   // ❌ Mobile expects: verify-phone
 ### 3. Listing/Car Endpoints
 
 **Mobile calls:**
+
 ```typescript
 cars: {
   getAll: () => GET '/cars',
@@ -76,6 +83,7 @@ cars: {
 ```
 
 **Backend routes:**
+
 ```typescript
 // backend/src/api/v1/listings.ts
 GET '/api/v1/listings/feed'      // ✅ Similar
@@ -87,6 +95,7 @@ DELETE '/api/v1/listings/:id'    // ✅ Delete
 ```
 
 **❌ PROBLEMS:**
+
 - Mobile uses `/cars`, backend uses `/listings`
 - Different resource names!
 - `save/unsave` should go to `/favorites` not `/cars`
@@ -96,6 +105,7 @@ DELETE '/api/v1/listings/:id'    // ✅ Delete
 ### 4. Video Endpoints
 
 **Mobile calls:**
+
 ```typescript
 videos: {
   getAll: () => GET '/videos',
@@ -108,6 +118,7 @@ videos: {
 ```
 
 **Backend routes:**
+
 ```typescript
 // ❌ NO VIDEO ROUTE EXISTS!
 // Videos are properties of listings
@@ -115,6 +126,7 @@ videos: {
 ```
 
 **❌ PROBLEMS:**
+
 - Backend doesn't have separate video endpoints
 - Videos are managed through listings
 - Mobile expects standalone video API
@@ -124,6 +136,7 @@ videos: {
 ### 5. User Endpoints
 
 **Mobile calls:**
+
 ```typescript
 users: {
   getProfile: () => GET '/users/profile',
@@ -134,12 +147,14 @@ users: {
 ```
 
 **Backend routes:**
+
 ```typescript
 // ❌ NO USER ROUTE EXISTS!
 // Backend uses: listings.seller_user_id
 ```
 
 **❌ PROBLEMS:**
+
 - No user endpoints in backend
 - User data managed through listings/sessions
 
@@ -148,6 +163,7 @@ users: {
 ### 6. Favorites Endpoints
 
 **Mobile calls:**
+
 ```typescript
 favorites: {
   getAll: () => GET '/favorites',
@@ -157,11 +173,13 @@ favorites: {
 ```
 
 **Backend routes:**
+
 ```typescript
 // ❌ NO FAVORITES ROUTE EXISTS!
 ```
 
 **❌ PROBLEMS:**
+
 - Backend doesn't have favorites endpoints
 - Recently added to mobile but not to backend
 
@@ -178,10 +196,12 @@ localStorage.removeItem('authToken');
 ```
 
 **Problem:**
+
 - `localStorage` is browser-only API
 - React Native should use `AsyncStorage`
 
 **Fix:**
+
 ```typescript
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -194,11 +214,13 @@ await AsyncStorage.removeItem('authToken');
 ### 8. Response Type Mismatch
 
 **Mobile expects:**
+
 ```typescript
 apiClient.get<Car[]>('/cars')
 ```
 
 **Backend returns:**
+
 ```typescript
 {
   success: true,
@@ -275,17 +297,20 @@ export const api = {
 ## 🎯 ACTION ITEMS
 
 ### Priority 1 🔴
+
 1. Fix base URL: Add `/api` prefix
 2. Remove `localStorage` → use `AsyncStorage`
 3. Update auth flow to match SMS-based
 4. Rename `/cars` → `/listings`
 
 ### Priority 2 🟡
+
 5. Add favorites backend routes
 6. Add user profile endpoints
 7. Fix response type mismatches
 
 ### Priority 3 🟢
+
 8. Add video endpoints if needed
 9. Add comments backend routes
 10. Add business endpoints to mobile
@@ -295,11 +320,13 @@ export const api = {
 ## 📊 IMPACT
 
 **Files to Update:**
+
 - `mobile/services/api.ts` - Major refactor needed
 - Add backend routes for favorites, users
 - Update all API calls throughout mobile app
 
 **Breaking Changes:**
+
 - All existing API calls will fail
 - Need to update ~50+ API calls in mobile
 - Need to add ~20 new backend routes
@@ -307,4 +334,3 @@ export const api = {
 ---
 
 **Status:** 🔴 CRITICAL - Mobile and Backend are NOT compatible!
-

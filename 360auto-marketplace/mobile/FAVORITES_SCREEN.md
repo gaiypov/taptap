@@ -1,34 +1,39 @@
 # ✅ Favorites Screen Created
 
-## 📱 Что Создано:
+## 📱 Что Создано
 
 ### 1. Основной Файл: `app/(tabs)/favorites.tsx`
+
 - ✅ Grid layout (2 колонки)
 - ✅ FavoriteCard компонент
 - ✅ Empty State
 - ✅ Loading Skeleton
 - ✅ Pull to refresh
 
-### 2. Функциональность:
+### 2. Функциональность
+
 - ✅ TanStack Query для загрузки
 - ✅ Optimistic updates при удалении
 - ✅ Undo функциональность (3 секунды)
 - ✅ Навигация к деталям объявления
 - ✅ Анимации (Fade In/Out)
 
-### 3. API Интеграция:
+### 3. API Интеграция
+
 - ✅ Добавлены endpoints в `services/api.ts`:
   - `favorites.getAll()`
   - `favorites.add()`
   - `favorites.remove()`
 
-### 4. Компоненты:
+### 4. Компоненты
+
 - ✅ **FavoriteCard** - карточка объявления
 - ✅ **EmptyState** - пустое состояние
 - ✅ **LoadingSkeleton** - загрузка
 - ✅ **Undo Snackbar** - уведомление об отмене
 
-### 5. UI Features:
+### 5. UI Features
+
 - ✅ Header с фильтрами
 - ✅ Heart icon для удаления
 - ✅ Gradient на кнопке создания (в tabs)
@@ -37,9 +42,10 @@
 
 ---
 
-## 🚀 Как Использовать:
+## 🚀 Как Использовать
 
-### 1. Подключить к Реальному API:
+### 1. Подключить к Реальному API
+
 ```typescript
 // В favorites.tsx замените fetchFavorites:
 const fetchFavorites = async (): Promise<Listing[]> => {
@@ -48,7 +54,8 @@ const fetchFavorites = async (): Promise<Listing[]> => {
 };
 ```
 
-### 2. Добавить в Store (Zustand):
+### 2. Добавить в Store (Zustand)
+
 ```typescript
 // src/stores/favoritesStore.ts
 export const useFavoritesStore = create((set) => ({
@@ -62,7 +69,8 @@ export const useFavoritesStore = create((set) => ({
 }));
 ```
 
-### 3. Добавить Бадж (количество):
+### 3. Добавить Бадж (количество)
+
 ```typescript
 // В _layout.tsx для favorites tab
 tabBarBadge: favoritesCount > 0 ? favoritesCount : undefined,
@@ -70,7 +78,8 @@ tabBarBadge: favoritesCount > 0 ? favoritesCount : undefined,
 
 ---
 
-## 📦 Зависимости:
+## 📦 Зависимости
+
 - ✅ `@tanstack/react-query` - уже установлен
 - ✅ `react-native-reanimated` - уже установлен
 - ✅ `expo-image` - для загрузки изображений
@@ -78,7 +87,8 @@ tabBarBadge: favoritesCount > 0 ? favoritesCount : undefined,
 
 ---
 
-## 🎨 Стили:
+## 🎨 Стили
+
 - Modern design
 - iOS-style colors (#007AFF)
 - Smooth animations
@@ -87,7 +97,6 @@ tabBarBadge: favoritesCount > 0 ? favoritesCount : undefined,
 
 ---
 
-## ✅ Готово к Использованию!
+## ✅ Готово к Использованию
 
 Файл: `mobile/app/(tabs)/favorites.tsx`
-

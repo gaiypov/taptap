@@ -1,11 +1,12 @@
 // backend/middleware/auth.ts
 import { NextFunction, Request, Response } from 'express';
+import logger from '../src/utils/logger';
 import jwt from 'jsonwebtoken';
 
 export interface AuthenticatedRequest extends Request {
   user?: {
     id: string;
-    email: string;
+    phone: string;
     role: string;
   };
   validatedData?: any;
@@ -29,12 +30,12 @@ export function authenticateToken(req: AuthenticatedRequest, res: Response, next
     const decoded = jwt.verify(token, JWT_SECRET!) as any;
     req.user = {
       id: decoded.id,
-      email: decoded.email,
+      phone: decoded.phone,
       role: decoded.role
     };
     next();
   } catch (error) {
-    console.error('Token verification error:', error);
+    logger.error('Token verification error:', { error });
     return res.status(403).json({
       success: false,
       error: 'Недействительный токен доступа',
@@ -74,12 +75,12 @@ export function optionalAuth(req: AuthenticatedRequest, res: Response, next: Nex
       const decoded = jwt.verify(token, JWT_SECRET!) as any;
       req.user = {
         id: decoded.id,
-        email: decoded.email,
+        phone: decoded.phone,
         role: decoded.role
       };
     } catch (error) {
       // Игнорируем ошибку для опциональной аутентификации
-      console.warn('Optional auth failed:', error);
+      logger.warn('Optional auth failed:', { error });
     }
   }
 

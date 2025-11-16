@@ -15,16 +15,19 @@ Node.js Express API server for the 360⁰ Marketplace platform.
 ## Setup
 
 1. Install dependencies:
+
 ```bash
 npm install
 ```
 
 2. Configure environment variables:
+
 ```bash
 cp .env.example .env
 ```
 
 3. Start development server:
+
 ```bash
 npm run dev
 ```
@@ -52,4 +55,3 @@ Uses Supabase PostgreSQL with Row Level Security (RLS) policies.
 ## License
 
 MIT
-

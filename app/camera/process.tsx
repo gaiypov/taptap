@@ -65,7 +65,8 @@ export default function ProcessVideo({ videoUri }: ProcessVideoProps) {
       if (videoError) throw videoError;
       
       // 2. Загружаем превью
-      const thumbnailSource = analysisResult.thumbnailUrl || analysisResult.thumbnail_url || '';
+      const thumbnailSource =
+        analysisResult.thumbnail_url || (analysisResult as any).thumbnailUrl || '';
       let thumbnailUrl = 'https://picsum.photos/800/600';
       
       if (thumbnailSource) {
@@ -80,31 +81,56 @@ export default function ProcessVideo({ videoUri }: ProcessVideoProps) {
         console.warn('Thumbnail source not found, using placeholder image');
       }
       
-      // 3. Сохраняем в базу
-      const { data: car, error: carError } = await db.createCar({
-        seller_id: userId,
+      const baseDetails = analysisResult.details ?? {
         brand: analysisResult.brand ?? 'Unknown',
         model: analysisResult.model ?? 'Unknown',
         year: analysisResult.year ?? new Date().getFullYear(),
-        price: 2500000, // TODO: Получить от пользователя
         mileage: analysisResult.mileage ?? 0,
-        color: analysisResult.color ?? 'Не указан',
-        transmission: analysisResult.transmission ?? 'automatic',
+        color: analysisResult.color,
+        transmission: analysisResult.transmission,
+        damages: analysisResult.aiAnalysis?.damages ?? [],
+        features: analysisResult.aiAnalysis?.features ?? [],
+      };
+
+      const normalizedResult: Partial<Car> = {
+        ...analysisResult,
+        category: 'car',
+        details: baseDetails,
+        brand: baseDetails.brand,
+        model: baseDetails.model,
+        year: baseDetails.year,
+        mileage: baseDetails.mileage,
+        color: baseDetails.color,
+        transmission: baseDetails.transmission,
+        thumbnail_url: thumbnailUrl,
+        video_url: videoUrl,
+      };
+
+      // 3. Сохраняем в базу
+      const { data: car, error: carError } = await db.createCar({
+        seller_id: userId,
+        brand: baseDetails.brand ?? 'Unknown',
+        model: baseDetails.model ?? 'Unknown',
+        year: baseDetails.year ?? new Date().getFullYear(),
+        price: 2500000, // TODO: Получить от пользователя
+        mileage: baseDetails.mileage ?? 0,
+        color: baseDetails.color ?? 'Не указан',
+        transmission: baseDetails.transmission ?? 'automatic',
         location: 'Бишкек',
         video_url: videoUrl,
         thumbnail_url: thumbnailUrl,
-        ai_condition: analysisResult.aiAnalysis?.condition,
-        ai_score: analysisResult.aiAnalysis?.conditionScore,
-        ai_damages: analysisResult.aiAnalysis?.damages,
-        ai_features: analysisResult.aiAnalysis?.features,
-        ai_estimated_price: analysisResult.aiAnalysis?.estimatedPrice,
+        ai_condition: normalizedResult.aiAnalysis?.condition,
+        ai_score: normalizedResult.aiAnalysis?.conditionScore,
+        ai_damages: normalizedResult.aiAnalysis?.damages,
+        ai_features: normalizedResult.aiAnalysis?.features,
+        ai_estimated_price: normalizedResult.aiAnalysis?.estimatedPrice,
         status: 'active',
       });
       
       if (carError) throw carError;
       
       setProgress(100);
-      setResult(analysisResult);
+      setResult(normalizedResult);
       setIsProcessing(false);
       
       // Успех!
@@ -165,18 +191,30 @@ export default function ProcessVideo({ videoUri }: ProcessVideoProps) {
   }
 
   if (result) {
+    const details = result.details ?? {
+      brand: result.brand,
+      model: result.model,
+      year: result.year,
+      mileage: result.mileage,
+      color: result.color,
+    };
+    const brand = result.brand ?? details.brand ?? 'Авто';
+    const model = result.model ?? details.model ?? '';
+    const year = result.year ?? details.year ?? 'N/A';
+    const mileage = result.mileage ?? details.mileage;
+    const color = result.color ?? details.color ?? '—';
     return (
       <View style={styles.container}>
         <View style={styles.resultContainer}>
           <Text style={styles.resultTitle}>Анализ завершен!</Text>
           <Text style={styles.carInfo}>
-            {result.brand || 'Авто'} {result.model || ''} {result.year || 'N/A'}
+            {brand} {model} {year}
           </Text>
           <Text style={styles.carDetails}>
-            Пробег: {result.mileage?.toLocaleString('ru-RU') ?? '—'} км
+            Пробег: {mileage?.toLocaleString('ru-RU') ?? '—'} км
           </Text>
           <Text style={styles.carDetails}>
-            Цвет: {result.color ?? '—'}
+            Цвет: {color}
           </Text>
           {result.aiAnalysis && (
             <View style={styles.aiInfo}>

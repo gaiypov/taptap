@@ -6,10 +6,11 @@
 import { ApiResponse } from '@shared/types';
 import { Router } from 'express';
 import jwt from 'jsonwebtoken';
-import { asyncHandler, auditLog, CustomError } from '../middleware/errorHandler';
-import { authLimiter } from '../middleware/rateLimit';
-import { requestSmsCodeSchema, validateBody, verifySmsCodeSchema } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import { sendVerificationCodeSms } from '../../../../backend/services/smsService';
+import { asyncHandler, auditLog, CustomError } from '../../middleware/errorHandler';
+import { authLimiter } from '../../middleware/rateLimit';
+import { requestSmsCodeSchema, validateBody, verifySmsCodeSchema } from '../../middleware/validate';
+import { supabase } from '../../services/supabaseClient';
 
 const router = Router();
 
@@ -45,9 +46,22 @@ router.post('/request-code',
       throw new CustomError('Failed to generate verification code', 500, 'CODE_GENERATION_FAILED');
     }
 
-    // TODO: Send SMS via external service
-    // For now, log the code (remove in production)
-    console.log(`SMS Code for ${phone}: ${code}`);
+    // Send SMS via external service
+    const smsResult = await sendVerificationCodeSms(phone, code);
+    
+    if (!smsResult.success) {
+      console.error('SMS sending failed:', smsResult.error);
+      // Continue anyway - code is in database
+      // In production, consider throwing error
+    }
+    
+    // Log code only in development
+    if (process.env.NODE_ENV === 'development') {
+      console.log(`SMS Code for ${phone}: ${code}`);
+      if (smsResult.testCode) {
+        console.log(`Test code: ${smsResult.testCode}`);
+      }
+    }
 
     auditLog(null, 'sms_code_requested', 'verification_code', phone);
 
@@ -218,6 +232,55 @@ router.post('/refresh',
       });
     } catch (error) {
       throw new CustomError('Invalid refresh token', 401, 'INVALID_REFRESH_TOKEN');
+    }
+  })
+);
+
+// ============================================
+// VALIDATE TOKEN
+// ============================================
+
+router.post('/validate',
+  asyncHandler(async (req, res) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.json({
+        success: false,
+        error: 'Token required'
+      });
+    }
+
+    try {
+      const decoded = jwt.verify(token, JWT_SECRET) as any;
+      
+      // Verify user still exists
+      const { data: user } = await supabase
+        .from('users')
+        .select('id, phone, name')
+        .eq('id', decoded.userId)
+        .single();
+
+      if (!user) {
+        return res.json({
+          success: false,
+          error: 'User not found'
+        });
+      }
+
+      res.json({
+        success: true,
+        data: {
+          userId: decoded.userId,
+          role: decoded.role
+        }
+      });
+    } catch (error) {
+      res.json({
+        success: false,
+        error: 'Invalid token'
+      });
     }
   })
 );

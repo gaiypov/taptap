@@ -77,25 +77,29 @@ mobile/
 ## Migration Plan
 
 ### Components to Move
+
 - `VideoFeed/VideoPlayer.tsx` → `src/components/VideoPlayer.tsx`
 - `Feed/ListingVideoPlayer.tsx` → `src/components/ListingCard.tsx`
 - Components from root level into organized folders
 
 ### Services to Organize
+
 - Existing `services/` files
 - Root level service files (api.ts, auth.ts, etc.)
 
 ### Hooks to Organize
+
 - Existing hooks
 - Create new hooks in src/hooks/
 
 ### Stores to Create
+
 - Zustand or Context-based stores
 
 ## Current State
+
 - ✅ App directory structure exists
 - ⏳ Components scattered in multiple locations
 - ⏳ Services need organization
 - 🏗️ Stores need to be created
 - ⏳ Assets need organization
-

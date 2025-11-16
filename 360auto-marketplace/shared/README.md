@@ -50,4 +50,3 @@ This generates TypeScript declaration files in the `dist/` directory.
 ## License
 
 MIT
-

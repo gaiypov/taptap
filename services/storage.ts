@@ -61,10 +61,33 @@ class StorageService {
     }
   }
 
-  // User data management
+  // User data management - оптимизируем сохранение больших объектов
   async setUserData(userData: any): Promise<void> {
     try {
-      await AsyncStorage.setItem(this.KEYS.USER_DATA, JSON.stringify(userData));
+      // Очищаем большие вложенные объекты, которые не нужны в storage
+      const optimizedData = {
+        id: userData?.id,
+        phone: userData?.phone,
+        name: userData?.name,
+        email: userData?.email,
+        avatar_url: userData?.avatar_url,
+        is_verified: userData?.is_verified,
+        // Не сохраняем большие объекты типа listings, conversations и т.д.
+      };
+      const dataString = JSON.stringify(optimizedData);
+      const MAX_SIZE = 500 * 1024; // 500KB максимум для user data
+      
+      if (dataString.length > MAX_SIZE) {
+        console.warn('User data too large, truncating');
+        const minimalData = {
+          id: userData?.id,
+          phone: userData?.phone,
+          name: userData?.name,
+        };
+        await AsyncStorage.setItem(this.KEYS.USER_DATA, JSON.stringify(minimalData));
+      } else {
+        await AsyncStorage.setItem(this.KEYS.USER_DATA, dataString);
+      }
     } catch (error) {
       console.error('Failed to save user data:', error);
     }
@@ -99,14 +122,22 @@ class StorageService {
     }
   }
 
-  // Offline videos
+  // Offline videos - ограничиваем количество для предотвращения переполнения
   async saveOfflineVideo(video: StoredVideo): Promise<void> {
     try {
       const existingVideos = await this.getOfflineVideos();
-      const updatedVideos = [...existingVideos, video];
+      // Ограничиваем до 20 видео чтобы не переполнить storage
+      const MAX_VIDEOS = 20;
+      const updatedVideos = [...existingVideos, video].slice(-MAX_VIDEOS);
       await AsyncStorage.setItem(this.KEYS.OFFLINE_VIDEOS, JSON.stringify(updatedVideos));
     } catch (error) {
       console.error('Failed to save offline video:', error);
+      // Если ошибка из-за размера, очищаем старые видео
+      try {
+        await AsyncStorage.removeItem(this.KEYS.OFFLINE_VIDEOS);
+      } catch (clearError) {
+        console.error('Failed to clear offline videos:', clearError);
+      }
     }
   }
 
@@ -169,9 +200,18 @@ class StorageService {
     }
   }
 
-  // Cache management
+  // Cache management - ограничиваем размер данных
   async setCachedData(key: string, data: any, expiryMinutes: number = 60): Promise<void> {
     try {
+      // Ограничиваем размер кэша (максимум 1MB на ключ)
+      const dataString = JSON.stringify(data);
+      const MAX_SIZE = 1024 * 1024; // 1MB
+      
+      if (dataString.length > MAX_SIZE) {
+        console.warn(`Cache data for key ${key} exceeds ${MAX_SIZE} bytes, skipping`);
+        return;
+      }
+
       const cacheData = {
         data,
         timestamp: Date.now(),
@@ -180,6 +220,12 @@ class StorageService {
       await AsyncStorage.setItem(`${this.KEYS.CACHED_DATA}_${key}`, JSON.stringify(cacheData));
     } catch (error) {
       console.error('Failed to cache data:', error);
+      // Если ошибка - удаляем старый кэш
+      try {
+        await AsyncStorage.removeItem(`${this.KEYS.CACHED_DATA}_${key}`);
+      } catch (clearError) {
+        console.error('Failed to clear cache:', clearError);
+      }
     }
   }
 
@@ -218,3 +264,42 @@ class StorageService {
 
 export const storageService = new StorageService();
 export default storageService;
+
+// Storage limits согласно промпту CursorAI-Prompt.md
+export const LIMITS = {
+  USER_DATA: 500_000,      // 500KB
+  CACHE: 1_000_000,        // 1MB
+  OFFLINE_VIDEOS: 20,      // штук
+};
+
+/**
+ * Проверка лимита storage перед сохранением
+ * Согласно промпту CursorAI-Prompt.md
+ */
+export const checkStorageLimit = async (
+  type: 'user' | 'cache' | 'offline',
+  dataSize: number
+): Promise<boolean> => {
+  try {
+    let limit: number;
+    switch (type) {
+      case 'user':
+        limit = LIMITS.USER_DATA;
+        break;
+      case 'cache':
+        limit = LIMITS.CACHE;
+        break;
+      case 'offline':
+        // Для offline проверяем количество, а не размер
+        const videos = await storageService.getOfflineVideos();
+        return videos.length < LIMITS.OFFLINE_VIDEOS;
+      default:
+        return false;
+    }
+
+    return dataSize <= limit;
+  } catch (error) {
+    console.error('Failed to check storage limit:', error);
+    return false;
+  }
+};

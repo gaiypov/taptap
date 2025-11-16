@@ -100,4 +100,3 @@ backend/
 6. **Job queue support** - Bull queue for async processing
 7. **Error handling** - Custom error classes
 8. **Logging** - Structured logging utility
-

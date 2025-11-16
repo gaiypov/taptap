@@ -3,12 +3,6 @@ module.exports = function (api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      // Required for Expo Router
-      require.resolve('expo-router/babel'),
-      
-      // Reanimated should be listed last
-      'react-native-reanimated/plugin',
-      
       // Path aliases
       [
         'module-resolver',
@@ -20,6 +14,9 @@ module.exports = function (api) {
           },
         },
       ],
+      
+      // Reanimated should be listed last
+      'react-native-reanimated/plugin',
     ],
   };
 };

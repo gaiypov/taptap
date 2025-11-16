@@ -3,9 +3,9 @@ import type { Listing } from '@/types';
 import { isCarListing, isHorseListing } from '@/types';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import React from 'react';
-import { Dimensions, Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
 
 interface ListingVideoPlayerProps {
   listing: Listing;
@@ -55,13 +55,7 @@ export default function ListingVideoPlayer({
       />
 
       {/* Overlay для проданных */}
-      {listing.status === 'sold' && (
-        <View style={styles.soldOverlay}>
-          <View style={styles.soldBadge}>
-            <Text style={styles.soldText}>✅ ПРОДАНО</Text>
-          </View>
-        </View>
-      )}
+      {/* Status field doesn't exist in schema - removed */}
 
       {/* Информация о листинге */}
       <View style={styles.infoContainer}>
@@ -122,20 +116,22 @@ export default function ListingVideoPlayer({
             ) : (
               <View style={[styles.sellerAvatar, styles.sellerAvatarPlaceholder]}>
                 <Text style={styles.sellerAvatarText}>
-                  {listing.seller.name[0].toUpperCase()}
+                  {(listing.seller.name ?? '?').charAt(0).toUpperCase()}
                 </Text>
               </View>
             )}
             <View style={styles.sellerDetails}>
               <View style={styles.sellerNameRow}>
-                <Text style={styles.sellerName}>{listing.seller.name}</Text>
+                <Text style={styles.sellerName}>{listing.seller.name ?? 'Продавец'}</Text>
                 {listing.seller.is_verified && (
                   <Text style={styles.verifiedBadge}>✓</Text>
                 )}
               </View>
-              <Text style={styles.sellerRating}>
-                ⭐ {listing.seller.rating.toFixed(1)}
-              </Text>
+              {typeof listing.seller.rating === 'number' && (
+                <Text style={styles.sellerRating}>
+                  ⭐ {listing.seller.rating.toFixed(1)}
+                </Text>
+              )}
             </View>
           </View>
         )}
@@ -146,20 +142,18 @@ export default function ListingVideoPlayer({
         {/* Like */}
         <TouchableOpacity style={styles.actionButton} onPress={() => onLike(listing.id)}>
           <Text style={styles.actionIcon}>
-            {listing.isLiked ? '❤️' : '🤍'}
+            ❤️
           </Text>
           <Text style={styles.actionText}>
-            {formatNumber(listing.likes)}
+            {formatNumber(listing.likes || 0)}
           </Text>
         </TouchableOpacity>
 
-        {/* Save */}
-        <TouchableOpacity style={styles.actionButton} onPress={() => onSave(listing.id)}>
-          <Text style={styles.actionIcon}>
-            {listing.isSaved ? '🔖' : '📑'}
-          </Text>
+        {/* Comments */}
+        <TouchableOpacity style={styles.actionButton}>
+          <Text style={styles.actionIcon}>💬</Text>
           <Text style={styles.actionText}>
-            {formatNumber(listing.saves)}
+            {formatNumber(listing.comments_count ?? 0)}
           </Text>
         </TouchableOpacity>
 
@@ -167,15 +161,28 @@ export default function ListingVideoPlayer({
         <TouchableOpacity style={styles.actionButton} onPress={() => onShare(listing.id)}>
           <Text style={styles.actionIcon}>📤</Text>
           <Text style={styles.actionText}>
-            {formatNumber(listing.shares)}
+            {formatNumber(listing.shares || 0)}
           </Text>
+        </TouchableOpacity>
+
+        {/* Save */}
+        <TouchableOpacity style={styles.actionButton} onPress={() => onSave(listing.id)}>
+          <Text style={styles.actionIcon}>🔖</Text>
+          <Text style={styles.actionText}>
+            {formatNumber(listing.saves || 0)}
+          </Text>
+        </TouchableOpacity>
+
+        {/* Sound/Mute */}
+        <TouchableOpacity style={styles.actionButton}>
+          <Text style={styles.actionIcon}>🔇</Text>
         </TouchableOpacity>
 
         {/* Views */}
         <View style={styles.actionButton}>
           <Text style={styles.actionIcon}>👁️</Text>
           <Text style={styles.actionText}>
-            {formatNumber(listing.views)}
+            {formatNumber(listing.views || 0)}
           </Text>
         </View>
       </View>
@@ -351,4 +358,3 @@ const styles = StyleSheet.create({
     textShadowRadius: 3,
   },
 });
-

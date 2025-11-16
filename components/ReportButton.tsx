@@ -91,7 +91,7 @@ export function ReportButton({
       // Если >= 3 жалоб - автоматически архивируем контент
       if (count && count >= 3 && targetType === 'car') {
         await supabase
-          .from('cars')
+          .from('listings')
           .update({ status: 'archived' })
           .eq('id', targetId);
       }

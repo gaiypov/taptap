@@ -52,6 +52,7 @@ function CommentItem({
 
   useEffect(() => {
     checkPermissions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUserId, comment.id]);
 
   useEffect(() => {

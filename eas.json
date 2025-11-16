@@ -31,6 +31,19 @@
       }
     }
   },
+  "update": {
+    "development": {
+      "channel": "development"
+    },
+    "preview": {
+      "channel": "preview",
+      "checkAutomatically": "ON_LOAD"
+    },
+    "production": {
+      "channel": "production",
+      "checkAutomatically": "ON_LOAD"
+    }
+  },
   "submit": {
     "production": {
       "ios": {

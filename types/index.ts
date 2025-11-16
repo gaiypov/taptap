@@ -1,15 +1,24 @@
-// ============================================
-// 360⁰ Marketplace - Unified Types
-// Production Ready for Kyrgyzstan Launch
-// ============================================
+// ============================================================
+// 360° Marketplace – Unified Domain Model
+// ============================================================
+// Этот файл консолидации типов используется во всём приложении
+// (мобильный клиент, сервисы, интеграции) и должен оставаться
+// единственным источником правды для бизнес‑сущностей.
 
-// ============================================
-// CORE TYPES
-// ============================================
+// ------------------------------------------------------------
+// Core enums
+// ------------------------------------------------------------
 
 export type ListingCategory = 'car' | 'horse' | 'real_estate';
 
-export type ListingStatus = 'pending_review' | 'active' | 'rejected' | 'archived';
+export type ListingStatus =
+  | 'draft'
+  | 'pending_review'
+  | 'active'
+  | 'sold'
+  | 'rejected'
+  | 'archived'
+  | 'expired';
 
 export type VideoStatus = 'uploading' | 'processing' | 'ready' | 'failed';
 
@@ -17,20 +26,53 @@ export type PaymentStatus = 'pending' | 'paid' | 'failed';
 
 export type ModerationAction = 'auto_flag' | 'approve' | 'reject';
 
-export type BusinessMemberRole = 'admin' | 'seller';
+export type BusinessMemberRole = 'owner' | 'admin' | 'manager' | 'seller';
 
-export type PropertyType = 'apartment' | 'house' | 'land' | 'commercial';
+export type PropertyType = 'apartment' | 'house' | 'commercial' | 'land';
 
-// ============================================
-// USER & AUTH TYPES
-// ============================================
+export type MediaType = 'image' | 'video' | 'thumbnail' | 'document';
+
+// ------------------------------------------------------------
+// Shared entities
+// ------------------------------------------------------------
+
+export interface MediaAsset {
+  id?: string;
+  type: MediaType;
+  url: string;
+  preview_url?: string;
+  width?: number;
+  height?: number;
+  duration?: number;
+  order?: number;
+  metadata?: Record<string, unknown>;
+}
+
+export interface Damage {
+  type: string;
+  severity: 'minor' | 'moderate' | 'major' | 'severe' | 'critical';
+  location: string;
+  confidence: number;
+  description?: string;
+}
+
+// ------------------------------------------------------------
+// User / Profile
+// ------------------------------------------------------------
 
 export interface User {
   id: string;
   phone: string;
   name: string;
-  age?: number;
   avatar_url?: string;
+  bio?: string;
+  city?: string;
+  is_verified?: boolean;
+  rating?: number;
+  total_sales?: number;
+  total_purchases?: number;
+  response_rate?: number;
+  last_login_at?: string;
   created_at: string;
   updated_at: string;
 }
@@ -43,17 +85,16 @@ export interface AuthToken {
   exp: number;
 }
 
-// ============================================
-// BUSINESS ACCOUNT TYPES
-// ============================================
-
 export interface BusinessAccount {
   id: string;
+  owner_id?: string;
   name: string;
-  tax_id?: string; // ИНН for Kyrgyzstan entities
+  tax_id?: string;
+  phone_public?: string;
+  email?: string;
+  website?: string;
   avatar_url?: string;
   verified: boolean;
-  phone_public?: string;
   created_at: string;
   updated_at: string;
 }
@@ -62,142 +103,317 @@ export interface BusinessMember {
   business_id: string;
   user_id: string;
   role: BusinessMemberRole;
-  created_at: string;
+  invited_at?: string;
+  accepted_at?: string;
 }
 
-// ============================================
-// LISTING TYPES
-// ============================================
-
-export interface BaseListing {
-  id: string;
-  seller_user_id: string | null;   // for private seller
-  business_id: string | null;      // for business accounts
-  category: ListingCategory;
-  title: string;
-  description: string;
-  price: number;
-  currency: string;
-  location_text: string;
-  latitude: number | null;
-  longitude: number | null;
-  video_id: string | null;         // api.video reference
-  video_status: VideoStatus;
-  status: ListingStatus;
-  is_boosted: boolean;             // derived from promotions
-  created_at: string;
-  updated_at: string;
+export interface ProfileStats {
+  active_listings: number;
+  sold_listings: number;
+  total_views: number;
+  total_followers?: number;
+  response_rate?: number;
+  rating?: number;
 }
+
+export interface Profile {
+  user: User;
+  business?: BusinessAccount | null;
+  stats: ProfileStats;
+  listings?: Listing[];
+  saved_listings?: Listing[];
+  media?: MediaAsset[];
+  about?: string;
+  is_current_user?: boolean;
+}
+
+// ------------------------------------------------------------
+// Listing details per domain
+// ------------------------------------------------------------
 
 export interface CarDetails {
-  make: string;
+  brand: string;
   model: string;
   year: number;
-  mileage_km: number;
+  mileage: number;
+  mileage_unit?: 'km' | 'mi';
+  transmission?: 'manual' | 'automatic' | 'cvt' | 'robotic' | string;
+  fuel_type?: 'gasoline' | 'diesel' | 'electric' | 'hybrid' | string;
+  body_type?: string;
+  drivetrain?: string;
+  color?: string;
+  owners_count?: number;
   vin?: string;
-  damage_report?: string;  // AI output
+  license_plate?: string;
+  engine?: {
+    type?: string;
+    capacity_l?: number;
+    power_hp?: number;
+  };
+  condition?: 'excellent' | 'good' | 'fair' | 'poor' | string;
+  damages?: Damage[];
+  features?: string[];
+  ai_summary?: string;
 }
 
 export interface HorseDetails {
   breed: string;
-  age_years: number;
-  gender?: string;
-  training_level?: string;
+  age: number;
+  gender?: 'stallion' | 'mare' | 'gelding' | string;
+  color?: string;
+  height?: number;
+  temperament?: string;
+  training?: string;
+  purpose?: string;
+  pedigree?: boolean;
+  health_certificate?: boolean;
+  vaccinations?: string[];
+  achievements?: string[];
+  issues?: string[];
   health_notes?: string;
 }
 
 export interface RealEstateDetails {
   property_type: PropertyType;
+  area: number;
+  area_unit?: 'm2' | 'ft2';
   rooms?: number;
-  area_m2?: number;
-  address_text?: string;
-  is_owner?: boolean; // is owner or agent
+  bedrooms?: number;
+  bathrooms?: number;
+  floor?: number;
+  total_floors?: number;
+  year_built?: number;
+  condition?: 'excellent' | 'good' | 'fair' | 'poor' | string;
+  address?: string;
+  city?: string;
+  description?: string;
+  amenities?: string[];
+  utilities?: string[];
+  parking?: boolean;
+  lot_area?: number;
 }
 
-export interface Listing extends BaseListing {
-  // Seller info
-  seller?: {
-    id: string;
-    name: string;
-    phone: string;
-    avatar_url?: string;
-  };
-  
-  // Business info
-  business?: {
-    id: string;
-    name: string;
-    verified: boolean;
-    phone_public?: string;
-  };
-  
-  // Category-specific details
-  car_details?: CarDetails;
-  horse_details?: HorseDetails;
-  real_estate_details?: RealEstateDetails;
-  
-  // Stats
-  views_count: number;
-  likes_count: number;
-  comments_count: number;
+export type ListingDetailsMap = {
+  car: CarDetails;
+  horse: HorseDetails;
+  real_estate: RealEstateDetails;
+};
+
+export type ListingDetails = ListingDetailsMap[ListingCategory];
+
+export interface SellerSummary {
+  id: string;
+  name?: string;
+  avatar_url?: string;
+  phone?: string;
+  is_verified?: boolean;
+  rating?: number;
+  total_sales?: number;
+  response_rate?: number;
+}
+
+export interface PriceRange {
+  min: number;
+  max: number;
+}
+
+export interface CarAIAnalysis {
+  condition: 'excellent' | 'good' | 'fair' | 'poor' | string;
+  conditionScore: number;
+  damages: Damage[];
+  estimatedPrice: PriceRange;
+  features: string[];
+  summary?: string;
+}
+
+export interface HorseAIAnalysis {
+  is_horse: boolean;
+  confidence: number;
+  breed?: string;
+  color?: string;
+  estimated_age?: 'young' | 'adult' | 'old' | string;
+  estimated_height?: number;
+  visible_defects?: string[];
+  quality_score?: number;
+  tags?: string[];
+  issues?: string[];
+  temperament?: string;
+  condition?: 'excellent' | 'good' | 'fair' | 'poor' | string;
+  body_condition_score?: number;
+  conformation?: string;
+  reason?: string;
+}
+
+// ------------------------------------------------------------
+// Listing aggregate
+// ------------------------------------------------------------
+
+export interface Listing {
+  id: string;
+  category: ListingCategory;
+  seller_id: string;
+  seller?: SellerSummary;
+  business_id?: string | null;
+
+  title: string;
+  description?: string;
+  price: number;
+  currency: string;
+  city?: string;
+  location?: string;
+
+  video_id: string;
+  video_url: string;
+  videoUrl?: string;
+  thumbnail_url?: string;
+  thumbnailUrl?: string;
+  media?: MediaAsset[];
+
+  status: ListingStatus;
+  created_at: string;
+  updated_at: string;
+  createdAt?: string;
+  updatedAt?: string;
+  published_at?: string;
+  publishedAt?: string;
+  sold_at?: string;
+  soldAt?: string;
+  expires_at?: string;
+  expiresAt?: string;
+  delete_at?: string;
+  deleteAt?: string;
+
+  views: number;
+  likes: number;
+  saves: number;
+  shares: number;
   messages_count: number;
+  comments_count?: number;
+
+  // Compatibility aliases for legacy code
+  views_count?: number;
+  likes_count?: number;
+  saves_count?: number;
+
+  details: ListingDetails;
+
+  ai_score?: number;
+  ai_condition?: 'excellent' | 'good' | 'fair' | 'poor' | string;
+  ai_damages?: Damage[];
+  ai_features?: string[];
+  ai_tags?: string[];
+  ai_analysis_text?: string;
+  ai_estimated_price?: {
+    min: number;
+    max: number;
+  };
+  aiAnalysis?: CarAIAnalysis | HorseAIAnalysis | null;
+
+  is_promoted?: boolean;
+  boost_type?: 'basic' | 'top' | 'premium';
+  boost_expires_at?: string;
+  boost_activated_at?: string;
+  views_before_boost?: number;
+
+  // UI state flags (not persisted)
+  isLiked?: boolean;
+  isSaved?: boolean;
+  is_liked?: boolean | any[];
+  is_saved?: boolean | any[];
+  is_verified?: boolean;
 }
 
-// ============================================
-// CHAT TYPES
-// ============================================
+export type ListingByCategory<C extends ListingCategory> = Listing & {
+  category: C;
+  details: ListingDetailsMap[C];
+};
 
-export interface ChatThread {
+export interface CarListing extends Listing {
+  category: 'car';
+  details: CarDetails;
+  brand?: string;
+  model?: string;
+  year?: number;
+  mileage?: number;
+  color?: string;
+  transmission?: string;
+  aiAnalysis?: CarAIAnalysis | null;
+}
+
+export interface HorseListing extends Listing {
+  category: 'horse';
+  details: HorseDetails;
+  aiAnalysis?: HorseAIAnalysis | null;
+}
+
+export interface RealEstateListing extends Listing {
+  category: 'real_estate';
+  details: RealEstateDetails;
+}
+
+// Backwards compatibility aliases
+export type Car = CarListing;
+
+export const isCarListing = (listing: Listing): listing is CarListing =>
+  listing.category === 'car';
+
+export const isHorseListing = (listing: Listing): listing is HorseListing =>
+  listing.category === 'horse';
+
+export const isRealEstateListing = (
+  listing: Listing,
+): listing is RealEstateListing => listing.category === 'real_estate';
+
+// ------------------------------------------------------------
+// Communications (chat / conversations)
+// ------------------------------------------------------------
+
+export interface ConversationUser {
+  id: string;
+  name?: string;
+  avatar_url?: string;
+  is_verified?: boolean;
+  phone?: string;
+}
+
+export interface Conversation {
   id: string;
   listing_id: string;
+  car_id?: string; // legacy alias
   buyer_id: string;
   seller_id: string;
+  last_message?: string;
   last_message_at: string;
-  created_at: string;
-  
-  // Related data
-  listing?: {
-    id: string;
-    title: string;
-    price: number;
-    currency: string;
-    thumbnail_url?: string;
-  };
-  
-  buyer?: {
-    id: string;
-    name: string;
-    avatar_url?: string;
-  };
-  
-  seller?: {
-    id: string;
-    name: string;
-    avatar_url?: string;
-  };
-  
-  unread_count: number;
+  unread_count?: number;
+  created_at?: string;
+  updated_at?: string;
+  listing?: Listing;
+  car?: CarListing; // legacy alias for UI components
+  buyer?: ConversationUser;
+  seller?: ConversationUser;
 }
 
 export interface ChatMessage {
   id: string;
-  thread_id: string;
+  conversation_id: string;
   sender_id: string;
   body: string;
+  message?: string; // legacy alias for body
+  type: 'text' | 'image' | 'video' | 'system';
   created_at: string;
-  read_at: string | null;
-  
-  // Sender info
-  sender?: {
-    id: string;
-    name: string;
-    avatar_url?: string;
-  };
+  updated_at?: string;
+  is_read?: boolean;
+  metadata?: Record<string, unknown>;
+  attachments?: MediaAsset[];
+  sender?: ConversationUser;
 }
 
-// ============================================
-// PROMOTION TYPES
-// ============================================
+// Legacy alias to simplify gradual refactors
+export type Message = ChatMessage;
+
+// ------------------------------------------------------------
+// Promotions / moderation / notifications
+// ------------------------------------------------------------
 
 export interface Promotion {
   id: string;
@@ -206,50 +422,136 @@ export interface Promotion {
   ends_at: string;
   payment_status: PaymentStatus;
   created_at: string;
-  
-  // Related data
-  listing?: {
-    id: string;
-    title: string;
-    price: number;
-    currency: string;
-  };
+  listing?: Listing;
 }
-
-// ============================================
-// MODERATION TYPES
-// ============================================
 
 export interface ModerationEvent {
   id: string;
   listing_id: string;
-  moderator_id: string | null; // null = auto AI flag
+  moderator_id: string | null;
   action: ModerationAction;
   reason: string;
   created_at: string;
-  
-  // Related data
   listing?: {
     id: string;
     title: string;
     category: ListingCategory;
   };
-  
   moderator?: {
     id: string;
     name: string;
   };
 }
 
-// ============================================
-// API RESPONSE TYPES
-// ============================================
+export interface Notification {
+  id: string;
+  user_id: string;
+  title: string;
+  body: string;
+  type: 'chat_message' | 'listing_approved' | 'listing_rejected' | 'promotion_expired';
+  data?: Record<string, unknown>;
+  read_at: string | null;
+  created_at: string;
+}
 
-export interface ApiResponse<T = any> {
+export interface PushNotification {
+  userId: string;
+  title: string;
+  body: string;
+  data?: Record<string, unknown>;
+}
+
+// ------------------------------------------------------------
+// API & DTO helpers
+// ------------------------------------------------------------
+
+export interface CreateListingRequest {
+  category: ListingCategory;
+  title: string;
+  description?: string;
+  price: number;
+  currency: string;
+  city?: string;
+  location?: string;
+  video_id: string;
+  video_url: string;
+  thumbnail_url?: string;
+  details: ListingDetails;
+}
+
+export interface UpdateListingRequest {
+  title?: string;
+  description?: string;
+  price?: number;
+  currency?: string;
+  city?: string;
+  location?: string;
+  video_id?: string;
+  video_url?: string;
+  thumbnail_url?: string;
+  details?: Partial<ListingDetails>;
+}
+
+export interface CreateBusinessAccountRequest {
+  name: string;
+  tax_id?: string;
+  phone_public?: string;
+  email?: string;
+}
+
+export interface AddBusinessMemberRequest {
+  user_id: string;
+  role: BusinessMemberRole;
+}
+
+export interface SendMessageRequest {
+  body: string;
+  attachments?: MediaAsset[];
+}
+
+export interface StartPromotionRequest {
+  listing_id: string;
+  duration_days: number;
+}
+
+export interface SearchFilters {
+  category?: ListingCategory;
+  searchQuery?: string;
+  minPrice?: number;
+  maxPrice?: number;
+  minYear?: number;
+  maxYear?: number;
+  location?: string;
+  sortBy?: 'newest' | 'price_asc' | 'price_desc' | 'popular';
+  page?: number;
+  limit?: number;
+
+  // Car-specific filters
+  brand?: string;
+  model?: string;
+  transmission?: string;
+
+  // Horse-specific filters
+  breed?: string;
+  gender?: string;
+
+  // Real estate
+  propertyType?: PropertyType;
+  minRooms?: number;
+  maxRooms?: number;
+  minArea?: number;
+  maxArea?: number;
+}
+
+export interface SearchResult extends Listing {
+  relevance_score?: number;
+}
+
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data?: T;
   error?: string;
-  details?: any;
+  details?: unknown;
 }
 
 export interface PaginatedResponse<T> extends ApiResponse<T[]> {
@@ -264,110 +566,15 @@ export interface PaginatedResponse<T> extends ApiResponse<T[]> {
 export interface ApiError {
   success: false;
   error: string;
-  details?: any;
+  details?: unknown;
 }
 
-// ============================================
-// REQUEST TYPES
-// ============================================
-
-export interface CreateListingRequest {
-  category: ListingCategory;
-  title: string;
-  description: string;
-  price: number;
-  currency: string;
-  location_text: string;
-  latitude?: number;
-  longitude?: number;
-  carDetails?: CarDetails;
-  horseDetails?: HorseDetails;
-  realEstateDetails?: RealEstateDetails;
-}
-
-export interface UpdateListingRequest {
-  title?: string;
-  description?: string;
-  price?: number;
-  currency?: string;
-  location_text?: string;
-  latitude?: number;
-  longitude?: number;
-  carDetails?: Partial<CarDetails>;
-  horseDetails?: Partial<HorseDetails>;
-  realEstateDetails?: Partial<RealEstateDetails>;
-}
-
-export interface CreateBusinessAccountRequest {
-  name: string;
-  tax_id?: string;
-  phone_public?: string;
-}
-
-export interface AddBusinessMemberRequest {
-  user_id: string;
-  role: BusinessMemberRole;
-}
-
-export interface SendMessageRequest {
-  body: string;
-}
-
-export interface StartPromotionRequest {
-  listing_id: string;
-  duration_days: number;
-}
-
-// ============================================
-// SEARCH & FILTER TYPES
-// ============================================
-
-export interface SearchFilters {
-  category?: ListingCategory;
-  searchQuery?: string;
-  minPrice?: number;
-  maxPrice?: number;
-  location?: string;
-  sortBy?: 'newest' | 'price_asc' | 'price_desc' | 'popular';
-  page?: number;
-  limit?: number;
-  
-  // Car-specific filters
-  carMake?: string;
-  carModel?: string;
-  carYear?: number;
-  carMinYear?: number;
-  carMaxYear?: number;
-  carMinMileage?: number;
-  carMaxMileage?: number;
-  
-  // Horse-specific filters
-  horseBreed?: string;
-  horseMinAge?: number;
-  horseMaxAge?: number;
-  horseGender?: string;
-  
-  // Real estate-specific filters
-  propertyType?: PropertyType;
-  minRooms?: number;
-  maxRooms?: number;
-  minArea?: number;
-  maxArea?: number;
-}
-
-export interface SearchResult extends Listing {
-  relevance_score?: number;
-}
-
-// ============================================
-// MOBILE APP TYPES
-// ============================================
+// ------------------------------------------------------------
+// App state helpers (Redux / Zustand compatible)
+// ------------------------------------------------------------
 
 export interface FeedItem extends Listing {
-  video_url?: string;
-  thumbnail_url?: string;
-  is_liked?: boolean;
-  is_saved?: boolean;
+  position?: number;
 }
 
 export interface AuthState {
@@ -388,9 +595,9 @@ export interface AppState {
   offlineDrafts: CreateListingRequest[];
 }
 
-// ============================================
-// LEGAL COMPLIANCE TYPES
-// ============================================
+// ------------------------------------------------------------
+// Compliance & audit
+// ------------------------------------------------------------
 
 export interface LegalConsent {
   offer_agreement: boolean;
@@ -408,52 +615,14 @@ export interface UserConsent {
   user_agent?: string;
 }
 
-// ============================================
-// AUDIT & LOGGING TYPES
-// ============================================
-
 export interface AuditLog {
   id: string;
   user_id: string | null;
   action: string;
   resource_type: string;
   resource_id: string;
-  details: any;
+  details: unknown;
   ip_address?: string;
   user_agent?: string;
   created_at: string;
 }
-
-// ============================================
-// NOTIFICATION TYPES
-// ============================================
-
-export interface Notification {
-  id: string;
-  user_id: string;
-  title: string;
-  body: string;
-  type: 'chat_message' | 'listing_approved' | 'listing_rejected' | 'promotion_expired';
-  data?: any;
-  read_at: string | null;
-  created_at: string;
-}
-
-export interface PushNotification {
-  userId: string;
-  title: string;
-  body: string;
-  data?: any;
-}
-
-// ============================================
-// EXPORT ALL TYPES
-// ============================================
-
-export type {
-    AddBusinessMemberRequest, ApiError, ApiResponse, AppState, AuditLog, AuthState, AuthToken, BaseListing, BusinessAccount,
-    BusinessMember, BusinessMemberRole, CarDetails, ChatMessage, ChatThread, CreateBusinessAccountRequest, CreateListingRequest, FeedItem, HorseDetails, LegalConsent, Listing, ListingCategory,
-    ListingStatus, ModerationAction, ModerationEvent, Notification, PaginatedResponse, PaymentStatus, Promotion, PropertyType, PushNotification, RealEstateDetails, SearchFilters,
-    SearchResult, SendMessageRequest,
-    StartPromotionRequest, UpdateListingRequest, User, UserConsent, VideoStatus
-};

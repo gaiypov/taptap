@@ -70,12 +70,10 @@ export default function SMSAuthModal({
 
     const result = await auth.sendVerificationCode(phone);
 
+    // НЕ показываем testCode - это нарушает безопасность
     const messages: string[] = [];
     if (result.warning) {
       messages.push(result.warning);
-    }
-    if (result.testCode) {
-      messages.push(`Тестовый код: ${result.testCode}`);
     }
 
     if (result.success) {

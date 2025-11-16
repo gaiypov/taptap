@@ -106,7 +106,7 @@ export function demonstrateHelpers(car: Car) {
   
   // Описание состояния
   if (car.aiAnalysis) {
-    console.log(`Состояние: ${getConditionText(car.aiAnalysis.condition)}`);
+    console.log(`Состояние: ${getConditionText(car.aiAnalysis.condition as any)}`);
   }
   
   // Краткое описание
@@ -324,13 +324,13 @@ export function exportAnalysisResults(cars: Car[], format: 'json' | 'csv' = 'jso
   if (format === 'csv') {
     const headers = ['Brand', 'Model', 'Year', 'Mileage', 'Condition', 'Price Min', 'Price Max', 'Rating'];
     const rows = cars.map(car => [
-      car.brand,
-      car.model,
-      car.year.toString(),
-      car.mileage.toString(),
+      car.brand ?? car.details?.brand ?? '',
+      car.model ?? car.details?.model ?? '',
+      String(car.year ?? car.details?.year ?? ''),
+      String(car.mileage ?? car.details?.mileage ?? ''),
       car.aiAnalysis?.condition || '',
-      car.aiAnalysis?.estimatedPrice.min.toString() || '',
-      car.aiAnalysis?.estimatedPrice.max.toString() || '',
+      car.aiAnalysis?.estimatedPrice ? String(car.aiAnalysis.estimatedPrice.min) : '',
+      car.aiAnalysis?.estimatedPrice ? String(car.aiAnalysis.estimatedPrice.max) : '',
       getCarRating(car).toString(),
     ]);
     

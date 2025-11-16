@@ -98,7 +98,22 @@ export default function NotificationsScreen() {
 
       // Перейти по ссылке если есть
       if (notification.action_url) {
-        router.push(notification.action_url as any);
+        // Парсим URL и извлекаем путь и параметры
+        try {
+          const url = new URL(notification.action_url, 'app360://');
+          const pathname = url.pathname;
+          const params: Record<string, string> = {};
+          url.searchParams.forEach((value, key) => {
+            params[key] = value;
+          });
+          
+          router.push({
+            pathname: pathname as any,
+            params,
+          });
+        } catch (error) {
+          console.error('Invalid notification URL:', notification.action_url);
+        }
       }
     } catch (error) {
       console.error('Handle notification error:', error);

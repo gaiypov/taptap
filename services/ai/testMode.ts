@@ -24,7 +24,6 @@ const REQUEST_LIMIT = TEST_CONFIG.MAX_REQUESTS_PER_DAY;
 
 export function canMakeRequest(): boolean {
   if (requestCount >= REQUEST_LIMIT) {
-    console.warn(`⚠️ Daily limit reached: ${REQUEST_LIMIT} requests`);
     return false;
   }
   return true;
@@ -32,7 +31,6 @@ export function canMakeRequest(): boolean {
 
 export function incrementRequestCount() {
   requestCount++;
-  console.log(`📊 Requests today: ${requestCount}/${REQUEST_LIMIT}`);
 }
 
 export function resetRequestCount() {
@@ -48,4 +46,39 @@ export function getCachedAnalysis(videoUri: string): any | null {
 
 export function setCachedAnalysis(videoUri: string, result: any) {
   analysisCache.set(videoUri, result);
+}
+
+/**
+ * Тестовый режим AI согласно промпту CursorAI-Prompt.md
+ * Используется для разработки без API ключей
+ */
+export async function useTestMode(
+  provider: 'openai' | 'claude' | 'google' | 'yolo',
+  mockData?: any
+): Promise<any> {
+  // Test mode enabled
+  
+  // Простые мок данные для разработки
+  const mockResults = {
+    openai: {
+      description: 'Отличное состояние, без повреждений',
+      estimatedPrice: 2500000,
+      condition: 'excellent',
+    },
+    claude: {
+      analysis: 'Справедливая цена для данной модели',
+      condition: 'good',
+    },
+    google: {
+      labels: ['car', 'bmw', 'sedan', 'black'],
+      objects: [{ name: 'car', confidence: 0.95 }],
+    },
+    yolo: {
+      objects: [{ type: 'car', confidence: 0.9 }],
+    },
+  };
+  
+  await new Promise(resolve => setTimeout(resolve, 500)); // Имитация задержки
+  
+  return mockResults[provider] || mockData;
 }

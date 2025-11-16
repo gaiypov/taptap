@@ -23,12 +23,14 @@ cd ../shared && npm install
 ## 2️⃣ Configure Environment
 
 ### Backend `.env`
+
 ```bash
 cd backend
 cp .env.example .env  # Edit with your keys
 ```
 
 ### Mobile `.env`
+
 ```bash
 cd mobile
 cp .env.example .env  # Edit with your keys
@@ -39,6 +41,7 @@ cp .env.example .env  # Edit with your keys
 ## 3️⃣ Start Development
 
 ### Terminal 1 - Backend
+
 ```bash
 cd backend
 npm run dev
@@ -47,6 +50,7 @@ npm run dev
 ```
 
 ### Terminal 2 - Mobile
+
 ```bash
 cd mobile
 npm start
@@ -59,14 +63,13 @@ npm start
 
 ## 4️⃣ Test It Works
 
-- **Backend health:** http://localhost:3001/health
+- **Backend health:** <http://localhost:3001/health>
 - **Mobile app:** Open in Expo Go app
 
 ---
 
-## 🎯 That's It!
+## 🎯 That's It
 
 Ready to build! 🚀
 
 For detailed setup, see [SETUP_GUIDE.md](./SETUP_GUIDE.md)
-

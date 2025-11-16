@@ -1,6 +1,6 @@
 import { auth } from '@/services/auth';
 import { db, realtime, supabase } from '@/services/supabase';
-import { Conversation, Message } from '@/types';
+import { Conversation, Message, isCarListing } from '@/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -35,26 +35,44 @@ export default function ChatScreen() {
     if (!conversationId) return;
 
     if (realtimeChannel.current) {
-      realtime.unsubscribe(realtimeChannel.current);
+      supabase.removeChannel(realtimeChannel.current);
       realtimeChannel.current = null;
     }
 
-    const channel = realtime.subscribeToMessages(
-      conversationId,
-      (newMessage: Message) => {
-        setMessages((prev) => [...prev, newMessage]);
-        
+    // Подписываемся на новые сообщения через Supabase Realtime
+    const channel = supabase
+      .channel(`chat:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'chat_messages',
+          filter: `thread_id=eq.${conversationId}`,
+        },
+        (payload) => {
+          const newMessage = payload.new as any;
+          setMessages((prev) => [
+            ...prev,
+            {
+              ...newMessage,
+              message: newMessage.body,
+              conversation_id: newMessage.thread_id,
+            },
+          ]);
         // Автоскролл вниз
         setTimeout(() => {
           flatListRef.current?.scrollToEnd({ animated: true });
         }, 100);
       }
-    );
+      )
+      .subscribe();
+    
     realtimeChannel.current = channel;
 
     return () => {
       if (realtimeChannel.current) {
-        realtime.unsubscribe(realtimeChannel.current);
+        supabase.removeChannel(realtimeChannel.current);
         realtimeChannel.current = null;
       }
     };
@@ -73,12 +91,12 @@ export default function ChatScreen() {
       const user = await auth.getCurrentUser();
       setCurrentUser(user);
       
-      // Загружаем информацию о разговоре
+      // Загружаем информацию о разговоре (используем chat_threads)
       const { data: convData, error: convError } = await supabase
-        .from('conversations')
+        .from('chat_threads')
         .select(`
           *,
-          car:cars(id, brand, model, thumbnail_url, price),
+          listing:listings!listing_id(id, title, category, price, thumbnail_url),
           buyer:users!buyer_id(id, name, avatar_url),
           seller:users!seller_id(id, name, avatar_url)
         `)
@@ -86,17 +104,33 @@ export default function ChatScreen() {
         .single();
       
       if (convError) throw convError;
-      setConversation(convData);
       
-      // Загружаем сообщения
-      const { data: messagesData, error: messagesError } = await db.getMessages(conversationId);
+      // Преобразуем chat_thread в формат Conversation для совместимости
+      if (convData) {
+        const formattedConv: any = {
+          ...convData,
+          car: convData.listing, // Для совместимости
+          car_id: convData.listing_id,
+        };
+        setConversation(formattedConv);
+      }
+      
+      // Загружаем сообщения (используем новый API)
+      const { data: messagesData, error: messagesError } = await db.getChatMessages(conversationId);
       if (messagesError) throw messagesError;
       
-      setMessages(messagesData || []);
+      // Преобразуем chat_messages в формат Message для совместимости
+      const formattedMessages = (messagesData || []).map((msg: any) => ({
+        ...msg,
+        message: msg.body, // Для совместимости
+        conversation_id: msg.thread_id,
+      }));
+      
+      setMessages(formattedMessages);
       
       // Отмечаем сообщения как прочитанные
       if (user) {
-        await db.markMessagesAsRead(conversationId, user.id);
+        await db.markChatMessagesAsRead(conversationId, user.id);
       }
       
       // Подписываемся на новые сообщения
@@ -142,7 +176,8 @@ export default function ChatScreen() {
     setSending(true);
     
     try {
-      const { error } = await db.sendMessage(
+      // Используем новый API для отправки сообщений
+      const { error } = await db.sendChatMessage(
         conversationId,
         currentUser.id,
         messageText
@@ -179,7 +214,8 @@ export default function ChatScreen() {
   const otherUser = conversation.buyer_id === currentUser?.id 
     ? conversation.seller 
     : conversation.buyer;
-  const car = conversation.car;
+  const rawListing = conversation.car ?? conversation.listing ?? null;
+  const carListing = rawListing && isCarListing(rawListing) ? rawListing : null;
 
   const handleOpenProfile = () => {
     if (otherUser?.id) {
@@ -191,10 +227,11 @@ export default function ChatScreen() {
   };
 
   const handleOpenCar = () => {
-    if (conversation.car_id) {
+    const listingId = conversation.car_id ?? conversation.listing_id;
+    if (listingId) {
       router.push({
         pathname: '/car/[id]',
-        params: { id: conversation.car_id },
+        params: { id: listingId },
       });
     }
   };
@@ -228,9 +265,10 @@ export default function ChatScreen() {
           />
           <View>
             <Text style={styles.headerName}>{displayName}</Text>
-            {car && (
+            {carListing && (
               <Text style={styles.headerCarInfo}>
-                {car.brand} {car.model}
+                {carListing.brand ?? carListing.details.brand}{' '}
+                {carListing.model ?? carListing.details.model}
               </Text>
             )}
           </View>
@@ -239,7 +277,7 @@ export default function ChatScreen() {
         <TouchableOpacity
           style={styles.carButton}
           onPress={handleOpenCar}
-          >
+        >
           <Ionicons name="car-outline" size={24} color="#FFF" />
         </TouchableOpacity>
       </View>
@@ -296,7 +334,7 @@ function MessageBubble({ message, isOwn }: { message: Message; isOwn: boolean })
   return (
     <View style={[styles.messageBubble, isOwn ? styles.ownMessage : styles.otherMessage]}>
       <Text style={[styles.messageText, isOwn && styles.ownMessageText]}>
-        {message.message}
+        {message.body ?? message.message ?? ''}
       </Text>
       <Text style={[styles.messageTime, isOwn && styles.ownMessageTime]}>
         {formatTime(message.created_at)}

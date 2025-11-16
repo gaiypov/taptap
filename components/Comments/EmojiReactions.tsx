@@ -25,6 +25,7 @@ export default function EmojiReactions({ commentId, onReact }: EmojiReactionsPro
   useEffect(() => {
     loadUser();
     loadReactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [commentId]);
 
   const loadUser = async () => {

@@ -30,17 +30,11 @@ CREATE TABLE IF NOT EXISTS public.chat_messages (
   sender_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
   body TEXT NOT NULL CHECK (LENGTH(body) > 0 AND LENGTH(body) <= 2000),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  read_at TIMESTAMP WITH TIME ZONE,
-  
-  -- Ensure sender is participant in thread
-  CONSTRAINT chat_messages_sender_check CHECK (
-    sender_id IN (
-      SELECT buyer_id FROM public.chat_threads WHERE id = thread_id
-      UNION
-      SELECT seller_id FROM public.chat_threads WHERE id = thread_id
-    )
-  )
+  read_at TIMESTAMP WITH TIME ZONE
 );
+
+-- Note: Sender validation is handled by RLS policies and triggers
+-- PostgreSQL doesn't allow subqueries in CHECK constraints
 
 -- ============================================
 -- 3. INDEXES FOR PERFORMANCE
@@ -129,14 +123,16 @@ DECLARE
     seller_id UUID;
 BEGIN
     -- Get seller_id from listing
-    SELECT COALESCE(seller_user_id, 
-        (SELECT user_id FROM public.business_members 
-         WHERE business_id = listings.business_id 
-         AND role = 'admin' 
-         LIMIT 1))
+    SELECT COALESCE(
+        l.seller_user_id,
+        (SELECT bm.user_id FROM public.business_members bm
+         WHERE bm.business_id = l.business_id 
+         AND bm.role = 'admin' 
+         LIMIT 1)
+    )
     INTO seller_id
-    FROM public.listings
-    WHERE id = p_listing_id;
+    FROM public.listings l
+    WHERE l.id = p_listing_id;
     
     IF seller_id IS NULL THEN
         RAISE EXCEPTION 'Listing not found or no seller found';

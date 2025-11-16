@@ -5,11 +5,11 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { AuthenticatedRequest, authenticateToken } from '../middleware/auth';
-import { asyncHandler, auditLog, AuthorizationError, ConflictError, CustomError, NotFoundError } from '../middleware/errorHandler';
-import { defaultLimiter } from '../middleware/rateLimit';
-import { startPromotionSchema, validateBody, validateParams } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import { AuthenticatedRequest, authenticateToken } from '../../middleware/auth';
+import { asyncHandler, auditLog, AuthorizationError, ConflictError, CustomError, NotFoundError } from '../../middleware/errorHandler';
+import { defaultLimiter } from '../../middleware/rateLimit';
+import { startPromotionSchema, validateBody, validateParams } from '../../middleware/validate';
+import { supabase } from '../../services/supabaseClient';
 
 const router = Router();
 

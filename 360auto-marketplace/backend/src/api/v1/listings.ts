@@ -5,11 +5,11 @@
 
 import { Router } from 'express';
 import { z } from 'zod';
-import { AuthenticatedRequest, authenticateToken, optionalAuth } from '../middleware/auth';
-import { asyncHandler, auditLog, AuthorizationError, CustomError, NotFoundError } from '../middleware/errorHandler';
-import { defaultLimiter, uploadLimiter } from '../middleware/rateLimit';
-import { createListingSchema, searchListingsSchema, updateListingSchema, validateBody, validateParams, validateQuery } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import { AuthenticatedRequest, authenticateToken, optionalAuth } from '../../middleware/auth';
+import { asyncHandler, auditLog, AuthorizationError, CustomError, NotFoundError } from '../../middleware/errorHandler';
+import { defaultLimiter, uploadLimiter } from '../../middleware/rateLimit';
+import { createListingSchema, searchListingsSchema, updateListingSchema, validateBody, validateParams, validateQuery } from '../../middleware/validate';
+import { supabase } from '../../services/supabaseClient';
 
 const router = Router();
 
@@ -49,7 +49,7 @@ router.get('/feed',
       maxArea
     } = req.query;
 
-    const offset = (page - 1) * limit;
+    const offset = (Number(page) - 1) * Number(limit);
 
     let query = supabase
       .from('listings')
@@ -157,7 +157,7 @@ router.get('/feed',
     }
 
     // Apply pagination
-    query = query.range(offset, offset + limit - 1);
+    query = query.range(offset, offset + Number(limit) - 1);
 
     const { data: listings, error } = await query;
 
@@ -179,7 +179,7 @@ router.get('/feed',
         page,
         limit,
         total: sortedListings.length,
-        totalPages: Math.ceil(sortedListings.length / limit)
+        totalPages: Math.ceil(sortedListings.length / Number(limit))
       }
     });
   })

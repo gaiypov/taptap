@@ -2,21 +2,52 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { api } from './api';
-import { SMSService } from './smsReal';
 import storageService from './storage';
 import { db } from './supabase';
 
 const AUTH_USER_KEY = '@360auto:user';
 
-// Реальный SMS сервис
-const smsService = new SMSService({
-  login: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_LOGIN || 'superapp',
-  password: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_PASSWORD || '83fb772ee0799a422cce18ffd5f497b9',
-  sender: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_SENDER || 'bat-bat.kg',
-  apiUrl: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_API_URL || 'https://smspro.nikita.kg/api/message'
-});
+// Примечание: SMS отправка теперь выполняется через backend API
+// SMSService больше не используется напрямую на клиенте
 
 export const auth = {
+  // ========== TOKEN MANAGEMENT ==========
+  
+  async loadToken(): Promise<string | null> {
+    try {
+      return await storageService.getAuthToken();
+    } catch (error) {
+      console.error('Load token error:', error);
+      return null;
+    }
+  },
+  
+  async validateToken(token: string): Promise<boolean> {
+    try {
+      const controller = new AbortController();
+      // Уменьшен таймаут для web - быстрая валидация
+      const timeout = setTimeout(() => controller.abort(), 2000);
+      const url = `${Constants.expoConfig?.extra?.apiUrl || 'http://192.168.1.16:3001/api'}/auth/validate`;
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      const result = await response.json().catch(() => ({}));
+      return result.success === true;
+    } catch (error) {
+      // Не логируем ошибки валидации на web - они не критичны
+      if (Platform.OS !== 'web') {
+        console.error('Validate token error:', error);
+      }
+      return false;
+    }
+  },
+  
   // ========== SMS АВТОРИЗАЦИЯ ==========
   
   async sendVerificationCode(phone: string): Promise<{
@@ -27,52 +58,85 @@ export const auth = {
     error?: string;
   }> {
     try {
-      const formattedPhone = formatKyrgyzPhone(phone);
+      const formattedPhone = formatPhoneNumber(phone);
       if (!formattedPhone) {
         return { success: false, error: 'Неверный формат номера' };
       }
       
       // Отправляем запрос на backend для отправки SMS и сохранения кода
       console.log('🔑 Sending SMS request to backend...');
-      const response = await fetch(`${Constants.expoConfig?.extra?.apiUrl || 'http://192.168.1.16:3001/api'}/auth/request-code`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          phone: formattedPhone,
-        }),
-      });
+      
+      // Добавляем таймаут для запроса
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 секунд таймаут
+      
+      try {
+        const response = await fetch(`${Constants.expoConfig?.extra?.apiUrl || 'http://192.168.1.16:3001/api'}/auth/request-code`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phone: formattedPhone,
+          }),
+          signal: controller.signal,
+        });
+        
+        clearTimeout(timeoutId);
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.log('❌ Backend SMS failed:', errorData);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          console.log('❌ Backend SMS failed:', errorData);
+          return {
+            success: false,
+            error: errorData.message || 'Не удалось отправить SMS',
+          };
+        }
+
+        const result = await response.json();
+        console.log('✅ SMS sent successfully via backend');
+        
+        return {
+          success: true,
+          warning: 'SMS отправлено на ваш номер',
+          codeLength: 4, // 4-значный код для nikita.kg
+        };
+      } catch (fetchError: any) {
+        clearTimeout(timeoutId);
+        throw fetchError;
+      }
+    } catch (error: any) {
+      // Проверка на сетевые ошибки
+      const isNetworkError = 
+        error?.message?.includes('Network request failed') ||
+        error?.message?.includes('Failed to fetch') ||
+        error?.message?.includes('network') ||
+        error?.name === 'AbortError' ||
+        error?.name === 'TimeoutError' ||
+        error?.code === 'ENOTFOUND' ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ECONNREFUSED';
+
+      if (isNetworkError) {
+        console.warn('[Auth] Network error sending SMS:', error?.message || 'Network request failed');
         return {
           success: false,
-          error: errorData.message || 'Не удалось отправить SMS',
+          error: 'Проблема с подключением к сети. Проверьте интернет и попробуйте снова.',
         };
       }
 
-      const result = await response.json();
-      console.log('✅ SMS sent successfully via backend');
-      
-      return {
-        success: true,
-        warning: 'SMS отправлено на ваш номер',
-        codeLength: 6,
-      };
-    } catch (error: any) {
-      console.error('SMS sending error:', error);
+      // Для других ошибок логируем как обычно
+      console.error('[Auth] SMS sending error:', error);
       return {
         success: false,
-        error: error.message || 'Ошибка отправки SMS',
+        error: error?.message || 'Ошибка отправки SMS. Попробуйте позже.',
       };
     }
   },
   
   async verifyCode(phone: string, code: string): Promise<{ success: boolean; user?: any; codeLength?: number; error?: string }> {
     try {
-      const formattedPhone = formatKyrgyzPhone(phone);
+      const formattedPhone = formatPhoneNumber(phone);
       if (!formattedPhone) {
         return { success: false, error: 'Неверный формат номера' };
       }
@@ -180,18 +244,62 @@ export const auth = {
   },
 };
 
-// Форматирование номера КР
-function formatKyrgyzPhone(phone: string): string | null {
+// Форматирование номера для разных стран
+function formatPhoneNumber(phone: string): string | null {
   let cleaned = phone.replace(/\D/g, '');
   
+  // Определяем страну по коду
+  if (cleaned.startsWith('996') || cleaned.startsWith('0') || phone.startsWith('+996')) {
+    // Кыргызстан: +996 9 цифр
+    if (cleaned.startsWith('0')) {
+      cleaned = '996' + cleaned.slice(1);
+    }
+    if (!cleaned.startsWith('996')) {
+      cleaned = '996' + cleaned;
+    }
+    if (cleaned.length !== 12) {
+      return null;
+    }
+    return '+' + cleaned;
+  }
+  
+  if (cleaned.startsWith('7') || cleaned.startsWith('8') || phone.startsWith('+7')) {
+    // Казахстан/Россия: +7 10 цифр
+    if (cleaned.startsWith('8')) {
+      cleaned = '7' + cleaned.slice(1);
+    }
+    if (!cleaned.startsWith('7')) {
+      cleaned = '7' + cleaned;
+    }
+    if (cleaned.length !== 11) {
+      return null;
+    }
+    return '+' + cleaned;
+  }
+  
+  if (cleaned.startsWith('998') || phone.startsWith('+998')) {
+    // Узбекистан: +998 9 цифр
+    if (cleaned.length !== 12) {
+      return null;
+    }
+    return '+' + cleaned;
+  }
+  
+  if (cleaned.startsWith('992') || phone.startsWith('+992')) {
+    // Таджикистан: +992 9 цифр
+    if (cleaned.length !== 12) {
+      return null;
+    }
+    return '+' + cleaned;
+  }
+  
+  // Fallback на КР формат для совместимости
   if (cleaned.startsWith('0')) {
     cleaned = '996' + cleaned.slice(1);
   }
-  
   if (!cleaned.startsWith('996')) {
     cleaned = '996' + cleaned;
   }
-  
   if (cleaned.length !== 12) {
     return null;
   }
@@ -199,4 +307,9 @@ function formatKyrgyzPhone(phone: string): string | null {
   return '+' + cleaned;
 }
 
-export { formatKyrgyzPhone };
+// Обратная совместимость
+function formatKyrgyzPhone(phone: string): string | null {
+  return formatPhoneNumber(phone);
+}
+
+export { formatKyrgyzPhone, formatPhoneNumber };

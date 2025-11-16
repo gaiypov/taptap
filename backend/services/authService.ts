@@ -22,7 +22,7 @@ if (!JWT_SECRET) {
   throw new Error('JWT_SECRET must be set in environment variables.');
 }
 
-export const VERIFICATION_CODE_LENGTH = parseInt(process.env.SMS_CODE_LENGTH ?? '6', 10);
+export const VERIFICATION_CODE_LENGTH = parseInt(process.env.SMS_CODE_LENGTH ?? '4', 10);
 const VERIFICATION_CODE_TTL_MINUTES = parseInt(process.env.SMS_CODE_TTL_MINUTES ?? '5', 10);
 
 function formatPhoneNumber(phone: string): string {

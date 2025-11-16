@@ -7,7 +7,7 @@ export * from '../../../shared/src/types';
 
 // Export backend-specific types (not in shared)
 export * from './backend-specific';
-export * from './compression';
+// export * from './compression'; // Not a module
 export * from './express';
 
 // Backend-specific error types

@@ -1,6 +1,7 @@
 // app/index-with-categories.tsx
 // Новая главная страница с поддержкой категорий (авто + лошади)
 
+import CategoryOverlay from '@/app/_components/CategoryOverlay';
 import CategoryTabs from '@/components/Feed/CategoryTabs';
 import ListingVideoPlayer from '@/components/Feed/ListingVideoPlayer';
 import { auth } from '@/services/auth';
@@ -17,9 +18,9 @@ import {
     Text,
     View,
 } from 'react-native';
-import CategoryOverlay from '../components/CategoryOverlay';
+import { appLogger } from '@/utils/logger';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { SCREEN_HEIGHT } from '@/utils/constants';
 
 export default function HomeScreenWithCategories() {
   const [listings, setListings] = useState<Listing[]>([]);
@@ -46,7 +47,7 @@ export default function HomeScreenWithCategories() {
         setCurrentUser(user);
       }
     } catch (error) {
-      console.error('Error loading user:', error);
+      appLogger.error('Error loading user:', { error });
     }
   }, []);
 
@@ -76,7 +77,6 @@ export default function HomeScreenWithCategories() {
           )
         `)
         .eq('category', category)
-        .eq('status', 'active')
         .order('created_at', { ascending: false })
         .range(offset, offset + 9);
 
@@ -97,7 +97,7 @@ export default function HomeScreenWithCategories() {
         setHasMore(false);
       }
     } catch (error) {
-      console.error('Error loading listings:', error);
+      appLogger.error('Error loading listings:', { error });
     } finally {
       if (isMountedRef.current) {
         setLoading(false);
@@ -157,7 +157,7 @@ export default function HomeScreenWithCategories() {
     try {
       await supabase.rpc('increment_listing_views', { listing_uuid: listingId });
     } catch (error) {
-      console.error('Error incrementing views:', error);
+      appLogger.error('Error incrementing views:', { error });
     }
   };
 
@@ -185,7 +185,7 @@ export default function HomeScreenWithCategories() {
       // Инкрементируем счетчик
       await supabase.rpc('increment_listing_likes', { listing_uuid: listingId });
     } catch (error) {
-      console.error('Like error:', error);
+      appLogger.error('Like error:', { error });
       // Откатываем изменения
       setListings((prev) =>
         prev.map((listing) =>
@@ -219,7 +219,7 @@ export default function HomeScreenWithCategories() {
 
       await supabase.rpc('decrement_listing_likes', { listing_uuid: listingId });
     } catch (error) {
-      console.error('Unlike error:', error);
+      appLogger.error('Unlike error:', { error });
       setListings((prev) =>
         prev.map((listing) =>
           listing.id === listingId
@@ -249,7 +249,7 @@ export default function HomeScreenWithCategories() {
         listing_id: listingId,
       });
     } catch (error) {
-      console.error('Save error:', error);
+      appLogger.error('Save error:', { error });
     }
   };
 
@@ -273,14 +273,14 @@ export default function HomeScreenWithCategories() {
         .eq('user_id', userId)
         .eq('listing_id', listingId);
     } catch (error) {
-      console.error('Unsave error:', error);
+      appLogger.error('Unsave error:', { error });
     }
   };
 
   // Поделиться
   const handleShare = (listingId: string) => {
     // TODO: Implement share functionality
-    console.log('Share:', listingId);
+    appLogger.info('Share pressed', { listingId });
   };
 
   // Рендер элемента
@@ -435,4 +435,3 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
-

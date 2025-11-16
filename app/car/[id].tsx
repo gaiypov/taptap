@@ -6,11 +6,12 @@ import { errorTracking } from '@/services/errorTracking';
 import { boostService } from '@/services/payments/boost';
 import { db } from '@/services/supabase';
 import { Car, Damage } from '@/types';
+import { formatPriceWithUSD } from '@/constants/currency';
 import { Ionicons } from '@expo/vector-icons';
-import { ResizeMode, Video } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
@@ -24,7 +25,18 @@ import {
     View,
 } from 'react-native';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { SCREEN_WIDTH } from '@/utils/constants';
+
+// Helper component for price display
+function PriceDisplay({ price }: { price: number }) {
+  const priceInfo = formatPriceWithUSD(price);
+  return (
+    <View>
+      <Text style={styles.carPrice}>{priceInfo.kgs}</Text>
+      <Text style={styles.carPriceUSD}>{priceInfo.usd}</Text>
+    </View>
+  );
+}
 
 export default function CarDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -37,27 +49,19 @@ export default function CarDetailsScreen() {
   const [showBoostModal, setShowBoostModal] = useState(false);
   const [activeBoost, setActiveBoost] = useState<any>(null);
 
-  useEffect(() => {
-    loadCarDetails();
-    loadUser();
-  }, [id]);
+  // Video player setup - MUST be called unconditionally
+  const videoPlayer = useVideoPlayer(car?.video_url || '');
 
-  useEffect(() => {
-    if (car) {
-      loadBoostStatus();
-    }
-  }, [car]);
-
-  const loadUser = async () => {
+  const loadUser = useCallback(async () => {
     try {
       const user = await auth.getCurrentUser();
       setCurrentUser(user);
     } catch (error) {
       console.error('Error loading user:', error);
     }
-  };
+  }, []);
 
-  const loadCarDetails = async () => {
+  const loadCarDetails = useCallback(async () => {
     try {
       setLoading(true);
       errorTracking.addBreadcrumb('Loading car details', 'data', { carId: id });
@@ -81,7 +85,35 @@ export default function CarDetailsScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, videoPlayer]);
+
+  const loadBoostStatus = useCallback(async (carId: string) => {
+    if (!carId) return;
+    try {
+      const boost = await boostService.getActiveBoost(carId);
+      setActiveBoost(boost);
+    } catch (error) {
+      console.error('Error loading boost:', error);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCarDetails();
+    loadUser();
+  }, [loadCarDetails, loadUser]);
+
+  // Update video player source when car changes
+  useEffect(() => {
+    if (car?.video_url) {
+      videoPlayer.replace(car.video_url);
+    }
+  }, [car?.video_url, videoPlayer]);
+
+  useEffect(() => {
+    if (car?.id) {
+      loadBoostStatus(car.id);
+    }
+  }, [car?.id, loadBoostStatus]);
 
   const handleLike = async () => {
     if (!currentUser || !car) return;
@@ -141,22 +173,6 @@ export default function CarDetailsScreen() {
   const handleCall = () => {
     if (car?.seller?.phone) {
       Linking.openURL(`tel:${car.seller.phone}`);
-    }
-  };
-
-  const loadBoostStatus = async () => {
-    if (!car) return;
-    
-    try {
-      const boost = await boostService.getActiveBoost(car.id);
-      if (boost && boost.type) {
-        setActiveBoost(boost);
-      } else {
-        setActiveBoost(null);
-      }
-    } catch (error) {
-      console.error('Error loading boost status:', error);
-      setActiveBoost(null);
     }
   };
 
@@ -274,18 +290,37 @@ export default function CarDetailsScreen() {
     );
   }
 
+  const normalizedDetails = car.details ?? {
+    brand: car.brand,
+    model: car.model,
+    year: car.year,
+    mileage: car.mileage,
+    color: car.color,
+  };
+  const carBrand = car.brand ?? normalizedDetails.brand ?? 'Авто';
+  const carModel = car.model ?? normalizedDetails.model ?? '';
+  const carYear = car.year ?? normalizedDetails.year ?? 'N/A';
+  const carMileage = car.mileage ?? normalizedDetails.mileage ?? 0;
+  const carLocation = car.city ?? car.location ?? 'Город не указан';
+
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Video Player */}
         <View style={styles.videoContainer}>
-          <Video
-            source={{ uri: car.video_url }}
-            style={styles.video}
-            useNativeControls
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={false}
-          />
+          {videoPlayer ? (
+            <VideoView
+              player={videoPlayer}
+              style={styles.video}
+              nativeControls
+              contentFit="cover"
+              allowsFullscreen
+            />
+          ) : (
+            <View style={[styles.video, { justifyContent: 'center', alignItems: 'center' }]}>
+              <ActivityIndicator size="large" color="#FFF" />
+            </View>
+          )}
           
           <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
             <Ionicons name="arrow-back" size={24} color="#FFF" />
@@ -306,26 +341,26 @@ export default function CarDetailsScreen() {
         <View style={styles.mainInfo}>
           <View style={styles.titleRow}>
             <View style={styles.titleContainer}>
-              <Text style={styles.carTitle}>{car.brand || 'Авто'} {car.model || ''}</Text>
-              <Text style={styles.carYear}>{car.year || 'N/A'} год</Text>
+              <Text style={styles.carTitle}>{carBrand} {carModel}</Text>
+              <Text style={styles.carYear}>{carYear} год</Text>
             </View>
             {activeBoost && activeBoost.type && (
               <BoostBadge type={activeBoost.type} />
             )}
           </View>
-          <Text style={styles.carPrice}>{car.price?.toLocaleString()} сом</Text>
+          <PriceDisplay price={car.price || 0} />
         </View>
 
         {/* Quick Stats */}
         <View style={styles.quickStats}>
           <View style={styles.statItem}>
             <Ionicons name="speedometer-outline" size={20} color="#8E8E93" />
-            <Text style={styles.statValue}>{car.mileage?.toLocaleString()}</Text>
+            <Text style={styles.statValue}>{carMileage.toLocaleString()}</Text>
             <Text style={styles.statLabel}>км</Text>
           </View>
           <View style={styles.statItem}>
             <Ionicons name="location-outline" size={20} color="#8E8E93" />
-            <Text style={styles.statValue}>{car.location}</Text>
+            <Text style={styles.statValue}>{carLocation}</Text>
             <Text style={styles.statLabel}>Город</Text>
           </View>
           <View style={styles.statItem}>
@@ -461,12 +496,14 @@ export default function CarDetailsScreen() {
           visible={showBoostModal}
           onClose={() => {
             setShowBoostModal(false);
-            loadBoostStatus(); // Обновляем статус после закрытия
+            if (car?.id) {
+              loadBoostStatus(car.id);
+            } // Обновляем статус после закрытия
             loadCarDetails(); // Обновляем данные авто
           }}
           carId={car.id}
           userId={currentUser.id}
-          carName={`${car.brand} ${car.model} ${car.year}`}
+          carName={`${carBrand} ${carModel} ${carYear}`}
         />
       )}
     </View>
@@ -553,6 +590,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FF3B30',
     marginTop: 12,
+  },
+  carPriceUSD: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#8E8E93',
+    marginTop: 4,
   },
   quickStats: {
     flexDirection: 'row',

@@ -1,27 +1,42 @@
+/**
+ * Цвета согласно промпту CursorAI-Prompt.md
+ * Основные цвета для UI/UX стандартов проекта
+ */
 export const Colors = {
-  // Primary colors
-  primary: '#007AFF',
-  primaryDark: '#0056CC',
-  primaryLight: '#4DA6FF',
+  // Primary colors (согласно промпту)
+  primary: '#FF3B30',      // Красный (из промпта)
+  primaryDark: '#0056CC',   // Сохраняем для совместимости
+  primaryLight: '#4DA6FF',  // Сохраняем для совместимости
+  primaryAlt: '#007AFF',    // Альтернативный синий (было primary)
   
   // Secondary colors
-  secondary: '#6C757D',
+  secondary: '#007AFF',     // Синий (из промпта)
   secondaryDark: '#495057',
   secondaryLight: '#ADB5BD',
   
+  // Success colors
+  success: '#34C759',        // Зеленый (из промпта)
+  successDark: '#388E3C',
+  successLight: '#81C784',
+  
+  // Warning colors
+  warning: '#FF9500',       // Оранжевый (из промпта)
+  warningDark: '#F57C00',
+  warningLight: '#FFB74D',
+  
   // Background colors
-  background: '#000000',
+  background: '#000000',    // Черный (из промпта)
   backgroundSecondary: '#111111',
   backgroundTertiary: '#1A1A1A',
   
   // Surface colors
-  surface: '#1A1A1A',
+  surface: '#1C1C1E',       // Темно-серый (из промпта)
   surfaceSecondary: '#2A2A2A',
   surfaceTertiary: '#3A3A3A',
   
   // Text colors
-  text: '#FFFFFF',
-  textSecondary: '#CCCCCC',
+  text: '#FFFFFF',          // Белый (из промпта)
+  textSecondary: '#8E8E93', // Серый (из промпта)
   textTertiary: '#999999',
   textDisabled: '#666666',
   
@@ -31,17 +46,9 @@ export const Colors = {
   borderLight: '#555555',
   
   // Status colors
-  success: '#4CAF50',
-  successDark: '#388E3C',
-  successLight: '#81C784',
-  
   error: '#F44336',
   errorDark: '#D32F2F',
   errorLight: '#EF5350',
-  
-  warning: '#FF9800',
-  warningDark: '#F57C00',
-  warningLight: '#FFB74D',
   
   info: '#2196F3',
   infoDark: '#1976D2',

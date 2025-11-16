@@ -86,15 +86,17 @@ export function getDamageTypeText(type: Damage['type']): string {
 
 // Расчет средней цены
 export function calculateAveragePrice(car: Car): number {
-  if (!car.aiAnalysis?.estimatedPrice) return 0;
+  const ai = car.aiAnalysis;
+  if (!ai?.estimatedPrice) return 0;
   
-  const { min, max } = car.aiAnalysis.estimatedPrice;
+  const { min, max } = ai.estimatedPrice;
   return Math.round((min + max) / 2);
 }
 
 // Проверка является ли цена выгодной
 export function isGoodDeal(car: Car, marketPrice?: number): boolean {
-  if (!car.aiAnalysis?.estimatedPrice || !marketPrice) return false;
+  const ai = car.aiAnalysis;
+  if (!ai?.estimatedPrice || !marketPrice) return false;
   
   const averagePrice = calculateAveragePrice(car);
   const discount = (marketPrice - averagePrice) / marketPrice;
@@ -104,15 +106,19 @@ export function isGoodDeal(car: Car, marketPrice?: number): boolean {
 
 // Генерация краткого описания автомобиля
 export function generateCarSummary(car: Car): string {
-  const { brand, model, year, mileage, aiAnalysis } = car;
+  const brand = car.brand ?? car.details?.brand ?? 'Авто';
+  const model = car.model ?? car.details?.model ?? '';
+  const year = car.year ?? car.details?.year ?? new Date().getFullYear();
+  const mileage = car.mileage ?? car.details?.mileage ?? 0;
+  const ai = car.aiAnalysis;
   
   let summary = `${brand} ${model} ${year} года, пробег ${mileage.toLocaleString()} км`;
   
-  if (aiAnalysis) {
-    summary += `, состояние ${getConditionText(aiAnalysis.condition).toLowerCase()}`;
+  if (ai) {
+    summary += `, состояние ${getConditionText(ai.condition as any).toLowerCase()}`;
     
-    if (aiAnalysis.damages.length > 0) {
-      summary += `, ${aiAnalysis.damages.length} повреждений`;
+    if (ai.damages.length > 0) {
+      summary += `, ${ai.damages.length} повреждений`;
     }
     
     const avgPrice = calculateAveragePrice(car);
@@ -124,33 +130,37 @@ export function generateCarSummary(car: Car): string {
 
 // Генерация детального описания для объявления
 export function generateDetailedDescription(car: Car): string {
-  const { brand, model, year, mileage, aiAnalysis } = car;
+  const brand = car.brand ?? car.details?.brand ?? 'Автомобиль';
+  const model = car.model ?? car.details?.model ?? '';
+  const year = car.year ?? car.details?.year ?? new Date().getFullYear();
+  const mileage = car.mileage ?? car.details?.mileage ?? 0;
+  const ai = car.aiAnalysis;
   
   let description = `Продается ${brand} ${model} ${year} года выпуска.\n\n`;
   
   description += `Пробег: ${mileage.toLocaleString()} км\n`;
   
-  if (aiAnalysis) {
-    description += `Состояние: ${getConditionText(aiAnalysis.condition)} (${aiAnalysis.conditionScore}/100)\n\n`;
+  if (ai) {
+    description += `Состояние: ${getConditionText(ai.condition as any)} (${ai.conditionScore}/100)\n\n`;
     
-    if (aiAnalysis.features.length > 0) {
+    if (ai.features.length > 0) {
       description += `Особенности:\n`;
-      aiAnalysis.features.forEach(feature => {
+      ai.features.forEach((feature: string) => {
         description += `• ${feature}\n`;
       });
       description += '\n';
     }
     
-    if (aiAnalysis.damages.length > 0) {
+    if (ai.damages.length > 0) {
       description += `Обнаруженные повреждения:\n`;
-      aiAnalysis.damages.forEach(damage => {
-        description += `• ${getDamageTypeText(damage.type)} (${getDamageSeverityText(damage.severity).toLowerCase()}) - ${damage.location}\n`;
+      ai.damages.forEach((damage: Damage) => {
+        description += `• ${getDamageTypeText(damage.type)} (${getDamageSeverityText(damage.severity).toLowerCase()}) - ${damage.location ?? 'уточнить'}\n`;
       });
       description += '\n';
     }
     
     const avgPrice = calculateAveragePrice(car);
-    description += `Рыночная стоимость: ${formatPrice(aiAnalysis.estimatedPrice.min)} - ${formatPrice(aiAnalysis.estimatedPrice.max)}\n`;
+    description += `Рыночная стоимость: ${formatPrice(ai.estimatedPrice.min)} - ${formatPrice(ai.estimatedPrice.max)}\n`;
     description += `Средняя цена: ${formatPrice(avgPrice)}\n\n`;
   }
   
@@ -162,32 +172,34 @@ export function generateDetailedDescription(car: Car): string {
 
 // Проверка качества анализа
 export function isAnalysisComplete(car: Car): boolean {
+  const ai = car.aiAnalysis;
   return !!(
-    car.brand &&
-    car.model &&
-    car.year &&
-    car.mileage &&
-    car.aiAnalysis &&
-    car.aiAnalysis.condition &&
-    car.aiAnalysis.conditionScore &&
-    car.aiAnalysis.estimatedPrice &&
-    car.aiAnalysis.features
+    (car.brand || car.details?.brand) &&
+    (car.model || car.details?.model) &&
+    (car.year || car.details?.year) &&
+    (car.mileage || car.details?.mileage) &&
+    ai &&
+    ai.condition &&
+    ai.conditionScore &&
+    ai.estimatedPrice &&
+    ai.features
   );
 }
 
 // Получение рейтинга автомобиля (0-5 звезд)
 export function getCarRating(car: Car): number {
-  if (!car.aiAnalysis) return 0;
+  const ai = car.aiAnalysis;
+  if (!ai) return 0;
   
-  const { conditionScore, damages } = car.aiAnalysis;
+  const { conditionScore, damages } = ai;
   
   // Базовый рейтинг на основе состояния
   let rating = conditionScore / 20; // 0-5 звезд
   
   // Штраф за повреждения
-  const severeDamages = damages.filter(d => ['severe', 'critical'].includes(d.severity)).length;
-  const majorDamages = damages.filter(d => d.severity === 'major').length;
-  const moderateDamages = damages.filter(d => d.severity === 'moderate').length;
+  const severeDamages = damages.filter((d: Damage) => ['severe', 'critical'].includes(d.severity)).length;
+  const majorDamages = damages.filter((d: Damage) => d.severity === 'major').length;
+  const moderateDamages = damages.filter((d: Damage) => d.severity === 'moderate').length;
   
   rating -= severeDamages * 0.5; // -0.5 за каждое серьезное повреждение
   rating -= majorDamages * 0.35; // -0.35 за major повреждения
@@ -200,28 +212,34 @@ export function getCarRating(car: Car): number {
 export function generateSearchTags(car: Car): string[] {
   const tags: string[] = [];
   
-  tags.push(car.brand.toLowerCase());
-  tags.push(car.model.toLowerCase());
-  tags.push(`${car.year}`);
+  const brand = car.brand ?? car.details?.brand;
+  const model = car.model ?? car.details?.model;
+  const year = car.year ?? car.details?.year;
   
-  if (car.aiAnalysis) {
-    tags.push(getConditionText(car.aiAnalysis.condition).toLowerCase());
+  if (brand) tags.push(brand.toLowerCase());
+  if (model) tags.push(model.toLowerCase());
+  if (year) tags.push(`${year}`);
+  
+  const ai = car.aiAnalysis;
+  if (ai) {
+    tags.push(getConditionText(ai.condition as any).toLowerCase());
     
-    car.aiAnalysis.features.forEach(feature => {
+    ai.features.forEach((feature: string) => {
       tags.push(feature.toLowerCase());
     });
   }
   
   // Добавляем теги по пробегу
-  if (car.mileage < 50000) {
+  const mileage = car.mileage ?? car.details?.mileage ?? 0;
+  if (mileage < 50000) {
     tags.push('низкий пробег');
-  } else if (car.mileage > 150000) {
+  } else if (mileage > 150000) {
     tags.push('высокий пробег');
   }
   
   // Добавляем теги по году
   const currentYear = new Date().getFullYear();
-  const age = currentYear - car.year;
+  const age = currentYear - (year ?? currentYear);
   
   if (age <= 3) {
     tags.push('новый');
@@ -248,37 +266,42 @@ export function matchesSearchFilters(
     maxMileage?: number;
   }
 ): boolean {
-  if (filters.brand && car.brand.toLowerCase() !== filters.brand.toLowerCase()) {
+  const brand = car.brand ?? car.details?.brand;
+  if (filters.brand && brand && brand.toLowerCase() !== filters.brand.toLowerCase()) {
     return false;
   }
   
-  if (filters.model && car.model.toLowerCase() !== filters.model.toLowerCase()) {
+  const model = car.model ?? car.details?.model;
+  if (filters.model && model && model.toLowerCase() !== filters.model.toLowerCase()) {
     return false;
   }
   
-  if (filters.yearMin && car.year < filters.yearMin) {
+  const year = car.year ?? car.details?.year;
+  if (filters.yearMin && year && year < filters.yearMin) {
     return false;
   }
   
-  if (filters.yearMax && car.year > filters.yearMax) {
+  if (filters.yearMax && year && year > filters.yearMax) {
     return false;
   }
   
-  if (car.aiAnalysis) {
-    if (filters.priceMin && car.aiAnalysis.estimatedPrice.max < filters.priceMin) {
+  const ai = car.aiAnalysis;
+  if (ai) {
+    if (filters.priceMin && ai.estimatedPrice.max < filters.priceMin) {
       return false;
     }
     
-    if (filters.priceMax && car.aiAnalysis.estimatedPrice.min > filters.priceMax) {
+    if (filters.priceMax && ai.estimatedPrice.min > filters.priceMax) {
       return false;
     }
     
-    if (filters.condition && !filters.condition.includes(car.aiAnalysis.condition)) {
+    if (filters.condition && !filters.condition.includes(ai.condition as any)) {
       return false;
     }
   }
   
-  if (filters.maxMileage && car.mileage > filters.maxMileage) {
+  const mileage = car.mileage ?? car.details?.mileage;
+  if (filters.maxMileage && mileage && mileage > filters.maxMileage) {
     return false;
   }
   

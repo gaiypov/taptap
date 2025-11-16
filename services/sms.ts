@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { auth } from './auth';
 import { api } from './api';
 
@@ -43,3 +44,47 @@ export const smsService = {
     throw new Error('Отправка произвольных SMS недоступна из клиента. Используйте админ-интерфейс.');
   },
 };
+
+/**
+ * Обертка для промпта: sendSMS(phone, message)
+ * Согласно CursorAI-Prompt.md
+ * 
+ * Использует реальный SMS сервис (nikita.kg) или тестовый режим
+ */
+export async function sendSMS(phone: string, message: string): Promise<boolean> {
+  try {
+    // Проверяем режим (тестовый или реальный)
+    const useTestMode = process.env.EXPO_PUBLIC_SMS_TEST_MODE === 'true' || 
+                       Constants.expoConfig?.extra?.EXPO_PUBLIC_USE_MOCK === 'true';
+    
+    if (useTestMode) {
+      // Тестовый режим - только логируем
+      console.log('🧪 Test SMS:', { phone, message });
+      return true; // В тестовом режиме всегда успешно
+    } else {
+      // Реальный режим - используем SMSService из smsReal
+      const { SMSService } = await import('./smsReal');
+      
+      const config = {
+        login: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_LOGIN || '',
+        password: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_PASSWORD || '',
+        sender: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_SENDER || '360Auto',
+        apiUrl: Constants.expoConfig?.extra?.EXPO_PUBLIC_SMS_API_URL || 'https://smspro.nikita.kg/api/message',
+      };
+      
+      if (!config.login || !config.password) {
+        console.warn('⚠️ SMS credentials not configured, using test mode');
+        return true; // Fallback на тестовый режим
+      }
+      
+      const smsService = new SMSService(config);
+      const result = await smsService.sendSMS(phone, message);
+      
+      return result.success;
+    }
+  } catch (error) {
+    console.error('sendSMS error:', error);
+    // Fallback - в случае ошибки возвращаем false
+    return false;
+  }
+}

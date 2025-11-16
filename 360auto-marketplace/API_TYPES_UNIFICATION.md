@@ -36,6 +36,7 @@ export type ApiResult<T> = ApiResponse<T> | ApiErrorResponse;
 ### 1. Discriminated Union Pattern
 
 **Before:**
+
 ```typescript
 export interface ApiResponse<T> {
   success: boolean;  // ❌ Can be true or false
@@ -45,6 +46,7 @@ export interface ApiResponse<T> {
 ```
 
 **After:**
+
 ```typescript
 export interface ApiResponse<T> {
   success: true;  // ✅ Type predicate
@@ -58,6 +60,7 @@ export interface ApiErrorResponse {
 ```
 
 **Benefits:**
+
 - Type narrowing with `success` field
 - Compiler enforces correct data structure
 - Better IDE autocomplete
@@ -84,6 +87,7 @@ export function isApiError(
 ```
 
 **Usage:**
+
 ```typescript
 const response = await fetchApi();
 
@@ -116,6 +120,7 @@ export interface PaginatedResponse<T> {
 ```
 
 **Benefits:**
+
 - Consistent success field
 - `hasMore` is more intuitive than calculating totalPages
 - Simpler client-side logic
@@ -127,6 +132,7 @@ export interface PaginatedResponse<T> {
 ### Backend Updates
 
 **Old:**
+
 ```typescript
 res.json({
   success: true,
@@ -136,6 +142,7 @@ res.json({
 ```
 
 **New:**
+
 ```typescript
 // Success
 res.json({
@@ -156,6 +163,7 @@ res.json({
 ### Mobile Updates
 
 **Old:**
+
 ```typescript
 const response = await api.cars.getAll();
 if (response.success) {
@@ -164,6 +172,7 @@ if (response.success) {
 ```
 
 **New:**
+
 ```typescript
 const response = await api.listings.getFeed();
 if (isApiSuccess(response)) {
@@ -177,9 +186,10 @@ if (isApiSuccess(response)) {
 
 ## ✅ Removed Inconsistencies
 
-### Before (3 different versions):
+### Before (3 different versions)
 
 **shared:**
+
 ```typescript
 success: boolean;
 data?: T;
@@ -187,6 +197,7 @@ error?: string;
 ```
 
 **backend:**
+
 ```typescript
 success: boolean;
 data?: T;
@@ -195,14 +206,16 @@ code?: string;  // ❌ Extra field
 ```
 
 **mobile:**
+
 ```typescript
 data: T;  // ❌ No success field
 success: boolean;
 ```
 
-### After (Unified):
+### After (Unified)
 
 **All repositories:**
+
 ```typescript
 success: true | false;  // Discriminated
 data: T;                // For success
@@ -214,11 +227,13 @@ error: {...}           // For error
 ## 📋 Files to Update
 
 ### Backend
+
 - [ ] `src/api/v1/**/*.ts` - Update all responses
 - [ ] `src/middleware/errorHandler.ts` - Use ApiErrorResponse
 - [ ] `src/types/api.ts` - DELETE (use shared)
 
 ### Mobile
+
 - [ ] `services/api.ts` - Update response types
 - [ ] `services/api.ts` - Use isApiSuccess helper
 - [ ] `types/index.ts` - DELETE ApiResponse (use shared)
@@ -229,6 +244,7 @@ error: {...}           // For error
 ## 🎯 Type Safety Improvements
 
 **Before:**
+
 ```typescript
 // ❌ TypeScript error potential
 const data = response.data;  // Could be undefined
@@ -236,6 +252,7 @@ const message = response.error;  // Could be undefined
 ```
 
 **After:**
+
 ```typescript
 // ✅ Type-safe with guards
 if (isApiSuccess(response)) {
@@ -270,4 +287,3 @@ cd shared && npm run build
 ---
 
 **Next:** Update backend and mobile to use unified API types
-

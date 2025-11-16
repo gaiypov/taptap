@@ -26,54 +26,69 @@ export function CarList({ onCarPress }: CarListProps) {
     onCarPress?.(car);
   };
 
-  const renderCar = ({ item }: { item: Car }) => (
-    <TouchableOpacity
-      style={styles.carCard}
-      onPress={() => handleCarPress(item)}
-    >
-      <Image
-        source={{ uri: item.thumbnailUrl }}
-        style={styles.thumbnail}
-        resizeMode="cover"
-      />
-      
-      <View style={styles.carInfo}>
-        <Text style={styles.carTitle}>
-          {item.brand || 'Авто'} {item.model || ''} ({item.year || 'N/A'})
-        </Text>
+  const renderCar = ({ item }: { item: Car }) => {
+    const details = item.details ?? {
+      brand: item.brand,
+      model: item.model,
+      year: item.year,
+      mileage: item.mileage,
+    };
+    const brand = item.brand ?? details.brand ?? 'Авто';
+    const model = item.model ?? details.model ?? '';
+    const year = item.year ?? details.year ?? 'N/A';
+    const mileage = item.mileage ?? details.mileage ?? 0;
+    const location = item.city ?? item.location ?? 'Не указано';
+    const thumbnail = item.thumbnail_url ?? 'https://picsum.photos/600/400';
+
+    return (
+      <TouchableOpacity
+        style={styles.carCard}
+        onPress={() => handleCarPress(item)}
+      >
+        <Image
+          source={{ uri: thumbnail }}
+          style={styles.thumbnail}
+          resizeMode="cover"
+        />
         
-        <Text style={styles.carDetails}>
-          {item.mileage ? item.mileage.toLocaleString() : '0'} км • {item.location || 'Не указано'}
-        </Text>
-        
-        {item.aiAnalysis && (
-          <View style={styles.aiAnalysis}>
-            <Text style={styles.conditionText}>
-              Состояние: {item.aiAnalysis.condition}
-            </Text>
-            <Text style={styles.priceText}>
-              {item.aiAnalysis.estimatedPrice.min.toLocaleString()} - {item.aiAnalysis.estimatedPrice.max.toLocaleString()} сом
-            </Text>
-          </View>
-        )}
-        
-        <View style={styles.stats}>
-          <View style={styles.stat}>
-            <Text style={styles.statIcon}>👁️</Text>
-            <Text style={styles.statText}>{item.views}</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statIcon}>❤️</Text>
-            <Text style={styles.statText}>{item.likes}</Text>
-          </View>
-          <View style={styles.stat}>
-            <Text style={styles.statIcon}>💾</Text>
-            <Text style={styles.statText}>{item.saves}</Text>
+        <View style={styles.carInfo}>
+          <Text style={styles.carTitle}>
+            {brand} {model} ({year})
+          </Text>
+          
+          <Text style={styles.carDetails}>
+            {mileage.toLocaleString()} км • {location}
+          </Text>
+          
+          {item.aiAnalysis && (
+            <View style={styles.aiAnalysis}>
+              <Text style={styles.conditionText}>
+                Состояние: {item.aiAnalysis.condition}
+              </Text>
+              <Text style={styles.priceText}>
+                {item.aiAnalysis.estimatedPrice.min.toLocaleString()} - {item.aiAnalysis.estimatedPrice.max.toLocaleString()} сом
+              </Text>
+            </View>
+          )}
+          
+          <View style={styles.stats}>
+            <View style={styles.stat}>
+              <Text style={styles.statIcon}>👁️</Text>
+              <Text style={styles.statText}>{item.views}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statIcon}>❤️</Text>
+              <Text style={styles.statText}>{item.likes}</Text>
+            </View>
+            <View style={styles.stat}>
+              <Text style={styles.statIcon}>💾</Text>
+              <Text style={styles.statText}>{item.saves}</Text>
+            </View>
           </View>
         </View>
-      </View>
-    </TouchableOpacity>
-  );
+      </TouchableOpacity>
+    );
+  };
 
   if (loading) {
     return (

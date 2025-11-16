@@ -21,6 +21,7 @@ export default function CommentThread({
 
   useEffect(() => {
     loadRepliesCount();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [parentId]);
 
   const loadRepliesCount = async () => {

@@ -1,23 +1,28 @@
+import { useAppTheme } from '@/lib/theme';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  FlatList,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Импорты для универсальных фильтров
 import AdvancedFiltersModal from '@/components/Filters/AdvancedFiltersModal';
 import { CategoryType, CITIES, formatPrice, getCategoryConfig } from '@/config/filterConfig';
 import { SearchParams, SearchResult, searchService } from '@/services/searchService';
 import { Listing } from '@/types';
+import { appLogger } from '@/utils/logger';
 
 interface Filters {
   category: CategoryType;
@@ -59,6 +64,7 @@ interface Filters {
 
 export default function SearchScreen() {
   const requestIdRef = useRef(0);
+  const theme = useAppTheme();
   
   const [filters, setFilters] = useState<Filters>({
     category: 'car',
@@ -136,7 +142,7 @@ export default function SearchScreen() {
         setTotalResults(result.total || 0);
       }
     } catch (error) {
-      console.error('Search error:', error);
+      appLogger.error('Search error:', { error });
       if (requestIdRef.current === requestId) {
         setListings([]);
         setTotalResults(0);
@@ -148,18 +154,21 @@ export default function SearchScreen() {
     }
   }, [filters]);
 
+  // Оптимизированный debounce для поиска
   useEffect(() => {
+    // Немедленный поиск при изменении категории или города
+    if (filters.category || filters.city) {
+      searchListings();
+      return;
+    }
+
+    // Debounce только для текстового поиска (300ms для instant search)
     const debounce = setTimeout(() => {
       searchListings();
-    }, filters.searchQuery ? 500 : 0); // 500ms для текста, сразу для фильтров
-    
-    return () => clearTimeout(debounce);
-  }, [searchListings]);
+    }, filters.searchQuery ? 300 : 0);
 
-  // Загружаем результаты при первом открытии экрана
-  useEffect(() => {
-    searchListings();
-  }, []); // Пустой массив зависимостей = только при монтировании
+    return () => clearTimeout(debounce);
+  }, [filters.searchQuery, filters.category, filters.city, searchListings]);
 
   const resetFilters = () => {
     setFilters({
@@ -204,10 +213,16 @@ export default function SearchScreen() {
   const config = getCategoryConfig(filters.category);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView 
+      style={[styles.container, { backgroundColor: theme.background }]}
+      edges={Platform.select({
+        ios: ['top'],
+        android: [],
+      }) || []}
+    >
       {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.headerTitle}>Поиск</Text>
+      <View style={[styles.header, { borderBottomColor: theme.border }]}>
+        <Text style={[styles.headerTitle, { color: theme.text }]}>Поиск</Text>
         
         {/* Category Selector */}
         <ScrollView
@@ -223,17 +238,23 @@ export default function SearchScreen() {
                 key={category}
                 style={[
                   styles.categoryChip,
-                  filters.category === category && styles.categoryChipActive,
+                  { backgroundColor: theme.surface },
+                  filters.category === category && [styles.categoryChipActive, { backgroundColor: theme.primary }],
                 ]}
-                onPress={() =>
-                  setFilters((prev) => ({ ...prev, category }))
-                }
+                onPress={() => {
+                  if (Platform.OS === 'ios') {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }
+                  setFilters((prev) => ({ ...prev, category }));
+                }}
+                activeOpacity={0.7}
               >
                 <Text style={styles.categoryIcon}>{categoryConfig.icon}</Text>
                 <Text
                   style={[
                     styles.categoryText,
-                    filters.category === category && styles.categoryTextActive,
+                    { color: theme.textSecondary },
+                    filters.category === category && [styles.categoryTextActive, { color: theme.card }],
                   ]}
                 >
                   {categoryConfig.name}
@@ -245,79 +266,103 @@ export default function SearchScreen() {
       </View>
 
       {/* Search Bar */}
-      <View style={styles.searchContainer}>
-        <Ionicons name="search" size={20} color="#6B7280" style={styles.searchIcon} />
+      <View style={[styles.searchContainer, { backgroundColor: theme.card }]}>
+        <Ionicons name="search" size={20} color={theme.placeholder} style={styles.searchIcon} />
         <TextInput
           value={filters.searchQuery}
           onChangeText={(text) =>
             setFilters((prev) => ({ ...prev, searchQuery: text }))
           }
           placeholder="Найти авто, лошадь или дом..."
-          placeholderTextColor="#6B7280"
-          style={styles.searchInput}
+          placeholderTextColor={theme.placeholder}
+          style={[styles.searchInput, { color: theme.text }]}
           returnKeyType="search"
           onSubmitEditing={() => searchListings()}
         />
         {filters.searchQuery.length > 0 && (
           <TouchableOpacity 
-            onPress={() =>
-              setFilters((prev) => ({ ...prev, searchQuery: '' }))
-            }
+            onPress={() => {
+              if (Platform.OS === 'ios') {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+              setFilters((prev) => ({ ...prev, searchQuery: '' }));
+            }}
             style={styles.clearButton}
+            activeOpacity={0.7}
           >
-            <Ionicons name="close-circle" size={20} color="#9CA3AF" />
+            <Ionicons name="close-circle" size={20} color={theme.textSecondary} />
           </TouchableOpacity>
         )}
       </View>
       
       {/* More Filters Button */}
       <TouchableOpacity
-        style={styles.moreFiltersButton}
-        onPress={() => setShowFilters(true)}
+        style={[styles.moreFiltersButton, { 
+          backgroundColor: theme.card,
+          borderColor: theme.primary 
+        }]}
+        onPress={() => {
+          if (Platform.OS === 'ios') {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }
+          setShowFilters(true);
+        }}
+        activeOpacity={0.7}
       >
-        <Ionicons name="options-outline" size={20} color="#E63946" />
-        <Text style={styles.moreFiltersText}>Больше фильтров</Text>
-        {Object.keys(filters).filter(k => filters[k] !== null && filters[k] !== undefined && filters[k] !== '').length > 0 && (
-          <View style={styles.filterBadge}>
+        <Ionicons name="options-outline" size={20} color={theme.primary} />
+        <Text style={[styles.moreFiltersText, { color: theme.primary }]}>Больше фильтров</Text>
+        {activeFiltersCount > 0 && (
+          <View style={[styles.filterBadge, { backgroundColor: theme.primary }]}>
             <Text style={styles.filterBadgeText}>
-              {Object.keys(filters).filter(k => filters[k] !== null && filters[k] !== undefined && filters[k] !== '').length}
+              {activeFiltersCount}
             </Text>
           </View>
         )}
       </TouchableOpacity>
 
-      {/* Quick Filters */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.quickFilters}
-        contentContainerStyle={styles.quickFiltersContent}
-      >
+      {/* Quick Filters - Города */}
+      <View style={styles.quickFiltersContainer}>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>
+          Города и регионы:
+        </Text>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.quickFilters}
+          contentContainerStyle={styles.quickFiltersContent}
+        >
         {CITIES.map((city) => (
           <TouchableOpacity
             key={city}
             style={[
               styles.quickFilterChip,
-              filters.city === city && styles.quickFilterChipActive,
+              { backgroundColor: theme.surface },
+              filters.city === city && [styles.quickFilterChipActive, { backgroundColor: theme.primary }],
             ]}
-            onPress={() =>
+            onPress={() => {
+              if (Platform.OS === 'ios') {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
               setFilters((prev) => ({
                 ...prev,
-                city: prev.city === city ? undefined : city,
-              }))
-            }
+                city: prev.city === city ? 'Весь Кыргызстан' : city,
+              }));
+            }}
+            activeOpacity={0.7}
           >
             <Text
               style={[
                 styles.quickFilterText,
-                filters.city === city && styles.quickFilterTextActive,
+                { color: theme.textSecondary },
+                filters.city === city && [styles.quickFilterTextActive, { color: theme.card }],
               ]}
             >
               {city}
             </Text>
           </TouchableOpacity>
         ))}
-      </ScrollView>
+        </ScrollView>
+      </View>
 
       {/* Active Filters Chips */}
       {Object.keys(filters).filter(k => filters[k] !== null && filters[k] !== undefined && filters[k] !== '').length > 0 && (
@@ -426,10 +471,16 @@ export default function SearchScreen() {
             )}
             
             <TouchableOpacity
-              style={styles.clearAllButton}
-              onPress={resetFilters}
+              style={[styles.clearAllButton, { backgroundColor: theme.surface }]}
+              onPress={() => {
+                if (Platform.OS === 'ios') {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }
+                resetFilters();
+              }}
+              activeOpacity={0.7}
             >
-              <Text style={styles.clearAllText}>Сбросить все</Text>
+              <Text style={[styles.clearAllText, { color: theme.textSecondary }]}>Сбросить все</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -454,14 +505,20 @@ export default function SearchScreen() {
               : `Выберите категорию и настройте фильтры для поиска ${config.name.toLowerCase()}`}
           </Text>
           {totalResults > 0 && (
-            <Text style={styles.resultsCount}>
+            <Text style={[styles.resultsCount, { color: theme.textSecondary }]}>
               Найдено: {totalResults} объявлений
             </Text>
           )}
           {activeFiltersCount > 0 && (
             <TouchableOpacity
-              style={[styles.resetButton, { backgroundColor: config.color }]}
-              onPress={resetFilters}
+              style={[styles.resetButton, { backgroundColor: theme.primary }]}
+              onPress={() => {
+                if (Platform.OS === 'ios') {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                }
+                resetFilters();
+              }}
+              activeOpacity={0.7}
             >
               <Text style={styles.resetButtonText}>Сбросить фильтры</Text>
             </TouchableOpacity>
@@ -474,6 +531,16 @@ export default function SearchScreen() {
           renderItem={({ item }) => <SearchResultCard listing={item} />}
           contentContainerStyle={styles.resultsList}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews={Platform.OS !== 'web'}
+          initialNumToRender={10}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          updateCellsBatchingPeriod={50}
+          getItemLayout={(data, index) => ({
+            length: Platform.select({ ios: 120, android: 115, web: 120 }) || 120,
+            offset: (Platform.select({ ios: 120, android: 115, web: 120 }) || 120) * index,
+            index,
+          })}
         />
       )}
 
@@ -490,12 +557,12 @@ export default function SearchScreen() {
         onReset={resetFilters}
         resultsCount={totalResults}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
-// Карточка результата поиска
-function SearchResultCard({ listing }: { listing: Listing }) {
+// Карточка результата поиска - мемоизирована для оптимизации
+const SearchResultCard = React.memo(function SearchResultCard({ listing }: { listing: Listing }) {
   const router = useRouter();
   const config = getCategoryConfig(listing.category) || {
     color: '#FF6B6B',
@@ -567,8 +634,12 @@ function SearchResultCard({ listing }: { listing: Listing }) {
       />
       
       <View style={styles.resultInfo}>
-        <Text style={styles.resultTitle}>{getListingTitle()}</Text>
-        <Text style={styles.resultDetails}>{getListingDetails()}</Text>
+        <Text style={styles.resultTitle} numberOfLines={2} ellipsizeMode="tail">
+          {getListingTitle()}
+        </Text>
+        <Text style={styles.resultDetails} numberOfLines={1} ellipsizeMode="tail">
+          {getListingDetails()}
+        </Text>
         
         {listing.ai_score && (
           <View style={[styles.conditionChip, { backgroundColor: `${config.color}20` }]}>
@@ -583,10 +654,17 @@ function SearchResultCard({ listing }: { listing: Listing }) {
         </Text>
       </View>
       
-      <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+      <View style={styles.resultChevron}>
+        <Ionicons name="chevron-forward" size={20} color="#8E8E93" />
+      </View>
     </TouchableOpacity>
   );
-}
+}, (prevProps, nextProps) => {
+  // Оптимизация: ререндер только при изменении данных
+  return prevProps.listing.id === nextProps.listing.id &&
+    prevProps.listing.price === nextProps.listing.price &&
+    prevProps.listing.ai_score === nextProps.listing.ai_score;
+});
 
 
 const styles = StyleSheet.create({
@@ -641,26 +719,55 @@ const styles = StyleSheet.create({
   searchContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingHorizontal: 16,
-    height: 56,
-    marginHorizontal: 16,
-    marginTop: 12,
+    borderRadius: Platform.select({
+      ios: 16,
+      android: 12,
+    }),
+    paddingHorizontal: Platform.select({
+      ios: 16,
+      android: 14,
+    }),
+    height: Platform.select({
+      ios: 56,
+      android: 52,
+    }),
+    marginHorizontal: Platform.select({
+      ios: 16,
+      android: 12,
+    }),
+    marginTop: Platform.select({
+      ios: 12,
+      android: 8,
+    }),
     marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 4,
-    elevation: 3,
+    ...Platform.select({
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.08)',
+      },
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.08,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 3,
+      },
+    }),
   },
   searchIcon: {
     marginRight: 12,
   },
   searchInput: {
     flex: 1,
-    fontSize: 16,
-    color: '#111827',
+    fontSize: Platform.select({
+      ios: 16,
+      android: 15,
+    }),
+    paddingVertical: Platform.select({
+      ios: 0,
+      android: 4,
+    }),
     fontFamily: 'System',
   },
   clearButton: {
@@ -682,24 +789,74 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontWeight: '700',
   },
+  quickFiltersContainer: {
+    marginBottom: Platform.select({
+      ios: 16,
+      android: 12,
+      web: 16,
+    }),
+    paddingVertical: Platform.select({
+      ios: 8,
+      android: 6,
+      web: 8,
+    }),
+  },
+  sectionTitle: {
+    fontSize: Platform.select({
+      ios: 15,
+      android: 14,
+      web: 15,
+    }),
+    fontWeight: '600',
+    marginBottom: Platform.select({
+      ios: 12,
+      android: 10,
+      web: 12,
+    }),
+    paddingHorizontal: Platform.select({
+      ios: 16,
+      android: 12,
+      web: 16,
+    }),
+  },
   quickFilters: {
-    marginBottom: 16,
+    marginBottom: 0,
   },
   quickFiltersContent: {
-    paddingHorizontal: 16,
+    paddingHorizontal: Platform.select({
+      ios: 16,
+      android: 12,
+      web: 16,
+    }),
     gap: 8,
+    paddingBottom: Platform.select({
+      ios: 4,
+      android: 2,
+      web: 4,
+    }),
   },
   quickFilterChip: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 20,
+    paddingHorizontal: Platform.select({
+      ios: 16,
+      android: 14,
+    }),
+    paddingVertical: Platform.select({
+      ios: 10,
+      android: 8,
+    }),
+    borderRadius: Platform.select({
+      ios: 20,
+      android: 18,
+    }),
     marginRight: 8,
-    minWidth: 80,
+    minWidth: Platform.select({
+      ios: 80,
+      android: 70,
+    }),
     alignItems: 'center',
   },
   quickFilterChipActive: {
-    backgroundColor: '#FF3B30',
+    // backgroundColor устанавливается динамически через theme
   },
   quickFilterText: {
     fontSize: 14,
@@ -713,34 +870,56 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: Platform.select({
+      ios: 40,
+      android: 30,
+    }),
   },
   emptyContainer: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 40,
+    padding: Platform.select({
+      ios: 40,
+      android: 30,
+    }),
   },
   emptyIcon: {
-    fontSize: 60,
-    marginBottom: 16,
+    fontSize: Platform.select({
+      ios: 60,
+      android: 56,
+    }),
+    marginBottom: Platform.select({
+      ios: 16,
+      android: 12,
+    }),
   },
   emptyTitle: {
-    fontSize: 20,
+    fontSize: Platform.select({
+      ios: 20,
+      android: 18,
+    }),
     fontWeight: 'bold',
-    color: '#FFF',
     marginBottom: 8,
     textAlign: 'center',
   },
   emptySubtitle: {
-    fontSize: 16,
-    color: '#8E8E93',
+    fontSize: Platform.select({
+      ios: 16,
+      android: 14,
+    }),
     marginBottom: 16,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: Platform.select({
+      ios: 22,
+      android: 20,
+    }),
   },
   resultsCount: {
-    fontSize: 14,
-    color: '#8E8E93',
+    fontSize: Platform.select({
+      ios: 14,
+      android: 13,
+    }),
     marginBottom: 16,
     textAlign: 'center',
   },
@@ -756,35 +935,115 @@ const styles = StyleSheet.create({
     color: '#FFF',
   },
   resultsList: {
-    padding: 16,
+    padding: Platform.select({
+      ios: 16,
+      android: 12,
+      web: 16,
+    }),
+    paddingBottom: Platform.select({
+      ios: 100,
+      android: 90,
+      web: 100,
+    }),
+    paddingHorizontal: Platform.select({
+      ios: 0,
+      android: 0,
+      web: 0,
+    }),
   },
   resultCard: {
     flexDirection: 'row',
     backgroundColor: '#1C1C1E',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 12,
+    borderRadius: Platform.select({
+      ios: 12,
+      android: 10,
+      web: 12,
+    }),
+    padding: Platform.select({
+      ios: 12,
+      android: 10,
+      web: 12,
+    }),
+    marginBottom: Platform.select({
+      ios: 12,
+      android: 10,
+      web: 12,
+    }),
+    marginHorizontal: Platform.select({
+      ios: 0,
+      android: 0,
+      web: 0,
+    }),
     alignItems: 'center',
+    minHeight: Platform.select({
+      ios: 100,
+      android: 95,
+      web: 100,
+    }),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+      web: {
+        boxShadow: '0px 1px 3px rgba(0, 0, 0, 0.2)',
+      },
+    }),
   },
   resultImage: {
-    width: 80,
-    height: 80,
-    borderRadius: 8,
-    marginRight: 12,
+    width: Platform.select({
+      ios: 80,
+      android: 75,
+      web: 80,
+    }),
+    height: Platform.select({
+      ios: 80,
+      android: 75,
+      web: 80,
+    }),
+    borderRadius: Platform.select({
+      ios: 8,
+      android: 6,
+      web: 8,
+    }),
+    marginRight: Platform.select({
+      ios: 12,
+      android: 10,
+      web: 12,
+    }),
+    backgroundColor: '#2C2C2E',
+    resizeMode: 'cover',
   },
   resultInfo: {
     flex: 1,
+    justifyContent: 'flex-start',
+    minHeight: 0,
   },
   resultTitle: {
-    fontSize: 16,
+    fontSize: Platform.select({
+      ios: 16,
+      android: 15,
+      web: 16,
+    }),
     fontWeight: '600',
     color: '#FFF',
     marginBottom: 4,
+    flexShrink: 1,
   },
   resultDetails: {
-    fontSize: 14,
+    fontSize: Platform.select({
+      ios: 14,
+      android: 13,
+      web: 14,
+    }),
     color: '#8E8E93',
     marginBottom: 8,
+    flexShrink: 1,
   },
   conditionChip: {
     backgroundColor: 'rgba(10, 132, 255, 0.2)',
@@ -800,8 +1059,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   resultPrice: {
-    fontSize: 18,
+    fontSize: Platform.select({
+      ios: 18,
+      android: 17,
+      web: 18,
+    }),
     fontWeight: 'bold',
+    marginTop: 4,
+  },
+  resultChevron: {
+    marginLeft: Platform.select({
+      ios: 8,
+      android: 6,
+      web: 8,
+    }),
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   // Chips styles
   chipsContainer: {
@@ -840,14 +1113,24 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   clearAllButton: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 20,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
+    borderRadius: Platform.select({
+      ios: 20,
+      android: 18,
+    }),
+    paddingVertical: Platform.select({
+      ios: 6,
+      android: 8,
+    }),
+    paddingHorizontal: Platform.select({
+      ios: 12,
+      android: 14,
+    }),
   },
   clearAllText: {
-    fontSize: 13,
-    color: '#4B5563',
+    fontSize: Platform.select({
+      ios: 13,
+      android: 12,
+    }),
     fontWeight: '500',
   },
   // More filters button styles

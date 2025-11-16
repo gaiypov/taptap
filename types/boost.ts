@@ -1,6 +1,6 @@
 // Типы для BOOST монетизации
 
-export type BoostType = 'basic' | 'top' | 'premium';
+export type BoostType = '3h' | '24h' | '7d' | '30d';
 export type PaymentMethod = 'mbank' | 'bakai' | 'obank' | 'optima';
 export type TransactionStatus = 'pending' | 'processing' | 'success' | 'failed' | 'cancelled' | 'refunded';
 

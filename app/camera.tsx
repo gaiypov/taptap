@@ -5,7 +5,6 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
     Alert,
-    Dimensions,
     StatusBar,
     StyleSheet,
     Text,
@@ -13,7 +12,7 @@ import {
     View,
 } from 'react-native';
 
-const { height } = Dimensions.get('window');
+import { SCREEN_HEIGHT } from '@/utils/constants';
 
 export default function CameraScreen() {
   const router = useRouter();
@@ -330,7 +329,7 @@ const styles = StyleSheet.create({
   },
   tipsContainer: {
     position: 'absolute',
-    top: height * 0.4,
+    top: SCREEN_HEIGHT * 0.4,
     left: 20,
     right: 20,
     alignItems: 'center',

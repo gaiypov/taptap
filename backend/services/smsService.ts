@@ -67,7 +67,10 @@ export async function sendVerificationCodeSms(phone: string, code: string): Prom
     };
   }
 
-  return sendSms(phone, code);
+  // Формируем текст сообщения с кодом
+  const message = `Ваш код подтверждения: ${code}\n\n360° - Ваш мир авто, лошадей и недвижимости`;
+  
+  return sendSms(phone, message);
 }
 
 export async function sendSms(phone: string, message: string): Promise<SmsSendResult> {

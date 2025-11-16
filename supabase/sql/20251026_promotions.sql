@@ -41,8 +41,10 @@ CREATE INDEX IF NOT EXISTS idx_promotions_ends_at ON public.promotions(ends_at);
 CREATE INDEX IF NOT EXISTS idx_promotions_created_at ON public.promotions(created_at);
 
 -- Composite index for active promotions
+-- Note: Cannot use NOW() in index predicate (not IMMUTABLE), so we index payment_status and ends_at separately
+-- Queries should filter with ends_at > NOW() in WHERE clause
 CREATE INDEX IF NOT EXISTS idx_promotions_active ON public.promotions(payment_status, ends_at) 
-WHERE payment_status = 'paid' AND ends_at > NOW();
+WHERE payment_status = 'paid';
 
 -- ============================================
 -- 3. TRIGGERS
@@ -218,6 +220,7 @@ $$ LANGUAGE plpgsql;
 -- ============================================
 
 -- View for active promotions with listing details
+-- Note: currency column might not exist in old listings tables, so we use 'KZT' as default
 CREATE OR REPLACE VIEW public.active_promotions AS
 SELECT 
     p.id,
@@ -229,7 +232,7 @@ SELECT
     l.title,
     l.category,
     l.price,
-    l.currency,
+    'KZT' as currency, -- Default currency (column may not exist in old tables)
     l.status
 FROM public.promotions p
 JOIN public.listings l ON p.listing_id = l.id

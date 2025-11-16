@@ -99,6 +99,7 @@ export interface UserProfile {
 ### 1. Update Backend Imports
 
 **backend/src/types/models.ts:**
+
 ```typescript
 // ❌ DELETE DatabaseUser
 // ✅ USE:
@@ -114,6 +115,7 @@ export interface DatabaseUser extends User {
 ### 2. Update Mobile Imports
 
 **mobile/types/index.ts:**
+
 ```typescript
 // ❌ DELETE User interface
 // ✅ USE:
@@ -128,6 +130,7 @@ export interface MobileUserPreference {
 ### 3. Update All Usages
 
 Find and replace:
+
 - `avatar_url` → `avatarUrl`
 - `created_at` → `createdAt`
 - `updated_at` → `updatedAt`
@@ -137,12 +140,14 @@ Find and replace:
 ## 📋 Files to Update
 
 ### Backend
+
 - [ ] `src/types/models.ts` - Remove DatabaseUser
 - [ ] `src/api/v1/auth.ts` - Use User from shared
 - [ ] `src/middleware/auth.ts` - Update User reference
 - [ ] All route handlers using User type
 
 ### Mobile
+
 - [ ] `types/index.ts` - Remove User, import from @shared
 - [ ] `services/api.ts` - Use shared User type
 - [ ] All components using User type
@@ -152,12 +157,14 @@ Find and replace:
 
 ## 🔍 Breaking Changes
 
-### Field Name Changes:
+### Field Name Changes
+
 - `avatar_url` → `avatarUrl`
 - `created_at` → `createdAt`
 - `updated_at` → `updatedAt`
 
-### New Required Fields:
+### New Required Fields
+
 - `phoneVerified: boolean`
 - `listingsCount: number`
 - `rating: number`
@@ -166,7 +173,8 @@ Find and replace:
 - `isVerified: boolean`
 - `isBanned: boolean`
 
-### Migration Notes:
+### Migration Notes
+
 - Backend must populate new fields from database
 - Mobile must update User object destructuring
 - Default values may be needed during migration
@@ -193,4 +201,3 @@ cd shared && npm run build
 ---
 
 **Next:** Update backend and mobile to import from @shared
-

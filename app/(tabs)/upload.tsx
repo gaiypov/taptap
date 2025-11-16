@@ -2,7 +2,6 @@ import { CategoryModal } from '@/components/Upload/CategoryModal';
 import { TipsModal } from '@/components/Upload/TipsModal';
 import { CategoryType, UPLOAD_TEXTS } from '@/config/uploadTexts';
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
 import { Camera } from 'expo-camera';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -11,6 +10,7 @@ import {
     Alert,
     Animated,
     Linking,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -30,35 +30,20 @@ export default function UploadScreen() {
 
   // Пульсирующая анимация иконки
   useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.parallel([
-          Animated.timing(scaleAnim, {
-            toValue: 1.1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotateAnim, {
-            toValue: 1,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.parallel([
-          Animated.timing(scaleAnim, {
-            toValue: 1,
-            duration: 1000,
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotateAnim, {
-            toValue: 0,
-            duration: 2000,
-            useNativeDriver: true,
-          }),
-        ]),
-      ])
-    ).start();
-  }, []);
+    const loopAnimation = Animated.loop(
+      Animated.timing(rotateAnim, {
+        toValue: 1,
+        duration: 4000,
+        useNativeDriver: Platform.OS !== 'web',
+      })
+    );
+
+    loopAnimation.start();
+
+    return () => {
+      loopAnimation.stop();
+    };
+  }, [rotateAnim]);
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -73,9 +58,25 @@ export default function UploadScreen() {
     try {
       // 1. Запросить разрешения
       const cameraPermission = await Camera.requestCameraPermissionsAsync();
-      const audioPermission = await Audio.requestPermissionsAsync();
+      const micPermission = await Camera.requestMicrophonePermissionsAsync();
+      if (!micPermission.granted) {
+        Alert.alert(
+          'Нужны разрешения',
+          'Разрешите доступ к микрофону для записи звука',
+          [
+            { text: 'Отмена', style: 'cancel' },
+            {
+              text: 'Открыть настройки',
+              onPress: () => Linking.openSettings()
+            }
+          ]
+        );
+        return;
+      }
+      // expo-audio doesn't have requestPermissionsAsync, permissions are handled via app.json
+      // We'll use Camera permissions for audio recording in video context
       
-      if (!cameraPermission.granted || !audioPermission.granted) {
+      if (!cameraPermission.granted) {
         Alert.alert(
           'Нужны разрешения',
           'Разрешите доступ к камере и микрофону для записи видео',

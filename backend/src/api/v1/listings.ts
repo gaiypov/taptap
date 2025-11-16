@@ -165,11 +165,60 @@ router.get('/feed',
       throw new CustomError('Failed to fetch listings', 500, 'DATABASE_ERROR', true, error);
     }
 
-    // Sort boosted listings first
+    // Apply feed algorithm: Boosted → City → Fresh → Engagement → Date
+    const userId = req.user?.id;
+    let userCity: string | undefined;
+    
+    if (userId) {
+      // Get user's city from profile
+      const { data: user } = await supabase
+        .from('users')
+        .select('city')
+        .eq('id', userId)
+        .single();
+      userCity = user?.city;
+    }
+
     const sortedListings = listings?.sort((a, b) => {
-      if (a.is_boosted && !b.is_boosted) return -1;
-      if (!a.is_boosted && b.is_boosted) return 1;
-      return 0;
+      // 1. Boosted listings first
+      if (a.is_boosted !== b.is_boosted) {
+        return a.is_boosted ? -1 : 1;
+      }
+
+      // 2. User's city listings second
+      if (userCity) {
+        const aIsUserCity = a.location_text?.toLowerCase().includes(userCity.toLowerCase()) || 
+                            a.city === userCity;
+        const bIsUserCity = b.location_text?.toLowerCase().includes(userCity.toLowerCase()) || 
+                            b.city === userCity;
+        
+        if (aIsUserCity !== bIsUserCity) {
+          return aIsUserCity ? -1 : 1;
+        }
+      }
+
+      // 3. Fresh listings (created in last 24h)
+      const now = Date.now();
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      const aCreatedAt = new Date(a.created_at || 0).getTime();
+      const bCreatedAt = new Date(b.created_at || 0).getTime();
+      const aIsFresh = now - aCreatedAt < oneDayMs;
+      const bIsFresh = now - bCreatedAt < oneDayMs;
+      
+      if (aIsFresh !== bIsFresh) {
+        return aIsFresh ? -1 : 1;
+      }
+
+      // 4. Engagement (likes_count)
+      const aLikes = a.likes_count || 0;
+      const bLikes = b.likes_count || 0;
+      
+      if (aLikes !== bLikes) {
+        return bLikes - aLikes; // Higher likes first
+      }
+
+      // 5. Date (newest first)
+      return bCreatedAt - aCreatedAt;
     }) || [];
 
     res.json({

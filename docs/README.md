@@ -5,6 +5,7 @@ A comprehensive vertical video marketplace platform for cars, horses, and real e
 ## 🚀 Features
 
 ### Core Functionality
+
 - **Multi-Category Listings**: Cars, Horses, Real Estate
 - **AI Video Analysis**: Automated condition assessment and price estimation
 - **Business Accounts**: Tiered subscription system with team management
@@ -13,6 +14,7 @@ A comprehensive vertical video marketplace platform for cars, horses, and real e
 - **Moderation Pipeline**: Content review and approval system
 
 ### Technical Features
+
 - **Universal Database Schema**: Single listings table for all categories
 - **Row Level Security**: Comprehensive RLS policies for data protection
 - **Input Validation**: Zod-based validation with comprehensive error handling
@@ -22,6 +24,7 @@ A comprehensive vertical video marketplace platform for cars, horses, and real e
 ## 🏗️ Architecture
 
 ### Project Structure
+
 ```
 360AutoMVP/
 ├── app/                    # Expo React Native application
@@ -43,6 +46,7 @@ A comprehensive vertical video marketplace platform for cars, horses, and real e
 ```
 
 ### Tech Stack
+
 - **Backend**: Express.js, TypeScript, Supabase
 - **Mobile**: Expo, React Native, TypeScript
 - **Database**: PostgreSQL (Supabase)
@@ -55,6 +59,7 @@ A comprehensive vertical video marketplace platform for cars, horses, and real e
 ## 🚀 Quick Start
 
 ### Prerequisites
+
 - Node.js 18+
 - Docker & Docker Compose
 - Supabase account
@@ -62,6 +67,7 @@ A comprehensive vertical video marketplace platform for cars, horses, and real e
 - API.video account
 
 ### 1. Clone and Setup
+
 ```bash
 git clone <repository-url>
 cd 360AutoMVP
@@ -69,7 +75,9 @@ cp env.example .env
 ```
 
 ### 2. Configure Environment Variables
+
 Edit `.env` file with your credentials:
+
 ```bash
 # Required
 JWT_SECRET=your-super-secret-jwt-key
@@ -90,7 +98,9 @@ GOOGLE_VISION_API_KEY=your-google-vision-key
 ```
 
 ### 3. Database Setup
+
 Apply SQL migrations to Supabase:
+
 ```bash
 # Apply migrations in order
 psql -h your-supabase-host -U postgres -d postgres -f supabase/sql/20251026_core_tables.sql
@@ -101,11 +111,13 @@ psql -h your-supabase-host -U postgres -d postgres -f supabase/sql/20251026_rls.
 ```
 
 ### 4. Run with Docker Compose
+
 ```bash
 docker-compose up -d
 ```
 
 ### 5. Run Mobile App
+
 ```bash
 cd app
 npm install
@@ -115,13 +127,16 @@ npx expo start
 ## 📱 Mobile App Setup
 
 ### Expo Configuration
+
 The app uses Expo Router with the following structure:
+
 - **Splash Screen**: Permissions request (camera, microphone, location)
 - **Home Feed**: TikTok-style vertical video feed
 - **Authentication**: SMS-based login flow
 - **Business Accounts**: Upgrade path for unlimited listings
 
 ### Key Screens
+
 - `SplashScreen`: Initial permissions and onboarding
 - `HomeFeedScreen`: Vertical video feed with category tabs
 - `AuthFlowScreen`: SMS verification and user registration
@@ -132,12 +147,14 @@ The app uses Expo Router with the following structure:
 ## 🔧 Backend API
 
 ### Authentication Endpoints
+
 - `POST /api/v1/auth/request-code` - Request SMS code
 - `POST /api/v1/auth/verify-code` - Verify SMS code and create user
 - `POST /api/v1/auth/refresh` - Refresh JWT token
 - `POST /api/v1/auth/logout` - Logout user
 
 ### Listings Endpoints
+
 - `GET /api/v1/listings/feed` - Get listings feed with filters
 - `GET /api/v1/listings/:id` - Get single listing details
 - `POST /api/v1/listings` - Create new listing
@@ -145,6 +162,7 @@ The app uses Expo Router with the following structure:
 - `DELETE /api/v1/listings/:id` - Delete listing
 
 ### Business Account Endpoints
+
 - `POST /api/v1/business/create` - Create business account
 - `GET /api/v1/business` - Get user's business account
 - `POST /api/v1/business/members` - Add team member
@@ -152,17 +170,20 @@ The app uses Expo Router with the following structure:
 - `DELETE /api/v1/business/members/:userId` - Remove team member
 
 ### Chat Endpoints
+
 - `POST /api/v1/chat/start` - Start chat thread
 - `GET /api/v1/chat/threads` - Get user's chat threads
 - `GET /api/v1/chat/thread/:id/messages` - Get thread messages
 - `POST /api/v1/chat/thread/:id/message` - Send message
 
 ### Promotion Endpoints
+
 - `POST /api/v1/promote/start` - Start promotion
 - `GET /api/v1/promote` - Get user's promotions
 - `POST /api/v1/promote/mark-paid` - Mark promotion as paid (admin)
 
 ### Moderation Endpoints
+
 - `POST /api/v1/moderation/approve` - Approve listing
 - `POST /api/v1/moderation/reject` - Reject listing
 - `GET /api/v1/moderation/queue` - Get moderation queue
@@ -171,6 +192,7 @@ The app uses Expo Router with the following structure:
 ## 🗄️ Database Schema
 
 ### Core Tables
+
 - **users**: User accounts with SMS authentication
 - **business_accounts**: Business entities with verification
 - **business_members**: Team members with roles
@@ -180,13 +202,16 @@ The app uses Expo Router with the following structure:
 - **real_estate_details**: Property-specific information
 
 ### Chat System
+
 - **chat_threads**: Chat conversations per listing
 - **chat_messages**: Individual messages with read status
 
 ### Promotions
+
 - **promotions**: Promotion campaigns with payment status
 
 ### Moderation
+
 - **moderation_events**: Audit trail of moderation actions
 - **moderation_queue**: Queue of listings awaiting review
 - **user_consents**: Legal consent tracking
@@ -195,18 +220,21 @@ The app uses Expo Router with the following structure:
 ## 🔒 Security Features
 
 ### Row Level Security (RLS)
+
 - Users can only access their own data
 - Public listings are visible to all
 - Chat privacy enforced at database level
 - Business account access controlled by membership
 
 ### Authentication & Authorization
+
 - JWT tokens with expiration
 - SMS-based phone verification
 - Role-based access control (user, moderator, admin)
 - Rate limiting on all endpoints
 
 ### Input Validation
+
 - Zod schemas for all API inputs
 - SQL injection prevention
 - XSS protection with sanitization
@@ -215,12 +243,14 @@ The app uses Expo Router with the following structure:
 ## 📊 Monitoring & Logging
 
 ### Docker Services
+
 - **Prometheus**: Metrics collection
 - **Grafana**: Metrics visualization
 - **Loki**: Log aggregation
 - **Promtail**: Log collection
 
 ### Health Checks
+
 - Backend API health endpoint
 - Database connectivity checks
 - External service monitoring
@@ -228,18 +258,21 @@ The app uses Expo Router with the following structure:
 ## 🌍 Kyrgyzstan Market Features
 
 ### Localization
+
 - Phone number format: +996XXXXXXXXX
 - Currency: KZT (Kyrgyzstani Som)
 - Language: Russian/Kyrgyz support
 - Legal compliance: User consent tracking
 
 ### Business Model
+
 - Free tier: 5 listings per private user
 - Business accounts: Unlimited listings
 - Team management for dealers/agencies
 - Promotion system for featured listings
 
 ### Categories
+
 1. **Cars**: Make, model, year, mileage, VIN, damage report
 2. **Horses**: Breed, age, gender, training level, health notes
 3. **Real Estate**: Property type, rooms, area, ownership status
@@ -247,6 +280,7 @@ The app uses Expo Router with the following structure:
 ## 🚀 Production Deployment
 
 ### Environment Setup
+
 1. Set up Supabase project
 2. Configure SMS service provider
 3. Set up API.video account
@@ -254,6 +288,7 @@ The app uses Expo Router with the following structure:
 5. Set up monitoring infrastructure
 
 ### Security Checklist
+
 - [ ] Change default JWT secret
 - [ ] Configure CORS origins
 - [ ] Set up SSL certificates
@@ -262,6 +297,7 @@ The app uses Expo Router with the following structure:
 - [ ] Set up monitoring alerts
 
 ### Performance Optimization
+
 - Database indexes on frequently queried fields
 - Redis caching for session data
 - CDN for static assets
@@ -269,6 +305,7 @@ The app uses Expo Router with the following structure:
 
 ## 📚 Documentation
 
+- **[Complete Cursor AI Prompt](docs/CursorAI-Prompt.md)** - Comprehensive guide for AI assistants with all integrations, examples, and best practices
 - [Architecture Overview](docs/ARCHITECTURE.md)
 - [Product Flow](docs/PRODUCT_FLOW.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)

@@ -40,39 +40,62 @@ export interface VideoAssets {
 export const apiVideoService = {
   /**
    * Создать новое видео и получить upload token
+   * С retry логикой и улучшенной обработкой ошибок
    */
   async createVideo(metadata: Partial<VideoMetadata>): Promise<{ videoId: string; uploadToken: string }> {
-    try {
-      const response = await axios.post(
-        `${API_VIDEO_BASE_URL}/videos`,
-        {
-          title: metadata.title || 'Car Video',
-          description: metadata.description,
-          public: metadata.public !== false,
-          tags: metadata.tags || ['car', 'auto', '360auto'],
-          metadata: [
-            { key: 'app', value: '360auto' },
-            { key: 'likes', value: '0' },
-            { key: 'views', value: '0' },
-            ...(metadata.metadata ? Object.entries(metadata.metadata).map(([key, value]) => ({ key, value })) : [])
-          ]
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${API_KEY}`,
-            'Content-Type': 'application/json',
+    const maxRetries = 3;
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await axios.post(
+          `${API_VIDEO_BASE_URL}/videos`,
+          {
+            title: metadata.title || 'Car Video',
+            description: metadata.description,
+            public: metadata.public !== false,
+            tags: metadata.tags || ['car', 'auto', '360auto'],
+            metadata: [
+              { key: 'app', value: '360auto' },
+              { key: 'likes', value: '0' },
+              { key: 'views', value: '0' },
+              ...(metadata.metadata ? Object.entries(metadata.metadata).map(([key, value]) => ({ key, value })) : [])
+            ]
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 15000, // 15 секунд
+          }
+        );
+
+        return {
+          videoId: response.data.videoId,
+          uploadToken: response.data.uploadToken || '',
+        };
+      } catch (error) {
+        lastError = error as Error;
+        
+        // Не retry для 4xx ошибок (кроме 429)
+        if (axios.isAxiosError(error)) {
+          const status = error.response?.status;
+          if (status && status >= 400 && status < 500 && status !== 429) {
+            throw error;
           }
         }
-      );
 
-      return {
-        videoId: response.data.videoId,
-        uploadToken: response.data.uploadToken || '',
-      };
-    } catch (error) {
-      console.error('Error creating video:', error);
-      throw error;
+        // Экспоненциальная задержка перед retry
+        if (attempt < maxRetries - 1) {
+          const delayMs = 1000 * Math.pow(2, attempt);
+          await new Promise(resolve => setTimeout(resolve, delayMs));
+        }
+      }
     }
+
+    console.error('[apiVideo] Error creating video after retries:', lastError);
+    throw lastError || new Error('Failed to create video');
   },
 
   /**
@@ -150,6 +173,7 @@ export const apiVideoService = {
         public: result.public,
       };
     } catch (error) {
+      // Use appLogger for consistency (but keep console.error as fallback for critical errors)
       console.error('Error uploading with token:', error);
       throw error;
     }
@@ -157,35 +181,56 @@ export const apiVideoService = {
 
   /**
    * Получить информацию о видео
+   * С кэшированием и retry логикой
    */
-  async getVideo(videoId: string): Promise<VideoMetadata & VideoAssets> {
-    try {
-      const response = await axios.get(
-        `${API_VIDEO_BASE_URL}/videos/${videoId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${API_KEY}`,
+  async getVideo(videoId: string, useCache: boolean = true): Promise<VideoMetadata & VideoAssets> {
+    const maxRetries = 2; // Меньше retry для GET запросов
+    let lastError: Error | null = null;
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await axios.get(
+          `${API_VIDEO_BASE_URL}/videos/${videoId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${API_KEY}`,
+            },
+            timeout: 10000,
+          }
+        );
+
+        const video = response.data;
+
+        return {
+          videoId: video.videoId,
+          title: video.title,
+          description: video.description,
+          public: video.public,
+          tags: video.tags,
+          hls: video.assets?.hls || `https://vod.api.video/vod/${videoId}/hls/manifest.m3u8`,
+          mp4: video.assets?.mp4 || '',
+          thumbnail: video.assets?.thumbnail || `https://vod.api.video/vod/${videoId}/thumbnail.jpg`,
+          iframe: video.assets?.iframe || `https://embed.api.video/vod/${videoId}`,
+        };
+      } catch (error) {
+        lastError = error as Error;
+        
+        // Не retry для 4xx ошибок
+        if (axios.isAxiosError(error)) {
+          const status = error.response?.status;
+          if (status && status >= 400 && status < 500) {
+            throw error;
           }
         }
-      );
 
-      const video = response.data;
-
-      return {
-        videoId: video.videoId,
-        title: video.title,
-        description: video.description,
-        public: video.public,
-        tags: video.tags,
-        hls: video.assets?.hls || `https://vod.api.video/vod/${videoId}/hls/manifest.m3u8`,
-        mp4: video.assets?.mp4 || '',
-        thumbnail: video.assets?.thumbnail || `https://vod.api.video/vod/${videoId}/thumbnail.jpg`,
-        iframe: video.assets?.iframe || `https://embed.api.video/vod/${videoId}`,
-      };
-    } catch (error) {
-      console.error('Error getting video:', error);
-      throw error;
+        if (attempt < maxRetries - 1) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
+      }
     }
+
+    console.error('[apiVideo] Error getting video after retries:', lastError);
+    throw lastError || new Error('Failed to get video');
   },
 
   /**
@@ -372,3 +417,34 @@ export const apiVideo = {
 };
 
 export default apiVideo;
+
+/**
+ * Обертка для промпта: uploadVideoToApiVideo(localVideoUri, metadata)
+ * Согласно CursorAI-Prompt.md
+ */
+export async function uploadVideoToApiVideo(
+  localVideoUri: string,
+  metadata?: {
+    title?: string;
+    tags?: string[];
+    description?: string;
+  }
+): Promise<string> {
+  try {
+    // Создаем видео с метаданными СНАЧАЛА (более эффективно)
+    const { videoId, uploadToken } = await apiVideoService.createVideo({
+      title: metadata?.title || 'Car Video',
+      description: metadata?.description,
+      tags: metadata?.tags || ['cars'],
+    });
+    
+    // Загружаем файл используя upload token
+    const uploadResult = await apiVideoService.uploadWithToken(localVideoUri, uploadToken);
+    
+    // Возвращаем HLS URL для плеера (согласно промпту)
+    return apiVideoService.getHLSUrl(uploadResult.videoId || videoId);
+  } catch (error) {
+    console.error('uploadVideoToApiVideo error:', error);
+    throw error;
+  }
+}

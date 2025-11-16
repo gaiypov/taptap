@@ -8,15 +8,19 @@
 ## 📁 Files to Delete
 
 ### 1. `backend/src/types/api.ts` (2.4K)
+
 **Reason:** Duplicates shared/src/types/api.types.ts  
 **Contains:**
+
 - ApiResponse, ApiError
 - PaginatedResponse
 - Various request types
 
 ### 2. `backend/src/types/models.ts` (1.5K)
+
 **Reason:** Partially duplicates shared types  
 **Contains:**
+
 - DatabaseUser (duplicate of User)
 - DatabaseListing (duplicate of Listing)
 - Keep: VerificationCode, AuditLog (backend-specific)
@@ -25,11 +29,13 @@
 
 ## 🔍 Files That Import Types
 
-### Scan Results:
+### Scan Results
+
 - ❌ **No direct imports** from `../types/api` or `../types/models` found
 - ✅ Types are imported from `../types` (index.ts)
 
-### Files Using Types:
+### Files Using Types
+
 1. `src/api/v1/auth.ts` - Uses request types
 2. `src/api/v1/listings.ts` - Uses Listing types
 3. `src/api/v1/business.ts` - Uses business types
@@ -45,6 +51,7 @@
 ### Step 1: Update `backend/src/types/index.ts`
 
 **Current:**
+
 ```typescript
 // Probably exports from api.ts and models.ts
 export * from './api';
@@ -52,6 +59,7 @@ export * from './models';
 ```
 
 **New:**
+
 ```typescript
 // Re-export from shared
 export * from '../../../shared/src/types';
@@ -64,6 +72,7 @@ export * from './compression';
 ### Step 2: Update Individual Files
 
 Replace imports in files that reference:
+
 - `DatabaseUser` → use `User`
 - `DatabaseListing` → use `Listing`
 - Import paths from `../types` → from shared
@@ -88,4 +97,3 @@ Replace imports in files that reference:
 3. Update imports
 4. Delete duplicate files
 5. Test build
-

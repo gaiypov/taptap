@@ -1,0 +1,124 @@
+# Cursor Project Rules for 360AutoMVP
+
+> 📚 **For comprehensive AI assistant prompt with all integrations, examples, and guidelines, see [docs/CursorAI-Prompt.md](docs/CursorAI-Prompt.md)**
+> 📐 **For complete architecture documentation, see [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)**
+
+## Canonical Structure (current, active)
+
+- Mobile app (Expo Router): `app/` (pages), `components/` (UI), `services/` (client API), `hooks/`, `utils/`, `types/`, `constants/`, `config/`, `assets/`.
+- Backend API: `backend/` (Express, Supabase integrations, jobs, middleware, etc.).
+- Supabase SQL and ops: `supabase/*.sql`, root SQL fix files.
+- Tests: `__tests__/` mirrors module paths.
+- Redux Store: `lib/store/` with slices: `authSlice.ts`, `feedSlice.ts`, `videoSlice.ts`, `offlineSlice.ts`
+
+Note: The folder `360auto-marketplace/` contains the target split-architecture (`backend/`, `mobile/`, `shared/`) and up-to-date docs. Until migration completes, treat the root-level app (`app/`, `components/`, `services/`) and `backend/` as canonical for active development. Do not create new code in `360-auto/` or `360auto-marketplace/mobile/` unless explicitly migrating.
+
+## Target Architecture (migration reference)
+
+- Use `360auto-marketplace/shared/src/types/*` as the single source of truth for types. Prefer imports via alias `@shared/*` and gradually remove duplicates from root `types/`.
+- Long term: move mobile source to `360auto-marketplace/mobile/src/*` (components, hooks, services, stores) while keeping Expo pages under `mobile/app/*`.
+
+## File Placement Rules
+
+- Expo Router screens: `app/**`.
+  - Tabs: `app/(tabs)/*`
+  - Auth: `app/(auth)/*` (intro.tsx, phone.tsx, verify.tsx)
+  - Onboarding: `app/(onboarding)/*` (IntroCarousel.tsx)
+  - Feature areas (e.g., listing, chat, camera): under `app/<feature>/*`.
+- Reusable UI: `components/<Domain|Feature>/*` using PascalCase component files.
+- Feature logic and API:
+  - Client-side services: `services/**` (HTTP, Supabase client, moderation, payments, push, AI). No direct network calls in components.
+  - Supabase client on mobile: `services/supabase.ts`. Backend Supabase client stays in `backend/src/services/supabaseClient.ts`.
+- Shared types: prefer `@shared` from `360auto-marketplace/shared/src/types/*`. If a type exists in both `types/` and `@shared`, import from `@shared` and delete the duplicate when touched.
+- Hooks: `hooks/*` with `useXxx.ts` naming.
+- Constants/config: `constants/*`, `config/*`.
+- Assets: `assets/*`.
+- Backend-only code must live under `backend/`.
+
+## Naming & Conventions
+
+- Components: PascalCase file names (`MyComponent.tsx`).
+- Screens (Expo pages): kebab or lowercase words (`favorites.tsx`, `new.tsx`), colocated under the appropriate route folder.
+- Hooks: `useSomething.ts`.
+- Type files: `*.types.ts` in shared; avoid adding new types under root `types/` unless strictly temporary.
+- Avoid creating platform-specific forks unless necessary. If needed, supply both `.ios.*` and `.android.*` variants.
+
+## Imports & Aliases
+
+- Prefer absolute imports via tsconfig paths:
+  - `@components/*` -> `components/*`
+  - `@services/*` -> `services/*`
+  - `@hooks/*` -> `hooks/*`
+  - `@utils/*` -> `utils/*`
+  - `@types/*` -> `types/*` (temporary; prefer `@shared/*`)
+  - `@shared/*` -> `360auto-marketplace/shared/src/*`
+  - `@lib/*` -> `lib/*` (Redux store, theme, etc.)
+- Do not import mobile code from `360-auto/` or `360auto-marketplace/mobile/*` unless performing a migration PR.
+
+## Service Boundaries (mobile)
+
+- Components must not call Supabase/HTTP directly; use functions from `services/*`.
+- Supabase usage on mobile is centralized in `services/supabase.ts`.
+- Content moderation, AI, payments, and push notifications are exposed via `services/*` modules.
+
+## Backend Boundaries
+
+- API routes/controllers, middleware, jobs, and services live in `backend/src/*`.
+- Do not import frontend code into backend or vice versa.
+- Backend API endpoints: `/api/auth/*`, `/api/listings/*`, `/api/chat/*`, `/api/business/*`
+
+## Redux Store Structure
+
+- Store location: `lib/store/index.ts`
+- Slices:
+  - `lib/store/slices/authSlice.ts` - User authentication state
+  - `lib/store/slices/feedSlice.ts` - Feed state (currentIndex, activeCategory, preloadedIndexes)
+  - `lib/store/slices/videoSlice.ts` - Video state (activeVideoId, mutedVideoIds, videoCache)
+  - `lib/store/slices/offlineSlice.ts` - Offline mode state
+- Always use typed hooks: `useAppDispatch()`, `useAppSelector()` from `lib/store/hooks.ts`
+- RTK Query API slice: `lib/store/api/apiSlice.ts`
+
+## Database Tables (Supabase)
+
+- Core tables: `users`, `listings`, `car_details`, `horse_details`, `real_estate_details`
+- Interactions: `listing_likes` (NOT `likes`), `listing_saves` (favorites), `chat_threads`, `chat_messages`
+- Always use `listing_likes` table, never `likes`
+- Verification: `verification_codes` table for SMS codes (4 digits by default)
+
+## Platform-specific files
+
+- Use platform-neutral code by default.
+- If creating platform-specific files, ensure both platforms are covered (`.ios.*` and `.android.*`) or provide a platform-agnostic fallback.
+
+## Testing
+
+- Place tests in `__tests__/` mirroring the module path (e.g., `__tests__/services/foo.test.ts`).
+
+## Linting & Formatting
+
+- Follow existing project configs: `eslint.config.js`, `tsconfig.json`.
+- No unused exports, no implicit any, no default export for React components unless required by Expo Router pages.
+
+## Performance Guidelines
+
+- Use FlashList instead of FlatList for large lists (install `@shopify/flash-list`)
+- Use expo-image for all images (automatic caching)
+- Implement skeleton loaders for loading states
+- Add haptic feedback for user interactions (already using expo-haptics)
+- Show empty states for empty lists
+- Implement instant search with debouncing
+
+## Migration Do/Don't
+
+- Do: import types from `@shared/*` and delete duplicates from `types/` when editing related code.
+- Do: keep new UI in `components/` and expose only via services.
+- Do: use Redux for global state, local state only for component-specific data.
+- Do: use `listing_likes` table, never `likes`.
+- Do Not: add new code under `360-auto/`.
+- Do Not: duplicate services between mobile and backend.
+- Do Not: use FlatList for video feeds - use FlashList or optimize FlatList with proper props.
+
+## PR Guidance
+
+- Each PR should: (1) keep code in the canonical locations above, (2) reduce duplication with `@shared`, and (3) avoid introducing new platform-specific files unless justified.
+

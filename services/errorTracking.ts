@@ -14,6 +14,7 @@ interface ErrorContext {
 
 class ErrorTrackingService {
   private isInitialized = false;
+  private breadcrumbCache = new Map<string, number>(); // message+category -> timestamp
   private enabled = true;
 
   /**
@@ -51,7 +52,7 @@ class ErrorTrackingService {
       if (context) {
         try {
           console.error('[ErrorTracking] Context:', JSON.stringify(context, null, 2));
-        } catch (e) {
+        } catch {
           console.error('[ErrorTracking] Context (circular):', 'Context contains circular references');
         }
       }
@@ -108,8 +109,33 @@ class ErrorTrackingService {
   addBreadcrumb(message: string, category: string, data?: Record<string, any>) {
     if (!this.enabled) return;
 
+    // Защита от дублирования: игнорируем одинаковые breadcrumbs в течение 2 секунд
+    const cacheKey = `${category}:${message}`;
+    const now = Date.now();
+    const lastTime = this.breadcrumbCache.get(cacheKey);
+    
+    if (lastTime && (now - lastTime) < 2000) {
+      // Слишком часто - пропускаем
+      return;
+    }
+    
+    this.breadcrumbCache.set(cacheKey, now);
+    
+    // Очищаем старые записи (старше 10 секунд)
+    if (this.breadcrumbCache.size > 50) {
+      for (const [key, timestamp] of this.breadcrumbCache.entries()) {
+        if (now - timestamp > 10000) {
+          this.breadcrumbCache.delete(key);
+        }
+      }
+    }
+
     if (__DEV__) {
-      console.log(`[Breadcrumb] ${category}: ${message}`, data);
+      if (data) {
+        console.log(`[Breadcrumb] ${category}: ${message}`, data);
+      } else {
+        console.log(`[Breadcrumb] ${category}: ${message}`);
+      }
     }
 
     // TODO: Add to Sentry

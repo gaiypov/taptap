@@ -50,23 +50,69 @@ CREATE TABLE IF NOT EXISTS public.moderation_queue (
 CREATE TABLE IF NOT EXISTS public.user_consents (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   user_id UUID REFERENCES public.users(id) ON DELETE CASCADE NOT NULL,
-  consent_type VARCHAR(50) NOT NULL CHECK (consent_type IN (
-    'offer_agreement', 
-    'personal_data_processing', 
-    'marketing_communications',
-    'location_tracking',
-    'camera_access',
-    'microphone_access'
-  )),
-  granted BOOLEAN NOT NULL,
-  granted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   ip_address INET,
   user_agent TEXT,
-  version VARCHAR(20), -- Version of consent document
-  
-  -- Ensure one consent per type per user
-  UNIQUE(user_id, consent_type)
+  version VARCHAR(20) -- Version of consent document
 );
+
+-- Add missing columns to user_consents if they don't exist (for existing tables)
+DO $$ 
+BEGIN
+  -- Add granted column if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'user_consents' 
+    AND column_name = 'granted'
+  ) THEN
+    ALTER TABLE public.user_consents ADD COLUMN granted BOOLEAN NOT NULL DEFAULT TRUE;
+    -- Remove default after adding (for future inserts)
+    ALTER TABLE public.user_consents ALTER COLUMN granted DROP DEFAULT;
+  END IF;
+  
+  -- Add granted_at column if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'user_consents' 
+    AND column_name = 'granted_at'
+  ) THEN
+    ALTER TABLE public.user_consents ADD COLUMN granted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+  END IF;
+  
+  -- Add consent_type column if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'user_consents' 
+    AND column_name = 'consent_type'
+  ) THEN
+    ALTER TABLE public.user_consents ADD COLUMN consent_type VARCHAR(50) NOT NULL DEFAULT 'offer_agreement';
+    ALTER TABLE public.user_consents ADD CONSTRAINT user_consents_consent_type_check 
+      CHECK (consent_type IN (
+        'offer_agreement', 
+        'personal_data_processing', 
+        'marketing_communications',
+        'location_tracking',
+        'camera_access',
+        'microphone_access'
+      ));
+    
+    -- Add unique constraint if it doesn't exist
+    IF NOT EXISTS (
+      SELECT 1 FROM information_schema.table_constraints 
+      WHERE table_schema = 'public' 
+      AND table_name = 'user_consents' 
+      AND constraint_name = 'user_consents_user_id_consent_type_key'
+    ) THEN
+      ALTER TABLE public.user_consents ADD CONSTRAINT user_consents_user_id_consent_type_key 
+        UNIQUE(user_id, consent_type);
+    END IF;
+    
+    -- Remove default after adding constraint (for future inserts)
+    ALTER TABLE public.user_consents ALTER COLUMN consent_type DROP DEFAULT;
+  END IF;
+END $$;
 
 -- ============================================
 -- 4. VERIFICATION CODES TABLE
@@ -78,7 +124,6 @@ CREATE TABLE IF NOT EXISTS public.verification_codes (
   code VARCHAR(6) NOT NULL,
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
   attempts INTEGER DEFAULT 0,
-  verified BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   
   -- Ensure code is 6 digits
@@ -87,6 +132,20 @@ CREATE TABLE IF NOT EXISTS public.verification_codes (
   -- Ensure expires_at is in future
   CONSTRAINT verification_codes_expiry_check CHECK (expires_at > created_at)
 );
+
+-- Add missing columns to verification_codes if they don't exist (for existing tables)
+DO $$ 
+BEGIN
+  -- Add verified column if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'verification_codes' 
+    AND column_name = 'verified'
+  ) THEN
+    ALTER TABLE public.verification_codes ADD COLUMN verified BOOLEAN DEFAULT FALSE;
+  END IF;
+END $$;
 
 -- ============================================
 -- 5. INDEXES FOR PERFORMANCE
@@ -107,15 +166,49 @@ CREATE INDEX IF NOT EXISTS idx_moderation_queue_created_at ON public.moderation_
 
 -- User consents indexes
 CREATE INDEX IF NOT EXISTS idx_user_consents_user_id ON public.user_consents(user_id);
-CREATE INDEX IF NOT EXISTS idx_user_consents_consent_type ON public.user_consents(consent_type);
-CREATE INDEX IF NOT EXISTS idx_user_consents_granted ON public.user_consents(granted);
 CREATE INDEX IF NOT EXISTS idx_user_consents_granted_at ON public.user_consents(granted_at);
+
+-- Create conditional indexes for user_consents (only if columns exist)
+DO $$ 
+BEGIN
+  -- Create granted index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'user_consents' 
+    AND column_name = 'granted'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_user_consents_granted ON public.user_consents(granted);
+  END IF;
+  
+  -- Create consent_type index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'user_consents' 
+    AND column_name = 'consent_type'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_user_consents_consent_type ON public.user_consents(consent_type);
+  END IF;
+END $$;
 
 -- Verification codes indexes
 CREATE INDEX IF NOT EXISTS idx_verification_codes_phone ON public.verification_codes(phone);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_expires_at ON public.verification_codes(expires_at);
-CREATE INDEX IF NOT EXISTS idx_verification_codes_verified ON public.verification_codes(verified);
 CREATE INDEX IF NOT EXISTS idx_verification_codes_created_at ON public.verification_codes(created_at);
+
+-- Create conditional index for verified (only if column exists)
+DO $$ 
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'verification_codes' 
+    AND column_name = 'verified'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_verification_codes_verified ON public.verification_codes(verified);
+  END IF;
+END $$;
 
 -- ============================================
 -- 6. TRIGGERS
@@ -166,6 +259,26 @@ CREATE TRIGGER update_moderation_queue_trigger
 -- ============================================
 -- 7. FUNCTIONS
 -- ============================================
+
+-- Drop old functions if they exist with different signatures
+DROP FUNCTION IF EXISTS cleanup_expired_codes() CASCADE;
+DROP FUNCTION IF EXISTS verify_sms_code(VARCHAR, VARCHAR) CASCADE;
+DROP FUNCTION IF EXISTS create_verification_code(VARCHAR) CASCADE;
+DROP FUNCTION IF EXISTS has_user_consent(UUID, VARCHAR) CASCADE;
+DROP FUNCTION IF EXISTS grant_user_consent(UUID, VARCHAR, INET, TEXT, VARCHAR) CASCADE;
+
+-- Generic drop by name (handles all overloads)
+DO $$ 
+BEGIN
+  EXECUTE 'DROP FUNCTION IF EXISTS cleanup_expired_codes() CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS verify_sms_code(VARCHAR, VARCHAR) CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS create_verification_code(VARCHAR) CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS has_user_consent(UUID, VARCHAR) CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS grant_user_consent(UUID, VARCHAR, INET, TEXT, VARCHAR) CASCADE';
+EXCEPTION
+  WHEN OTHERS THEN
+    NULL;
+END $$;
 
 -- Function to clean up expired verification codes
 CREATE OR REPLACE FUNCTION cleanup_expired_codes()

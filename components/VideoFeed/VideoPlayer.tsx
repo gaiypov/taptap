@@ -9,19 +9,20 @@ import { useRouter } from 'expo-router';
 import { VideoView, useVideoPlayer } from 'expo-video';
 import { debounce } from 'lodash';
 import React, { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Dimensions, Image, Modal, Pressable, Animated as RNAnimated, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Modal, Pressable, Animated as RNAnimated, Share, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-    FadeIn,
-    FadeOut,
-    useSharedValue,
-    withSpring
+  FadeIn,
+  FadeOut,
+  useSharedValue,
+  withSpring
 } from 'react-native-reanimated';
+import { appLogger } from '@/utils/logger';
 
 // TODO: После установки @api.video/react-native-player раскомментируй:
 // import { VideoPlayer as ApiVideoPlayer } from '@api.video/react-native-player';
 
-const { width, height } = Dimensions.get('window');
+import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
 const DEFAULT_VIDEO_URI =
   'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
 
@@ -87,7 +88,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           }
         })
         .catch((error) => {
-          console.error('Failed to get current user:', error);
+          appLogger.error('Failed to get current user:', { error });
         });
 
       return () => {
@@ -103,7 +104,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
       setIsLiked(Array.isArray(likedData) ? likedData.length > 0 : Boolean(likedData));
       setIsSaved(Array.isArray(savedData) ? savedData.length > 0 : Boolean(savedData));
-    }, [car.id, car.likes, car.isLiked, car.isSaved]);
+    }, [car.id, car.likes, car.isLiked, car.isSaved, car]);
 
     // Swipe gesture для открытия деталей
     const swipeGesture = Gesture.Pan()
@@ -150,7 +151,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         animation.stop();
         clearTimeout(timer);
       };
-    }, []);
+    }, [arrowAnimation]);
 
     const sellerInfo = useMemo(() => {
       const sellerName = car.seller?.name || 'Неизвестный продавец';
@@ -196,13 +197,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           });
         }
       } catch (error) {
-        console.error('Create conversation error:', error);
+        // Silent error
         Alert.alert('Ошибка', 'Не удалось создать чат. Попробуйте позже.');
       }
     };
 
     // Debounced like handler - предотвращает множественные запросы
-    const debouncedLikeRequest = useRef(
+    const debouncedLikeRequestRef = useRef(
       debounce(async (userId: string | null, carId: string, shouldLike: boolean) => {
         try {
           if (userId) {
@@ -213,10 +214,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             }
           }
         } catch (error) {
-          console.error('Like request error:', error);
+          appLogger.error('Like request error:', { error });
         }
       }, 500) // 500ms задержка
-    ).current;
+    );
+    const debouncedLikeRequest = debouncedLikeRequestRef.current;
 
     const handleLike = async () => {
       const previousIsLiked = isLiked;
@@ -234,13 +236,13 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           debouncedLikeRequest(currentUser.id, car.id, nextIsLiked);
         } else {
           // Для гостей - просто локальное изменение
-          console.log('Guest liked/unliked car:', car.id);
+          appLogger.debug('Guest liked/unliked car', { carId: car.id });
         }
         
         // Callback для родителя
         onLike?.(car.id);
       } catch (error) {
-        console.error('Like error:', error);
+        appLogger.error('Like error:', { error });
         // Откат при ошибке
         setIsLiked(previousIsLiked);
         setLikesCount(previousLikes);
@@ -262,9 +264,9 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     // Cleanup debounce при unmount
     useEffect(() => {
       return () => {
-        debouncedLikeRequest.cancel();
+        debouncedLikeRequestRef.current.cancel();
       };
-    }, []);
+    }, [debouncedLikeRequest]);
 
     const handleSave = async () => {
       if (!currentUser) {
@@ -272,8 +274,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         return;
       }
 
+      // Вычисляем новое состояние заранее
+      const nextIsSaved = !isSaved;
+      
       try {
-        const nextIsSaved = !isSaved;
+        // Оптимистичное обновление UI
         setIsSaved(nextIsSaved);
         
         if (nextIsSaved) {
@@ -292,9 +297,11 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           onSave?.(car.id);
         }
       } catch (error) {
-        console.error('Save error:', error);
+        appLogger.error('Save error:', { error });
         if (isMountedRef.current) {
-          setIsSaved(prev => !prev); // Откат с функциональным обновлением
+          // Откат к предыдущему состоянию используя вычисленное значение
+          setIsSaved(!nextIsSaved);
+          Alert.alert('Ошибка', 'Не удалось сохранить объявление');
         }
       }
     };
@@ -322,7 +329,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           onShare?.(car.id);
         }
       } catch (error) {
-        console.error('Share error:', error);
+        appLogger.error('Share error:', { error });
       }
     };
 
@@ -370,7 +377,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
 
       // Обработка ошибок видео
       if (newStatus.error) {
-        console.error('Video playback error:', newStatus.error);
+        appLogger.error('Video playback error:', { error: newStatus.error });
         setVideoError(true);
         setIsVideoLoading(false);
         return;
@@ -397,7 +404,7 @@ export const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             await apiVideoService.incrementViews(car.video_id);
           }
         } catch (error) {
-          console.error('Error tracking view:', error);
+          appLogger.error('Error tracking view:', { error });
         }
       }
     };
@@ -615,15 +622,15 @@ VideoPlayer.displayName = 'VideoPlayer';
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: '#fafafa',
   },
   videoWrapper: {
-    width,
-    height,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   video: {
-    width: width,
-    height: height,
+    width: SCREEN_WIDTH,
+    height: SCREEN_HEIGHT,
   },
   overlay: {
     position: 'absolute',
@@ -669,7 +676,7 @@ const styles = StyleSheet.create({
   },
   carInfo: {
     marginBottom: 8,
-    maxWidth: width * 0.65,
+    maxWidth: SCREEN_WIDTH * 0.65,
   },
   carTitle: {
     color: '#FFF',

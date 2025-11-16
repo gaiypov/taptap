@@ -8,7 +8,6 @@ import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    Dimensions,
     FlatList,
     Image,
     RefreshControl,
@@ -18,7 +17,7 @@ import {
     View,
 } from 'react-native';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { SCREEN_WIDTH } from '@/utils/constants';
 const CARD_WIDTH = (SCREEN_WIDTH - 48) / 2;
 
 type ListingFilter = 'active' | 'sold' | 'all';

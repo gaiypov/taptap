@@ -26,6 +26,14 @@ class PushNotificationService {
   // Регистрация устройства для push-уведомлений
   async registerForPushNotifications(): Promise<string | null> {
     try {
+      // Web не поддерживает push-уведомления через expo-notifications
+      if (Platform.OS === 'web') {
+        if (__DEV__) {
+          console.log('[PushNotifications] Web platform detected - skipping push token registration');
+        }
+        return null;
+      }
+      
       if (!Device.isDevice) {
         console.log('Push notifications only work on physical devices');
         return null;

@@ -13,7 +13,12 @@ export default function LegalCheckbox({ checked, onPress, type }: LegalCheckboxP
   const router = useRouter();
 
   const handleLinkPress = (path: string) => {
-    router.push(path as any);
+    // Путь может быть динамическим, используем типизированный роутинг
+    if (path.startsWith('/legal/')) {
+      router.push(path as '/legal/terms' | '/legal/privacy' | '/legal/consent');
+    } else {
+      router.push(path as any);
+    }
   };
 
   const renderText = () => {

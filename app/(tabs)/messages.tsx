@@ -1,6 +1,6 @@
 import { auth } from '@/services/auth';
 import { db } from '@/services/supabase';
-import { Conversation } from '@/types';
+import { Conversation, isCarListing } from '@/types';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -32,11 +32,44 @@ export default function MessagesScreen() {
       
       const { data, error } = await db.getUserConversations(user.id);
       
-      if (error) throw error;
+      if (error) {
+        // Проверка на сетевые ошибки
+        const errorWithCode = error as any;
+        const isNetworkError = 
+          error.message?.includes('Network request failed') ||
+          error.message?.includes('Failed to fetch') ||
+          error.message?.includes('network') ||
+          errorWithCode?.code === 'PGRST301' ||
+          errorWithCode?.code === 'ENOTFOUND' ||
+          errorWithCode?.code === 'ETIMEDOUT';
+        
+        if (isNetworkError) {
+          console.warn('Messages: Network error loading conversations:', error.message);
+          // Устанавливаем пустой массив вместо ошибки
+          setConversations([]);
+          return;
+        }
+        
+        throw error;
+      }
       
       setConversations(data || []);
-    } catch (error) {
-      console.error('Load conversations error:', error);
+    } catch (error: any) {
+      const isNetworkError = 
+        error?.message?.includes('Network request failed') ||
+        error?.message?.includes('Failed to fetch') ||
+        error?.message?.includes('network') ||
+        error?.code === 'ENOTFOUND' ||
+        error?.code === 'ETIMEDOUT';
+      
+      if (isNetworkError) {
+        console.warn('Messages: Network error:', error?.message || 'Network request failed');
+      } else {
+        console.error('Load conversations error:', error);
+      }
+      
+      // Устанавливаем пустой массив при любых ошибках
+      setConversations([]);
     } finally {
       setLoading(false);
     }
@@ -114,7 +147,14 @@ function ConversationItem({
     return null;
   }
 
-  const car = conversation.car;
+  const listing = conversation.car ?? conversation.listing ?? null;
+  const carListing = listing && isCarListing(listing) ? listing : null;
+  const listingBrand = carListing
+    ? carListing.brand ?? carListing.details.brand
+    : listing?.title;
+  const listingModel = carListing
+    ? carListing.model ?? carListing.details.model
+    : undefined;
 
   const formatTime = (timestamp: string) => {
     const date = new Date(timestamp);
@@ -144,9 +184,9 @@ function ConversationItem({
           </Text>
         </View>
         
-        {car && (
+        {listingBrand && (
           <Text style={styles.carInfo} numberOfLines={1}>
-            {car.brand} {car.model}
+            {listingBrand}{listingModel ? ` ${listingModel}` : ''}
           </Text>
         )}
         
@@ -157,9 +197,9 @@ function ConversationItem({
         )}
       </View>
       
-      {car?.thumbnail_url ? (
+      {listing?.thumbnail_url ? (
         <Image
-          source={{ uri: car.thumbnail_url }}
+          source={{ uri: listing.thumbnail_url }}
           style={styles.carThumbnail}
         />
       ) : null}

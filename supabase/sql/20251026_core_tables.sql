@@ -29,13 +29,36 @@ CREATE TABLE IF NOT EXISTS public.users (
 CREATE TABLE IF NOT EXISTS public.business_accounts (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
-  tax_id VARCHAR(20), -- ИНН for Kyrgyzstan entities
   avatar_url TEXT,
-  verified BOOLEAN DEFAULT FALSE,
   phone_public VARCHAR(20),
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add missing columns if they don't exist (for existing tables)
+DO $$ 
+BEGIN
+  -- Add tax_id column
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'business_accounts' 
+    AND column_name = 'tax_id'
+  ) THEN
+    ALTER TABLE public.business_accounts ADD COLUMN tax_id VARCHAR(20);
+    COMMENT ON COLUMN public.business_accounts.tax_id IS 'ИНН (Individual Tax Number) for Kyrgyzstan entities';
+  END IF;
+  
+  -- Add verified column
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'business_accounts' 
+    AND column_name = 'verified'
+  ) THEN
+    ALTER TABLE public.business_accounts ADD COLUMN verified BOOLEAN DEFAULT FALSE;
+  END IF;
+END $$;
 
 -- ============================================
 -- 3. BUSINESS MEMBERS TABLE
@@ -55,33 +78,169 @@ CREATE TABLE IF NOT EXISTS public.business_members (
 
 CREATE TABLE IF NOT EXISTS public.listings (
   id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
-  seller_user_id UUID REFERENCES public.users(id) ON DELETE SET NULL,
-  business_id UUID REFERENCES public.business_accounts(id) ON DELETE SET NULL,
   category VARCHAR(20) CHECK (category IN ('car', 'horse', 'real_estate')) NOT NULL,
   title VARCHAR(255) NOT NULL,
   description TEXT NOT NULL,
   price DECIMAL(12,2) NOT NULL CHECK (price > 0),
   currency VARCHAR(5) DEFAULT 'KZT',
   location_text VARCHAR(255) NOT NULL,
-  latitude DECIMAL(10,8),
-  longitude DECIMAL(11,8),
   video_id VARCHAR(255), -- api.video reference
-  video_status VARCHAR(20) DEFAULT 'uploading' CHECK (video_status IN ('uploading', 'processing', 'ready', 'failed')),
-  status VARCHAR(20) DEFAULT 'pending_review' CHECK (status IN ('pending_review', 'active', 'rejected', 'archived')),
-  is_boosted BOOLEAN DEFAULT FALSE, -- derived from promotions
-  views_count INTEGER DEFAULT 0,
-  likes_count INTEGER DEFAULT 0,
-  comments_count INTEGER DEFAULT 0,
-  messages_count INTEGER DEFAULT 0,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  
-  -- Constraints
-  CONSTRAINT listings_seller_or_business CHECK (
-    (seller_user_id IS NOT NULL AND business_id IS NULL) OR 
-    (seller_user_id IS NULL AND business_id IS NOT NULL)
-  )
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
+
+-- Add missing columns to listings if they don't exist (for existing tables)
+DO $$ 
+BEGIN
+  -- Add business_id column if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'business_id'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN business_id UUID REFERENCES public.business_accounts(id) ON DELETE SET NULL;
+  END IF;
+  
+  -- Migrate seller_id to seller_user_id if needed
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'seller_id'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'seller_user_id'
+  ) THEN
+    -- Rename seller_id to seller_user_id
+    ALTER TABLE public.listings RENAME COLUMN seller_id TO seller_user_id;
+  END IF;
+  
+  -- Add seller_user_id column if it doesn't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'seller_user_id'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN seller_user_id UUID REFERENCES public.users(id) ON DELETE SET NULL;
+  END IF;
+  
+  -- Add constraint if it doesn't exist (only if both columns exist)
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'seller_user_id'
+  ) AND EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'business_id'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.table_constraints 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND constraint_name = 'listings_seller_or_business'
+  ) THEN
+    ALTER TABLE public.listings ADD CONSTRAINT listings_seller_or_business CHECK (
+      (seller_user_id IS NOT NULL AND business_id IS NULL) OR 
+      (seller_user_id IS NULL AND business_id IS NOT NULL)
+    );
+  END IF;
+  
+  -- Add video_status column
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'video_status'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN video_status VARCHAR(20) DEFAULT 'uploading';
+    ALTER TABLE public.listings ADD CONSTRAINT listings_video_status_check 
+      CHECK (video_status IN ('uploading', 'processing', 'ready', 'failed'));
+  END IF;
+  
+  -- Add status column
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'status'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN status VARCHAR(20) DEFAULT 'pending_review';
+    ALTER TABLE public.listings ADD CONSTRAINT listings_status_check 
+      CHECK (status IN ('pending_review', 'active', 'rejected', 'archived'));
+  END IF;
+  
+  -- Add is_boosted column
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'is_boosted'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN is_boosted BOOLEAN DEFAULT FALSE;
+  END IF;
+  
+  -- Add counter columns
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'views_count'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN views_count INTEGER DEFAULT 0;
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'likes_count'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN likes_count INTEGER DEFAULT 0;
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'comments_count'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN comments_count INTEGER DEFAULT 0;
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'messages_count'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN messages_count INTEGER DEFAULT 0;
+  END IF;
+  
+  -- Add latitude and longitude columns if they don't exist
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'latitude'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN latitude DECIMAL(10,8);
+  END IF;
+  
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'longitude'
+  ) THEN
+    ALTER TABLE public.listings ADD COLUMN longitude DECIMAL(11,8);
+  END IF;
+END $$;
 
 -- ============================================
 -- 5. CAR DETAILS TABLE
@@ -138,8 +297,29 @@ CREATE INDEX IF NOT EXISTS idx_users_phone ON public.users(phone);
 CREATE INDEX IF NOT EXISTS idx_users_created_at ON public.users(created_at);
 
 -- Business accounts indexes
-CREATE INDEX IF NOT EXISTS idx_business_accounts_tax_id ON public.business_accounts(tax_id);
-CREATE INDEX IF NOT EXISTS idx_business_accounts_verified ON public.business_accounts(verified);
+-- Create indexes only if columns exist
+DO $$ 
+BEGIN
+  -- Create tax_id index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'business_accounts' 
+    AND column_name = 'tax_id'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_business_accounts_tax_id ON public.business_accounts(tax_id);
+  END IF;
+  
+  -- Create verified index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'business_accounts' 
+    AND column_name = 'verified'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_business_accounts_verified ON public.business_accounts(verified);
+  END IF;
+END $$;
 
 -- Business members indexes
 CREATE INDEX IF NOT EXISTS idx_business_members_user_id ON public.business_members(user_id);
@@ -147,13 +327,67 @@ CREATE INDEX IF NOT EXISTS idx_business_members_role ON public.business_members(
 
 -- Listings indexes
 CREATE INDEX IF NOT EXISTS idx_listings_category ON public.listings(category);
-CREATE INDEX IF NOT EXISTS idx_listings_status ON public.listings(status);
-CREATE INDEX IF NOT EXISTS idx_listings_seller_user_id ON public.listings(seller_user_id);
-CREATE INDEX IF NOT EXISTS idx_listings_business_id ON public.listings(business_id);
 CREATE INDEX IF NOT EXISTS idx_listings_price ON public.listings(price);
 CREATE INDEX IF NOT EXISTS idx_listings_created_at ON public.listings(created_at);
-CREATE INDEX IF NOT EXISTS idx_listings_is_boosted ON public.listings(is_boosted);
-CREATE INDEX IF NOT EXISTS idx_listings_location ON public.listings(latitude, longitude);
+
+-- Create conditional indexes for listings (only if columns exist)
+DO $$ 
+BEGIN
+  -- Create location index if both columns exist
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'latitude'
+  ) AND EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'longitude'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_listings_location ON public.listings(latitude, longitude);
+  END IF;
+  
+  -- Create business_id index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'business_id'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_listings_business_id ON public.listings(business_id);
+  END IF;
+  
+  -- Create seller_user_id index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'seller_user_id'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_listings_seller_user_id ON public.listings(seller_user_id);
+  END IF;
+  
+  -- Create status index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'status'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_listings_status ON public.listings(status);
+  END IF;
+  
+  -- Create is_boosted index if column exists
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_schema = 'public' 
+    AND table_name = 'listings' 
+    AND column_name = 'is_boosted'
+  ) THEN
+    CREATE INDEX IF NOT EXISTS idx_listings_is_boosted ON public.listings(is_boosted);
+  END IF;
+END $$;
 
 -- Text search indexes
 CREATE INDEX IF NOT EXISTS idx_listings_title_trgm ON public.listings USING gin(title gin_trgm_ops);
@@ -199,6 +433,50 @@ CREATE TRIGGER update_real_estate_details_updated_at BEFORE UPDATE ON public.rea
 -- ============================================
 -- 10. FUNCTIONS FOR COUNTERS
 -- ============================================
+
+-- Drop old functions if they exist with different signatures
+-- Note: PostgreSQL requires exact signature match, so we drop with common variations
+
+-- Drop with listing_id parameter name (new version)
+DROP FUNCTION IF EXISTS increment_views(listing_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_likes(listing_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS decrement_likes(listing_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_comments(listing_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_messages(listing_id UUID) CASCADE;
+
+-- Drop with old parameter names (car_uuid, car_id, listing_uuid, etc.)
+DROP FUNCTION IF EXISTS increment_views(car_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_likes(car_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS decrement_likes(car_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_comments(car_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_messages(car_uuid UUID) CASCADE;
+
+DROP FUNCTION IF EXISTS increment_views(car_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_likes(car_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS decrement_likes(car_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_comments(car_id UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_messages(car_id UUID) CASCADE;
+
+DROP FUNCTION IF EXISTS increment_views(listing_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_likes(listing_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS decrement_likes(listing_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_comments(listing_uuid UUID) CASCADE;
+DROP FUNCTION IF EXISTS increment_messages(listing_uuid UUID) CASCADE;
+
+-- Generic drop by name only (PostgreSQL will remove all overloads if exists)
+DO $$ 
+BEGIN
+  -- Try to drop by exact name if it exists with any signature
+  EXECUTE 'DROP FUNCTION IF EXISTS increment_views(UUID) CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS increment_likes(UUID) CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS decrement_likes(UUID) CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS increment_comments(UUID) CASCADE';
+  EXECUTE 'DROP FUNCTION IF EXISTS increment_messages(UUID) CASCADE';
+EXCEPTION
+  WHEN OTHERS THEN
+    -- Ignore errors if function doesn't exist
+    NULL;
+END $$;
 
 -- Function to increment views
 CREATE OR REPLACE FUNCTION increment_views(listing_id UUID)

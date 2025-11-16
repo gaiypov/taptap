@@ -8,10 +8,11 @@ import { auth } from '@/services/auth';
 import { BusinessTier } from '@/types/business';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
+    Platform,
     SafeAreaView,
     ScrollView,
     StyleSheet,
@@ -19,6 +20,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { appLogger } from '@/utils/logger';
 
 export default function UpgradeScreen() {
   const router = useRouter();
@@ -26,11 +28,7 @@ export default function UpgradeScreen() {
   const [currentTier, setCurrentTier] = useState<BusinessTier>('free');
   const [selectedTier, setSelectedTier] = useState<BusinessTier>('lite');
 
-  useEffect(() => {
-    loadUserData();
-  }, []);
-
-  const loadUserData = async () => {
+  const loadUserData = useCallback(async () => {
     try {
       const user = await auth.getCurrentUser();
       if (!user) {
@@ -45,11 +43,15 @@ export default function UpgradeScreen() {
         setSelectedTier(business.tier === 'pro' ? 'pro' : (business.tier === 'business' ? 'business' : 'lite'));
       }
     } catch (error) {
-      console.error('Error loading user:', error);
+      appLogger.error('Error loading user:', { error });
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
+
+  useEffect(() => {
+    loadUserData();
+  }, [loadUserData]);
 
   const handleSelectTier = (tier: BusinessTier) => {
     setSelectedTier(tier);
@@ -63,7 +65,7 @@ export default function UpgradeScreen() {
 
     // Переход на setup (настройка компании) или сразу на оплату
     router.push({
-      pathname: '/business/setup' as any,
+      pathname: '/(business)/setup',
       params: { tier: selectedTier },
     });
   };
@@ -135,7 +137,7 @@ export default function UpgradeScreen() {
 
         {/* Continue button */}
         <TouchableOpacity
-          style={styles.continueButton}
+          style={[styles.continueButton, getShadowStyle()]}
           onPress={handleContinue}
           activeOpacity={0.8}
         >
@@ -167,6 +169,29 @@ export default function UpgradeScreen() {
     </SafeAreaView>
   );
 }
+
+// Safe Platform check helper for SSR compatibility
+const getShadowStyle = () => {
+  try {
+    // Check if Platform is available
+    if (typeof Platform !== 'undefined' && Platform?.OS === 'web') {
+      return { boxShadow: '0px 4px 8px rgba(239, 68, 68, 0.3)' };
+    }
+  } catch (e) {
+    // Platform not available, fallback to mobile styles
+  }
+  // Default mobile/native shadow styles
+  return {
+    shadowColor: '#EF4444',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  };
+};
 
 const styles = StyleSheet.create({
   container: {
@@ -282,14 +307,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 24,
-    shadowColor: '#EF4444',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    // Shadow styles applied dynamically via getShadowStyle() in component
   },
   continueButtonText: {
     fontSize: 18,
@@ -321,4 +339,3 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 });
-

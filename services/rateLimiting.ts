@@ -102,9 +102,9 @@ export async function checkUploadLimit(userId: string): Promise<{
     todayStart.setHours(0, 0, 0, 0);
 
     const { count } = await supabase
-      .from('cars')
+      .from('listings')
       .select('id', { count: 'exact', head: true })
-      .eq('seller_id', userId)
+      .eq('seller_user_id', userId)
       .gte('created_at', todayStart.toISOString());
 
     const uploadsToday = count || 0;
@@ -162,7 +162,7 @@ export async function checkLikeLimit(userId: string): Promise<boolean> {
     const oneMinuteAgo = new Date(Date.now() - 60 * 1000);
 
     const { count } = await supabase
-      .from('likes')
+      .from('listing_likes')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
       .gte('created_at', oneMinuteAgo.toISOString());
