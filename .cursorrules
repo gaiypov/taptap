@@ -11,11 +11,11 @@
 - Tests: `__tests__/` mirrors module paths.
 - Redux Store: `lib/store/` with slices: `authSlice.ts`, `feedSlice.ts`, `videoSlice.ts`, `offlineSlice.ts`
 
-Note: The folder `360auto-marketplace/` contains the target split-architecture (`backend/`, `mobile/`, `shared/`) and up-to-date docs. Until migration completes, treat the root-level app (`app/`, `components/`, `services/`) and `backend/` as canonical for active development. Do not create new code in `360-auto/` or `360auto-marketplace/mobile/` unless explicitly migrating.
+Note: Legacy folders (`360-auto/`, `360auto-marketplace/`) have been moved to `legacy/`. Active development uses root-level structure (`app/`, `components/`, `services/`). Shared types are in `shared/src/` (accessible via `@shared/*` alias).
 
 ## Target Architecture (migration reference)
 
-- Use `360auto-marketplace/shared/src/types/*` as the single source of truth for types. Prefer imports via alias `@shared/*` and gradually remove duplicates from root `types/`.
+- Use `shared/src/types/*` as the single source of truth for types. Prefer imports via alias `@shared/*` and gradually remove duplicates from root `types/`.
 - Long term: move mobile source to `360auto-marketplace/mobile/src/*` (components, hooks, services, stores) while keeping Expo pages under `mobile/app/*`.
 
 ## File Placement Rules

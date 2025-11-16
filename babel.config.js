@@ -14,7 +14,7 @@ module.exports = function (api) {
             '@hooks': './hooks',
             '@utils': './utils',
             '@types': './types',
-            '@shared': './360auto-marketplace/shared/src',
+            '@shared': './shared/src',
           },
           extensions: [
             '.web.js',

@@ -13,7 +13,7 @@ config.resolver = {
     '@hooks': path.resolve(__dirname, 'hooks'),
     '@utils': path.resolve(__dirname, 'utils'),
     '@types': path.resolve(__dirname, 'types'),
-    '@shared': path.resolve(__dirname, '360auto-marketplace/shared/src'),
+    '@shared': path.resolve(__dirname, 'shared/src'),
   },
   // Убеждаемся, что .tsx файлы имеют приоритет над .ts
   // Платформо-специфичные расширения имеют приоритет
