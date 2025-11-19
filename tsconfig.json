@@ -1,42 +1,25 @@
 {
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
-    "target": "esnext",
-    "module": "esnext",
-    "jsx": "react-native",
-    "moduleResolution": "bundler",
-    "customConditions": ["react-native"],
+    "strict": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./*"],
-      "@components/*": ["./components/*"],
-      "@services/*": ["./services/*"],
-      "@hooks/*": ["./hooks/*"],
-      "@utils/*": ["./utils/*"],
-      "@types/*": ["./types/*"],
-      "@shared/*": ["./shared/src/*"]
-    },
-    "strict": true,
-    "esModuleInterop": true,
-    "allowSyntheticDefaultImports": true,
-    "skipLibCheck": true,
-    "resolveJsonModule": true,
-    "types": ["react", "react-native", "expo-router"]
+      "@/*": ["*"],
+      "@/components/*": ["components/*"],
+      "@/services/*": ["services/*"],
+      "@/hooks/*": ["hooks/*"],
+      "@/utils/*": ["utils/*"],
+      "@/lib/*": ["lib/*"],
+      "@/config/*": ["config/*"],
+      "@/types/*": ["types/*"],
+      "@/assets/*": ["assets/*"],
+      "@shared/*": ["shared/src/*"]
+    }
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts",
-    "app",
-    "index.ts",
-    "index.tsx"
-  ],
-  "exclude": [
-    "supabase/functions/**/*",
-    "node_modules",
-    "legacy/**/*",
-    "backend",
-    "supabase/archive/**/*"
+    "expo-env.d.ts"
   ]
 }

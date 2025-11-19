@@ -1,17 +1,53 @@
-// app/components/MapView.tsx
-// Map View для недвижимости
+// app/components/MapView.tsx — КАРТА НЕДВИЖИМОСТИ УРОВНЯ DUBAI + БИШКЕК 2025
+
+import { ultra } from '@/lib/theme/ultra';
 
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+
+import * as Haptics from 'expo-haptics';
+
+import React, { useEffect, useRef } from 'react';
+
 import {
-    Platform,
-    StyleSheet,
-    Text,
-    View
+  Dimensions,
+  Image,
+  Platform,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
-import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
-// MapView temporarily disabled for Expo Go compatibility
-// import MapView, { Callout, Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+
+// Условный импорт react-native-maps (только для native платформ)
+let MapViewLib: any = null;
+let Callout: any = null;
+let Marker: any = null;
+let PROVIDER_GOOGLE: any = null;
+
+if (Platform.OS !== 'web') {
+  try {
+    const maps = require('react-native-maps');
+    MapViewLib = maps.default || maps;
+    Callout = maps.Callout;
+    Marker = maps.Marker;
+    PROVIDER_GOOGLE = maps.PROVIDER_GOOGLE;
+  } catch (e) {
+    // react-native-maps не установлен или не доступен
+    console.warn('react-native-maps not available:', e);
+  }
+}
+
+import Animated, { FadeIn } from 'react-native-reanimated';
+
+const { width, height } = Dimensions.get('window');
+
+const ASPECT_RATIO = width / height;
+
+const LATITUDE_DELTA = 0.0922;
+
+const LONGITUDE_DELTA = LATITUDE_DELTA * ASPECT_RATIO;
+
+// Фолбэк если react-native-maps не загрузился
+const MapViewComponent = MapViewLib || View;
 
 interface Listing {
   id: string;
@@ -20,7 +56,6 @@ interface Listing {
   latitude?: number;
   longitude?: number;
   thumbnail_url?: string;
-  video_url?: string;
 }
 
 interface MapViewProps {
@@ -28,187 +63,215 @@ interface MapViewProps {
   onMarkerPress: (listingId: string) => void;
 }
 
-export function RealEstateMap({ listings, onMarkerPress }: MapViewProps) {
-  return (
-    <View style={styles.container}>
-      <View style={styles.placeholderMap}>
-        <Ionicons name="map" size={64} color="#8E8E93" />
-        <Text style={styles.placeholderText}>Карта недоступна</Text>
-        <Text style={styles.placeholderSubtext}>
-          В экспо версии карты отключены
-        </Text>
-        <Text style={styles.placeholderInfo}>
-          {listings.length} объект(ов)
-        </Text>
-      </View>
+export default function MapView({ listings, onMarkerPress }: MapViewProps) {
+  const mapRef = useRef<any>(null);
+  const validListings = listings.filter(l => l.latitude && l.longitude);
 
-      {/* Info box */}
-      <View style={styles.infoBox}>
-        <Ionicons name="location" size={20} color="#667eea" />
-        <Text style={styles.infoText}>
-          {listings.filter((l) => l.latitude && l.longitude).length} объектов
-          на карте
+  useEffect(() => {
+    if (validListings.length > 0 && mapRef.current) {
+      setTimeout(() => {
+        mapRef.current?.fitToCoordinates(
+          validListings.map(l => ({ latitude: l.latitude!, longitude: l.longitude! })),
+          { edgePadding: { top: 100, right: 50, bottom: 100, left: 50 }, animated: true }
+        );
+      }, 500);
+    }
+  }, [validListings]);
+
+  // Если карты нет — красивый плейсхолдер
+  if (MapViewComponent === View || validListings.length === 0) {
+    return (
+      <View style={styles.placeholder}>
+        <Ionicons name="map-outline" size={80} color={ultra.textMuted} />
+        <Text style={styles.placeholderTitle}>Карта недвижимости</Text>
+        <Text style={styles.placeholderText}>
+          {validListings.length === 0 
+            ? 'Нет объектов с координатами' 
+            : 'Карта доступна в сборке приложения'}
+        </Text>
+        <Text style={styles.placeholderCount}>
+          {listings.length} объект(ов) в списке
         </Text>
       </View>
-    </View>
+    );
+  }
+
+  return (
+    <Animated.View entering={FadeIn} style={styles.container}>
+      <MapViewComponent
+        ref={mapRef}
+        style={styles.map}
+        provider={PROVIDER_GOOGLE}
+        showsUserLocation
+        showsMyLocationButton
+        initialRegion={{
+          latitude: validListings[0]?.latitude || 42.8746,
+          longitude: validListings[0]?.longitude || 74.5698,
+          latitudeDelta: LATITUDE_DELTA,
+          longitudeDelta: LONGITUDE_DELTA,
+        }}
+      >
+        {validListings.map((listing) => (
+          <Marker
+            key={listing.id}
+            coordinate={{
+              latitude: listing.latitude!,
+              longitude: listing.longitude!,
+            }}
+            onPress={() => {
+              Haptics.selectionAsync();
+              onMarkerPress(listing.id);
+            }}
+          >
+            <View style={styles.marker}>
+              <Text style={styles.price}>
+                {listing.price.toLocaleString()} с
+              </Text>
+            </View>
+            <Callout tooltip onPress={() => onMarkerPress(listing.id)}>
+              <View style={styles.callout}>
+                {listing.thumbnail_url ? (
+                  <Image source={{ uri: listing.thumbnail_url }} style={styles.calloutImage} />
+                ) : (
+                  <View style={styles.calloutPlaceholder}>
+                    <Ionicons name="home-outline" size={40} color="#666" />
+                  </View>
+                )}
+                <Text style={styles.calloutTitle} numberOfLines={2}>
+                  {listing.title}
+                </Text>
+                <Text style={styles.calloutPrice}>
+                  {listing.price.toLocaleString()} сом
+                </Text>
+                <View style={styles.calloutButton}>
+                  <Text style={styles.calloutButtonText}>Подробнее →</Text>
+                </View>
+              </View>
+            </Callout>
+          </Marker>
+        ))}
+      </MapViewComponent>
+
+      {/* Инфо бокс */}
+      <View style={styles.infoBox}>
+        <Ionicons name="location" size={20} color={ultra.accent} />
+        <Text style={styles.infoText}>
+          {validListings.length} объект(ов) на карте
+        </Text>
+      </View>
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  container: { flex: 1 },
+  map: { flex: 1 },
+  placeholder: {
     flex: 1,
-  },
-  map: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-  },
-  markerContainer: {
+    backgroundColor: ultra.background,
+    justifyContent: 'center',
     alignItems: 'center',
   },
-  markerCircle: {
-    backgroundColor: '#667eea',
+  placeholderTitle: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: ultra.textPrimary,
+    marginTop: 20,
+  },
+  placeholderText: {
+    fontSize: 16,
+    color: ultra.textSecondary,
+    textAlign: 'center',
+    marginTop: 12,
+    paddingHorizontal: 40,
+  },
+  placeholderCount: {
+    fontSize: 18,
+    color: ultra.accent,
+    marginTop: 20,
+    fontWeight: '700',
+  },
+  marker: {
+    backgroundColor: ultra.accent,
     paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 3,
     borderColor: '#FFF',
     ...Platform.select({
-      web: {
-        boxShadow: '0px 2px 4px rgba(102, 126, 234, 0.4)',
-      },
-      default: {
-        shadowColor: '#667eea',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.4,
-        shadowRadius: 4,
-        elevation: 5,
-      },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 4 },
+      android: { elevation: 6 },
     }),
   },
-  markerPrice: {
+  price: {
     color: '#FFF',
-    fontSize: 16,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  markerCurrency: {
-    color: '#FFF',
-    fontSize: 10,
-    fontWeight: '500',
-    textAlign: 'center',
-    opacity: 0.9,
-  },
-  markerArrow: {
-    width: 0,
-    height: 0,
-    borderLeftWidth: 6,
-    borderRightWidth: 6,
-    borderTopWidth: 8,
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#667eea',
-    marginTop: -2,
+    fontSize: 14,
+    fontWeight: '800',
   },
   callout: {
-    width: 200,
+    width: 240,
     backgroundColor: '#FFF',
-    borderRadius: 12,
+    borderRadius: 16,
     overflow: 'hidden',
+    ...Platform.select({
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8 },
+      android: { elevation: 8 },
+    }),
   },
-  calloutImage: {
+  calloutImage: { width: '100%', height: 140 },
+  calloutPlaceholder: {
     width: '100%',
-    height: 120,
-    backgroundColor: '#2C2C2E',
-  },
-  calloutImagePlaceholder: {
-    width: '100%',
-    height: 120,
-    backgroundColor: '#2C2C2E',
+    height: 140,
+    backgroundColor: '#F0F0F0',
     justifyContent: 'center',
     alignItems: 'center',
   },
   calloutTitle: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
-    marginTop: 8,
-    paddingHorizontal: 12,
-  },
-  calloutPrice: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#667eea',
-    marginTop: 4,
+    color: '#000',
     paddingHorizontal: 12,
+    paddingTop: 12,
+  },
+  calloutPrice: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: ultra.accent,
+    paddingHorizontal: 12,
+    paddingTop: 8,
   },
   calloutButton: {
-    marginTop: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: '#667eea',
+    marginTop: 12,
+    paddingVertical: 12,
+    backgroundColor: ultra.accent,
+    alignItems: 'center',
   },
   calloutButtonText: {
     color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-    textAlign: 'center',
+    fontSize: 14,
+    fontWeight: '700',
   },
   infoBox: {
     position: 'absolute',
-    top: 120,
+    top: Platform.OS === 'ios' ? 60 : 40,
     left: 20,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: ultra.card,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: 12,
     borderRadius: 20,
     gap: 8,
+    borderWidth: 1,
+    borderColor: ultra.border,
     ...Platform.select({
-      web: {
-        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.2)',
-      },
-      default: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
-        elevation: 3,
-      },
+      ios: { shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
+      android: { elevation: 4 },
     }),
   },
   infoText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#000',
-  },
-  placeholderMap: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-  },
-  placeholderText: {
-    marginTop: 16,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#667eea',
-  },
-  placeholderSubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#8E8E93',
-    textAlign: 'center',
-  },
-  placeholderInfo: {
-    marginTop: 16,
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#000',
+    color: ultra.textPrimary,
   },
 });
-
-// Default export for Expo Router (not used as route)
-export default function MapViewDefault() {
-  return null;
-}

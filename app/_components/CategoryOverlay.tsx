@@ -1,10 +1,9 @@
 // app/components/CategoryOverlay.tsx
 // Прозрачный overlay с категориями поверх видео
 
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ultra } from '@/lib/theme/ultra';
 
 interface CategoryOverlayProps {
   activeCategory: 'car' | 'horse' | 'real_estate';
@@ -19,11 +18,7 @@ export default function CategoryOverlay({ activeCategory, onCategoryChange }: Ca
   ];
   
   return (
-    <BlurView
-      intensity={80}
-      tint="dark"
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <View style={styles.tabs}>
         {categories.map(cat => (
           <TouchableOpacity
@@ -43,17 +38,12 @@ export default function CategoryOverlay({ activeCategory, onCategoryChange }: Ca
             </Text>
             
             {activeCategory === cat.key && (
-              <LinearGradient
-                colors={['#667eea', '#764ba2']}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.activeIndicator}
-              />
+              <View style={styles.activeIndicator} />
             )}
           </TouchableOpacity>
         ))}
       </View>
-    </BlurView>
+    </View>
   );
 }
 
@@ -65,7 +55,7 @@ const styles = StyleSheet.create({
     right: 0,
     height: 60,
     zIndex: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    backgroundColor: ultra.background,
   },
   tabs: {
     flexDirection: 'row',
@@ -88,13 +78,13 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   label: {
-    fontSize: 12,
-    color: 'rgba(255, 255, 255, 0.7)',
-    fontWeight: '500',
+    fontSize: 18,
+    color: ultra.textMuted,
+    fontWeight: '600',
   },
   labelActive: {
-    color: '#ffffff',
-    fontWeight: '600',
+    color: ultra.textPrimary,
+    fontWeight: '800',
   },
   activeIndicator: {
     position: 'absolute',
@@ -102,7 +92,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 3,
-    borderRadius: 2,
+    backgroundColor: ultra.textPrimary,
   },
 });
 

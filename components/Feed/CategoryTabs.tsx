@@ -2,6 +2,7 @@
 import type { ListingCategory } from '@/types';
 import React from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ultra } from '@/lib/theme/ultra';
 
 interface CategoryTabsProps {
   selectedCategory: ListingCategory;
@@ -11,80 +12,97 @@ interface CategoryTabsProps {
 export default function CategoryTabs({ selectedCategory, onCategoryChange }: CategoryTabsProps) {
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        style={[
-          styles.tab,
-          selectedCategory === 'car' && styles.tabActive,
-        ]}
-        onPress={() => onCategoryChange('car')}
-      >
-        <Text style={[
-          styles.tabText,
-          selectedCategory === 'car' && styles.tabTextActive,
-        ]}>
-          🚗 Авто
-        </Text>
-      </TouchableOpacity>
+      <View style={styles.tabsContainer}>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            selectedCategory === 'car' && styles.tabActive,
+          ]}
+          onPress={() => onCategoryChange('car')}
+        >
+          <Text style={[
+            styles.tabText,
+            selectedCategory === 'car' && styles.tabTextActive,
+          ]}>
+            Авто
+          </Text>
+          {selectedCategory === 'car' && <View style={styles.underline} />}
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[
-          styles.tab,
-          selectedCategory === 'horse' && styles.tabActive,
-        ]}
-        onPress={() => onCategoryChange('horse')}
-      >
-        <Text style={[
-          styles.tabText,
-          selectedCategory === 'horse' && styles.tabTextActive,
-        ]}>
-          🐎 Лошади
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            selectedCategory === 'horse' && styles.tabActive,
+          ]}
+          onPress={() => onCategoryChange('horse')}
+        >
+          <Text style={[
+            styles.tabText,
+            selectedCategory === 'horse' && styles.tabTextActive,
+          ]}>
+            Лошади
+          </Text>
+          {selectedCategory === 'horse' && <View style={styles.underline} />}
+        </TouchableOpacity>
 
-      <TouchableOpacity
-        style={[
-          styles.tab,
-          selectedCategory === 'real_estate' && styles.tabActive,
-        ]}
-        onPress={() => onCategoryChange('real_estate')}
-      >
-        <Text style={[
-          styles.tabText,
-          selectedCategory === 'real_estate' && styles.tabTextActive,
-        ]}>
-          🏠 Недвижимость
-        </Text>
-      </TouchableOpacity>
+        <TouchableOpacity
+          style={[
+            styles.tab,
+            selectedCategory === 'real_estate' && styles.tabActive,
+          ]}
+          onPress={() => onCategoryChange('real_estate')}
+        >
+          <Text style={[
+            styles.tabText,
+            selectedCategory === 'real_estate' && styles.tabTextActive,
+          ]}>
+            Недвижимость
+          </Text>
+          {selectedCategory === 'real_estate' && <View style={styles.underline} />}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flexDirection: 'row',
-    backgroundColor: '#000',
-    borderBottomWidth: 1,
-    borderBottomColor: '#1C1C1E',
+    backgroundColor: ultra.background,
     paddingTop: 50, // Отступ для статус-бара
+    borderBottomWidth: 0,
+  },
+  tabsContainer: {
+    flexDirection: 'row',
+    paddingHorizontal: 8,
+    justifyContent: 'center',
+    gap: 44,
   },
   tab: {
-    flex: 1,
     paddingVertical: 16,
+    paddingHorizontal: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    borderBottomWidth: 3,
-    borderBottomColor: 'transparent',
+    position: 'relative',
   },
   tabActive: {
-    borderBottomColor: '#FF3B30',
+    // Active state handled by underline
   },
   tabText: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '600',
-    color: '#8E8E93',
+    color: ultra.textMuted,
   },
   tabTextActive: {
-    color: '#FFF',
+    color: ultra.textPrimary,
+    fontWeight: '800',
+  },
+  underline: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+    backgroundColor: ultra.textPrimary,
   },
 });
 

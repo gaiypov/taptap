@@ -17,8 +17,17 @@ config.resolver = {
   },
   // Убеждаемся, что .tsx файлы имеют приоритет над .ts
   // Платформо-специфичные расширения имеют приоритет
+  // Важно: платформенные расширения (.ios, .android) должны быть в начале
   sourceExts: [
     ...(config.resolver?.sourceExts || []),
+    'ios.tsx',
+    'ios.ts',
+    'ios.jsx',
+    'ios.js',
+    'android.tsx',
+    'android.ts',
+    'android.jsx',
+    'android.js',
     'web.tsx',
     'web.ts',
     'native.tsx',
@@ -40,7 +49,7 @@ config.resolver = {
   ],
 };
 
-// Добавляем custom resolver для игнорирования expo-sqlite на web
+// Добавляем custom resolver для игнорирования expo-sqlite на web и исправления react-native-image-viewing
 const originalResolveRequest = config.resolver.resolveRequest;
 config.resolver.resolveRequest = (context, realModuleName, platform, moduleName) => {
   // КРИТИЧНО: Блокируем expo-sqlite и все связанные модули на web
@@ -69,6 +78,57 @@ config.resolver.resolveRequest = (context, realModuleName, platform, moduleName)
     return {
       type: 'empty',
     };
+  }
+  
+  // Блокируем react-native-maps на web платформе (это нативный модуль)
+  const isMapsImport = 
+    modulePath.includes('react-native-maps') ||
+    moduleName === 'react-native-maps' ||
+    modulePath.includes('codegenNativeCommands') ||
+    (originPath.includes('MapView') && modulePath.includes('react-native-maps'));
+  
+  if (platform === 'web' && isMapsImport) {
+    console.warn(`[Metro] Blocking react-native-maps import on web: ${moduleName || realModuleName}`);
+    // Возвращаем пустой модуль
+    return {
+      type: 'empty',
+    };
+  }
+  
+  // Исправление для react-native-image-viewing: разрешаем платформенные расширения
+  // Metro должен автоматически находить .ios.js и .android.js файлы благодаря sourceExts
+  // Но если это не работает, используем явное разрешение
+  if (modulePath.includes('react-native-image-viewing') && (modulePath.includes('ImageItem/ImageItem') || moduleName?.includes('ImageItem'))) {
+    try {
+      const fs = require('fs');
+      const imageViewingPath = path.dirname(require.resolve('react-native-image-viewing/package.json'));
+      const imageItemDir = path.join(imageViewingPath, 'dist', 'components', 'ImageItem');
+      
+      // Пытаемся найти файл с платформенным расширением
+      const platformExt = platform === 'ios' ? 'ios' : platform === 'android' ? 'android' : 'ios';
+      const platformFile = path.join(imageItemDir, `ImageItem.${platformExt}.js`);
+      
+      if (fs.existsSync(platformFile)) {
+        // Используем стандартный resolver, но с правильным путем
+        const resolvedPath = path.resolve(platformFile);
+        if (originalResolveRequest) {
+          const result = originalResolveRequest(
+            { ...context, resolveRequest: originalResolveRequest },
+            resolvedPath,
+            platform,
+            resolvedPath
+          );
+          if (result) return result;
+        }
+        // Fallback: возвращаем путь напрямую
+        return {
+          type: 'sourceFile',
+          filePath: resolvedPath,
+        };
+      }
+    } catch (_e) {
+      // Fallback на стандартный resolver
+    }
   }
   
   // Используем стандартный resolver для остальных случаев

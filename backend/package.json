@@ -11,7 +11,10 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts",
     "lint:fix": "eslint src/**/*.ts --fix",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "check-env": "ts-node scripts/check-env.ts",
+    "check-sms": "ts-node scripts/check-sms.ts",
+    "test-sms": "ts-node scripts/test-sms.ts"
   },
   "keywords": [
     "marketplace",

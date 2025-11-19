@@ -7,7 +7,7 @@ import * as FileSystem from 'expo-file-system';
 import NetInfo from '@react-native-community/netinfo';
 import { appLogger } from '@/utils/logger';
 import { savePendingAction, removePendingAction, getPendingActions } from '@/services/offlineStorage';
-import { apiVideo } from './apiVideo';
+import { createVideoOnBackend, uploadVideo, getHLSUrl, getThumbnailUrl, getMp4Url } from './apiVideo';
 
 export type UploadProgressCallback = (progress: number) => void;
 
@@ -132,10 +132,7 @@ export async function uploadVideoWithOfflineSupport(
       tags: metadata?.tags || [category, '360auto'],
     };
 
-    // Check if api.video is configured
-    if (!apiVideo.isConfigured()) {
-      throw new Error('api.video is not configured. Check EXPO_PUBLIC_APIVIDEO_API_KEY');
-    }
+    // api.video всегда доступен через бэкенд
 
     // Report initial progress
     if (onProgress) {
@@ -157,8 +154,8 @@ export async function uploadVideoWithOfflineSupport(
         onProgress(15);
       }
     } else {
-      // Direct api.video upload - reuse existing apiVideo service
-      const createResult = await apiVideo.createVideo(videoMetadata);
+      // Direct api.video upload через бэкенд
+      const createResult = await createVideoOnBackend(videoMetadata);
       videoId = createResult.videoId;
       uploadToken = createResult.uploadToken;
       appLogger.debug('Created video on api.video', { videoId });
@@ -173,12 +170,10 @@ export async function uploadVideoWithOfflineSupport(
       onProgress(20); // Start upload
     }
 
-    // Use apiVideo.uploadWithToken which handles the upload properly
+    // Загружаем видео напрямую на api.video
     // NOTE: FileSystem.uploadAsync doesn't support real-time progress callbacks,
     // so we simulate progress updates before and after upload
-    const uploadResult = await apiVideo.uploadWithToken(uri, uploadToken);
-    // Note: apiVideo.uploadWithToken accepts onProgress but FileSystem doesn't support it
-    // For real progress tracking, we'd need chunked upload or native module
+    const uploadResult = await uploadVideo(uri, uploadToken);
     
     // Simulate progress during upload (FileSystem doesn't report real progress)
     if (onProgress) {
@@ -192,10 +187,10 @@ export async function uploadVideoWithOfflineSupport(
       onProgress(100);
     }
 
-    // Get final video URLs using apiVideo service methods
-    const hlsUrl = apiVideo.getHLSUrl(finalVideoId);
-    const thumbnailUrl = apiVideo.getThumbnailUrl(finalVideoId);
-    const mp4Url = apiVideo.getMp4Url(finalVideoId);
+    // Get final video URLs
+    const hlsUrl = getHLSUrl(finalVideoId);
+    const thumbnailUrl = getThumbnailUrl(finalVideoId);
+    const mp4Url = getMp4Url(finalVideoId);
 
     appLogger.info('upload_success', {
       videoId: finalVideoId,

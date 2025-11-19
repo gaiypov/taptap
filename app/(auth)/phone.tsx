@@ -19,6 +19,8 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { CountryCodeSelector, COUNTRIES, type Country } from '@/components/Auth/CountryCodeSelector';
 import { auth } from '@/services/auth';
+import { ultra } from '@/lib/theme/ultra';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export default function PhoneAuthScreen() {
   const router = useRouter();
@@ -155,7 +157,7 @@ export default function PhoneAuthScreen() {
             />
           </View>
 
-          {/* Send button */}
+          {/* Send button — градиент металлик Revolut Ultra */}
           <TouchableOpacity
             style={[
               styles.button,
@@ -165,6 +167,12 @@ export default function PhoneAuthScreen() {
             disabled={!phoneNumber.trim() || loading}
             activeOpacity={0.8}
           >
+            <LinearGradient
+              colors={[ultra.gradientStart, ultra.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             {loading ? (
               <Text style={styles.buttonText}>Отправка...</Text>
             ) : (
@@ -180,7 +188,7 @@ export default function PhoneAuthScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: ultra.background,
   },
   keyboardView: {
     flex: 1,
@@ -203,16 +211,18 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.select({ ios: 20, android: 19, default: 20 }),
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: ultra.textPrimary,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-bold', default: 'System' }),
   },
   instruction: {
-    fontSize: 16,
-    color: '#8E8E93',
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
+    color: ultra.textSecondary,
     textAlign: 'center',
-    marginBottom: 32,
-    lineHeight: 22,
+    marginBottom: Platform.select({ ios: 32, android: 28, default: 32 }),
+    lineHeight: Platform.select({ ios: 22, android: 21, default: 22 }),
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'System' }),
   },
   inputContainer: {
     flexDirection: 'row',
@@ -220,30 +230,53 @@ const styles = StyleSheet.create({
   },
   phoneInput: {
     flex: 1,
-    height: 56,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    color: '#FFFFFF',
-    fontSize: 16,
+    height: Platform.select({ ios: 56, android: 52, default: 56 }),
+    backgroundColor: ultra.card,
+    borderRadius: Platform.select({ ios: 12, android: 10, default: 12 }),
+    paddingHorizontal: Platform.select({ ios: 16, android: 14, default: 16 }),
+    color: ultra.textPrimary,
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
     borderWidth: 1,
-    borderColor: '#3A3A3C',
+    borderColor: ultra.border,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'System' }),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
   button: {
-    height: 56,
-    backgroundColor: '#FF3B30',
-    borderRadius: 12,
+    height: Platform.select({ ios: 56, android: 52, default: 56 }),
+    borderRadius: Platform.select({ ios: 12, android: 10, default: 12 }),
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   buttonDisabled: {
-    backgroundColor: '#3A3A3C',
     opacity: 0.5,
   },
   buttonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    color: ultra.textPrimary,
+    fontSize: Platform.select({ ios: 18, android: 17, default: 18 }),
     fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
   },
 });
 

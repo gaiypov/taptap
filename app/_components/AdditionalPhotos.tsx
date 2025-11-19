@@ -1,241 +1,163 @@
-// app/components/AdditionalPhotos.tsx
-// Дополнительные фото для listings
+// app/components/AdditionalPhotos.tsx — ГАЛЕРЕЯ УРОВНЯ DUBAI + БИШКЕК 2025
+
+import { ultra } from '@/lib/theme/ultra';
 
 import { Ionicons } from '@expo/vector-icons';
+
+import * as Haptics from 'expo-haptics';
+
 import React, { useState } from 'react';
+
 import {
-    FlatList,
-    Image,
-    Modal,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Dimensions,
+  Image,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+
+import Animated, { FadeIn } from 'react-native-reanimated';
+
+import ImageView from 'react-native-image-viewing';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface AdditionalPhotosProps {
   photos: string[];
 }
 
-export function AdditionalPhotos({ photos }: AdditionalPhotosProps) {
-  const [fullscreenPhoto, setFullscreenPhoto] = useState<string | null>(null);
-  const [photoIndex, setPhotoIndex] = useState(0);
+export default function AdditionalPhotos({ photos }: AdditionalPhotosProps) {
+  const [visible, setVisible] = useState(false);
+  const [index, setIndex] = useState(0);
 
-  if (!photos || photos.length === 0) {
-    return null;
-  }
+  if (!photos || photos.length === 0) return null;
 
-  const openFullscreen = (index: number) => {
-    setPhotoIndex(index);
-    setFullscreenPhoto(photos[index]);
+  const openGallery = (i: number) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIndex(i);
+    setVisible(true);
   };
 
-  const nextPhoto = () => {
-    if (photoIndex < photos.length - 1) {
-      setPhotoIndex(photoIndex + 1);
-      setFullscreenPhoto(photos[photoIndex + 1]);
-    }
-  };
-
-  const prevPhoto = () => {
-    if (photoIndex > 0) {
-      setPhotoIndex(photoIndex - 1);
-      setFullscreenPhoto(photos[photoIndex - 1]);
-    }
-  };
+  const images = photos.map(uri => ({ uri }));
 
   return (
-    <>
-      <View style={styles.container}>
-        <Text style={styles.title}>Дополнительные фото</Text>
-        <FlatList
-          horizontal
-          data={photos}
-          showsHorizontalScrollIndicator={false}
-          keyExtractor={(item, index) => `${item}-${index}`}
-          renderItem={({ item, index }) => (
-            <TouchableOpacity
-              style={styles.photoContainer}
-              onPress={() => openFullscreen(index)}
-              activeOpacity={0.8}
-            >
-              <Image 
-                source={{ uri: item }}
-                style={styles.photo}
-                resizeMode="cover"
-              />
-              {/* Photo number badge */}
-              <View style={styles.photoNumber}>
-                <Text style={styles.photoNumberText}>{index + 1}</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-          contentContainerStyle={styles.scrollContent}
-        />
+    <Animated.View entering={FadeIn} style={styles.container}>
+      <Text style={styles.title}>Дополнительные фото</Text>
+      <View style={styles.grid}>
+        {photos.map((photo, i) => (
+          <TouchableOpacity
+            key={i}
+            style={styles.thumbWrapper}
+            onPress={() => openGallery(i)}
+            activeOpacity={0.8}
+          >
+            <Image source={{ uri: photo }} style={styles.thumb} resizeMode="cover" />
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{i + 1}</Text>
+            </View>
+          </TouchableOpacity>
+        ))}
       </View>
 
-      {/* Fullscreen Modal */}
-      <Modal
-        visible={fullscreenPhoto !== null}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setFullscreenPhoto(null)}
-      >
-        <View style={styles.fullscreenContainer}>
-          {/* Close button */}
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={() => setFullscreenPhoto(null)}
-          >
-            <Ionicons name="close" size={32} color="#FFF" />
-          </TouchableOpacity>
-
-          {/* Photo counter */}
-          <View style={styles.photoCounter}>
-            <Text style={styles.photoCounterText}>
-              {photoIndex + 1} / {photos.length}
-            </Text>
+      {/* Полноценная галерея с pinch-to-zoom */}
+      <ImageView
+        images={images}
+        imageIndex={index}
+        visible={visible}
+        onRequestClose={() => setVisible(false)}
+        backgroundColor="rgba(0,0,0,0.95)"
+        swipeToCloseEnabled
+        doubleTapToZoomEnabled
+        HeaderComponent={({ imageIndex }) => (
+          <View style={styles.viewerHeader}>
+            <TouchableOpacity
+              style={styles.closeBtn}
+              onPress={() => setVisible(false)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="close" size={32} color="#FFF" />
+            </TouchableOpacity>
+            <View style={styles.counter}>
+              <Text style={styles.counterText}>
+                {imageIndex + 1} / {photos.length}
+              </Text>
+            </View>
           </View>
-
-          {/* Photo with swipe controls */}
-          <ScrollView
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            contentOffset={{ x: photoIndex * 100, y: 0 }}
-            onMomentumScrollEnd={(event) => {
-              const newIndex = Math.round(
-                event.nativeEvent.contentOffset.x / 100
-              );
-              setPhotoIndex(newIndex);
-              setFullscreenPhoto(photos[newIndex]);
-            }}
-          >
-            {photos.map((photo, index) => (
-              <Image
-                key={index}
-                source={{ uri: photo }}
-                style={styles.fullscreenPhoto}
-                resizeMode="contain"
-              />
-            ))}
-          </ScrollView>
-
-          {/* Navigation arrows */}
-          {photoIndex > 0 && (
-            <TouchableOpacity
-              style={[styles.navArrow, styles.leftArrow]}
-              onPress={prevPhoto}
-            >
-              <Ionicons name="chevron-back" size={40} color="#FFF" />
-            </TouchableOpacity>
-          )}
-
-          {photoIndex < photos.length - 1 && (
-            <TouchableOpacity
-              style={[styles.navArrow, styles.rightArrow]}
-              onPress={nextPhoto}
-            >
-              <Ionicons name="chevron-forward" size={40} color="#FFF" />
-            </TouchableOpacity>
-          )}
-        </View>
-      </Modal>
-    </>
+        )}
+      />
+    </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     padding: 20,
-    backgroundColor: '#1C1C1E',
+    backgroundColor: ultra.background,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#FFF',
+    fontSize: 22,
+    fontWeight: '800',
+    color: ultra.textPrimary,
     marginBottom: 16,
+    fontFamily: 'Inter-Bold',
   },
-  scrollContent: {
-    paddingRight: 20,
+  grid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
   },
-  photoContainer: {
-    marginRight: 12,
+  thumbWrapper: {
+    width: (SCREEN_WIDTH - 40 - 24) / 3,
+    height: (SCREEN_WIDTH - 40 - 24) / 3,
     position: 'relative',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: ultra.border,
   },
-  photo: {
-    width: 120,
-    height: 120,
-    borderRadius: 12,
-    backgroundColor: '#2C2C2E',
+  thumb: {
+    width: '100%',
+    height: '100%',
   },
-  photoNumber: {
+  badge: {
     position: 'absolute',
     top: 8,
     right: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 12,
   },
-  photoNumberText: {
+  badgeText: {
     color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
   },
-  fullscreenContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  closeButton: {
+  viewerHeader: {
     position: 'absolute',
-    top: 50,
-    right: 20,
-    zIndex: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    borderRadius: 20,
-    padding: 8,
-  },
-  photoCounter: {
-    position: 'absolute',
-    top: 50,
+    top: Platform.OS === 'ios' ? 60 : 40,
     left: 20,
+    right: 20,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     zIndex: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
   },
-  photoCounterText: {
-    color: '#FFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  fullscreenPhoto: {
-    width: 100,
-    height: 100,
-  },
-  navArrow: {
-    position: 'absolute',
-    top: '50%',
-    transform: [{ translateY: -20 }],
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  closeBtn: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    padding: 10,
     borderRadius: 25,
-    padding: 8,
   },
-  leftArrow: {
-    left: 20,
+  counter: {
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
   },
-  rightArrow: {
-    right: 20,
+  counterText: {
+    color: '#FFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
 });
-
-// Default export for Expo Router (not used as route)
-export default function AdditionalPhotosDefault() {
-  return null;
-}
-

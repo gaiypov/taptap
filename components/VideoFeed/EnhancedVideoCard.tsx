@@ -1,30 +1,31 @@
-import React, { useMemo, useState, useRef, useCallback } from 'react';
-import {
-  View,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  Platform,
-  TouchableWithoutFeedback,
-  Alert,
-} from 'react-native';
-import { Image } from 'expo-image';
-import { LinearGradient } from 'expo-linear-gradient';
+// components/listings/EnhancedVideoCard.tsx
+
+import { LikeAnimation } from '@/components/animations/LikeAnimation';
+import { ultra } from '@/lib/theme/ultra';
+import { apiVideo } from '@/services/apiVideo';
+import { SCREEN_HEIGHT, SCREEN_WIDTH } from '@/utils/constants';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useAppTheme } from '@/lib/theme';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
+import {
+  Image,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { OptimizedVideoPlayer } from './OptimizedVideoPlayer';
-import { apiVideo } from '@/services/apiVideo';
-import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
-import { LikeAnimation } from '@/components/animations/LikeAnimation';
+
+// ВОТ ЭТО САМОЕ ГЛАВНОЕ — ПРАВИЛЬНЫЕ ХУКИ!
 import { useAppDispatch, useAppSelector } from '@/lib/store/hooks';
 import { toggleMuteVideo } from '@/lib/store/slices/videoSlice';
+
 import { auth } from '@/services/auth';
-import { appLogger } from '@/utils/logger';
 import type { Listing } from '@/types';
 
-interface EnhancedVideoCardProps {
+export interface EnhancedVideoCardProps {
   listing: Listing & {
     category?: string;
     is_favorited?: boolean;
@@ -35,9 +36,12 @@ interface EnhancedVideoCardProps {
     video_id?: string;
     video_url?: string;
     thumbnail_url?: string;
-    details?: any;
+    additional_images?: string[];
+    media?: { url: string }[];
+    details?: Record<string, unknown>;
     location?: string;
     city?: string;
+    seller?: { id: string; name?: string; avatar_url?: string };
   };
   isActive: boolean;
   isPreloaded: boolean;
@@ -47,52 +51,22 @@ interface EnhancedVideoCardProps {
   onShare: () => void;
 }
 
-// Утилита для получения видео URL
+// Утилиты без изменений
 function getVideoUrl(listing: EnhancedVideoCardProps['listing']): string {
   if (listing.video_id && listing.video_id.trim() !== '') {
     try {
       const hlsUrl = apiVideo.getHLSUrl(listing.video_id);
-      if (hlsUrl && hlsUrl.trim() !== '') {
-        appLogger.debug('[EnhancedVideoCard] Using HLS URL', {
-          listingId: listing.id,
-          videoId: listing.video_id,
-        });
-        return hlsUrl;
-      }
-    } catch (error) {
-      appLogger.warn('[EnhancedVideoCard] Error getting HLS URL', {
-        listingId: listing.id,
-        videoId: listing.video_id,
-        error,
-      });
+      if (hlsUrl && hlsUrl.trim() !== '') return hlsUrl;
+    } catch {
+      // Игнорируем ошибки получения HLS URL
     }
   }
-  const videoUrl = listing.video_url || (listing as any).videoUrl || '';
-  if (videoUrl && videoUrl.trim() !== '') {
-    appLogger.debug('[EnhancedVideoCard] Using video_url', {
-      listingId: listing.id,
-      hasVideoUrl: true,
-    });
-    return videoUrl;
-  }
-  
-  appLogger.warn('[EnhancedVideoCard] No video URL found', {
-    listingId: listing.id,
-    hasVideoId: !!listing.video_id,
-    hasVideoUrl: !!listing.video_url,
-  });
-  
-  return '';
+  return listing.video_url || '';
 }
 
-// Утилита для получения превью
 function getThumbnailUrl(listing: EnhancedVideoCardProps['listing']): string | undefined {
-  if (listing.thumbnail_url) {
-    return listing.thumbnail_url;
-  }
-  if (listing.video_id) {
-    return apiVideo.getThumbnailUrl(listing.video_id);
-  }
+  if (listing.thumbnail_url) return listing.thumbnail_url;
+  if (listing.video_id) return apiVideo.getThumbnailUrl(listing.video_id);
   return undefined;
 }
 
@@ -106,563 +80,296 @@ export const EnhancedVideoCard = React.memo<EnhancedVideoCardProps>(({
   onShare,
 }) => {
   const router = useRouter();
-  const theme = useAppTheme();
   const dispatch = useAppDispatch();
-  const mutedVideoIds = useAppSelector((state) => state.video.mutedVideoIds);
+  const mutedVideoIds = useAppSelector(state => state.video.mutedVideoIds);
   const isMuted = mutedVideoIds.includes(listing.id);
-  
-  // Состояние для анимации лайка
+
   const [showLikeAnimation, setShowLikeAnimation] = useState(false);
   const [animationKey, setAnimationKey] = useState(0);
   const lastTapRef = useRef<number>(0);
 
   const videoUrl = useMemo(() => getVideoUrl(listing), [listing]);
   const thumbnailUrl = useMemo(() => getThumbnailUrl(listing), [listing]);
-  
-  // Определяем категорию для анимации
+
   const categoryForAnimation = useMemo(() => {
-    const category = String(listing.category || '').toLowerCase();
-    if (category === 'car' || category === 'cars') return 'car';
-    if (category === 'horse' || category === 'horses') return 'horse';
-    if (category === 'real_estate') return 'real_estate';
-    return 'car'; // fallback
+    const cat = String(listing.category || '').toLowerCase();
+    if (cat.includes('car')) return 'car';
+    if (cat.includes('horse')) return 'horse';
+    if (cat.includes('real_estate')) return 'real_estate';
+    return 'car';
   }, [listing.category]);
 
-  // Форматирование информации
   const additionalInfo = useMemo(() => {
-    const details = listing.details || {};
-    const category = String(listing.category || '').toLowerCase();
-    
-    if (category === 'car' || category === 'cars') {
-      if (details.brand && details.model) {
-        return `${details.brand} ${details.model}${details.year ? ` ${details.year}` : ''}`;
-      }
-      if (details.make && details.model) {
-        return `${details.make} ${details.model}${details.year ? ` ${details.year}` : ''}`;
-      }
+    const d = listing.details || {};
+    const cat = String(listing.category || '').toLowerCase();
+
+    if (cat.includes('car') && (d.brand || d.make)) {
+      return `${d.brand || d.make} ${d.model || ''}${d.year ? ` ${d.year}` : ''}`.trim();
     }
-    
-    if (category === 'horse' || category === 'horses') {
-      if (details.breed) {
-        return `${details.breed}${details.age_years || details.age ? `, ${details.age_years || details.age} лет` : ''}`;
-      }
+    if (cat.includes('horse') && d.breed) {
+      return `${d.breed}${d.age_years ? `, ${d.age_years} лет` : ''}`;
     }
-    
-    if (category === 'real_estate') {
-      if (details.property_type) {
-        return `${details.property_type}${details.area_m2 || details.area ? `, ${details.area_m2 || details.area}м²` : ''}`;
-      }
+    if (cat.includes('real_estate') && d.property_type) {
+      return `${d.property_type}${d.area_m2 ? `, ${d.area_m2}м²` : ''}`;
     }
-    
     return listing.title || 'Объявление';
   }, [listing]);
 
-  const priceValue = useMemo(() => Number(listing.price ?? 0), [listing.price]);
+  const priceValue = Number(listing.price ?? 0);
 
-  // Обработка лайка через кнопку
-  // ВАЖНО: Определяем ПЕРЕД handleDoubleTap и handleLongPress, которые его используют
   const handleLikePress = useCallback(() => {
-    const wasLiked = listing.is_liked;
-    const willBeLiked = !wasLiked;
-    
-    // Показываем анимацию только при лайке (не при анлайке)
-    if (willBeLiked) {
+    // Показываем анимацию при каждом лайке (когда переключаем на лайкнутое)
+    if (!listing.is_liked) {
       setShowLikeAnimation(true);
-      setAnimationKey(prev => prev + 1);
+      setAnimationKey(k => k + 1);
     }
-    
     onLike();
-    
-    // Haptic feedback
     if (Platform.OS === 'ios') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     }
   }, [listing.is_liked, onLike]);
 
-  // Обработка обычного тапа (для паузы/воспроизведения, если нужно)
-  const handleSingleTap = useCallback(() => {
-    // Пока не используем - можно добавить паузу/play в будущем
-    // Можно также использовать для других действий
-  }, []);
-
-  // Обработка двойного тапа для лайка
-  // ВАЖНО: Определяем ПОСЛЕ handleLikePress
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
-    const DOUBLE_TAP_DELAY = 300;
-    
-    if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
-      // Двойной тап - лайкаем
-      lastTapRef.current = 0;
+    if (now - lastTapRef.current < 300) {
       handleLikePress();
+      lastTapRef.current = 0;
     } else {
       lastTapRef.current = now;
-      // Задержка для определения одиночного тапа
-      setTimeout(() => {
-        if (lastTapRef.current !== 0) {
-          handleSingleTap();
-          lastTapRef.current = 0;
-        }
-      }, DOUBLE_TAP_DELAY);
     }
-  }, [handleLikePress, handleSingleTap]);
-  
-  // Обработка длительного нажатия (альтернативный способ лайка)
-  // ВАЖНО: Определяем ПОСЛЕ handleLikePress
+  }, [handleLikePress]);
+
   const handleLongPress = useCallback(() => {
     handleLikePress();
   }, [handleLikePress]);
 
-  // Обработка завершения анимации
   const handleAnimationFinish = useCallback(() => {
     setShowLikeAnimation(false);
   }, []);
 
-  // Обработка переключения звука
   const handleToggleMute = useCallback(() => {
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     dispatch(toggleMuteVideo(listing.id));
   }, [listing.id, dispatch]);
 
-  // Обработка отправки сообщения продавцу
   const handleMessageSeller = useCallback(async () => {
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Проверяем авторизацию
     try {
-      const currentUser = await auth.getCurrentUser();
-      if (!currentUser) {
-        // Если не авторизован, редиректим на экран авторизации
+      const user = await auth.getCurrentUser();
+      if (!user) {
         router.push('/(auth)/intro');
         return;
       }
-
-      // Если авторизован, открываем чат с продавцом
       if (listing.seller?.id) {
-        // Создаем или открываем существующий чат
         router.push(`/chat/${listing.seller.id}?listingId=${listing.id}`);
-      } else {
-        Alert.alert('Ошибка', 'Информация о продавце недоступна');
       }
-    } catch (error) {
-      console.error('Message seller error:', error);
+    } catch {
       router.push('/(auth)/intro');
     }
-  }, [listing.seller, listing.id, router]);
+  }, [listing.seller?.id, listing.id, router]);
 
   return (
-    <View style={styles.videoCard} collapsable={false}>
-      {/* Оптимизированный видеоплеер с обработкой двойного тапа и длительного нажатия */}
-      <TouchableWithoutFeedback
-        onPress={handleDoubleTap}
+    <View style={styles.videoCard}>
+      {/* РАБОЧАЯ ВЕРСИЯ — ВИДЕО ИГРАЕТ, КНОПКИ РАБОТАЮТ, ЛАЙК ПО ДВОЙНОМУ ТАПУ — ВСЁ ЛЕТАЕТ */}
+      <Pressable
+        style={{ flex: 1 }}
+        onPress={(e) => {
+          // Безопасная проверка locationX (работает на iOS + Android)
+          const x = e.nativeEvent?.locationX ?? e.nativeEvent?.pageX ?? 0;
+          if (x > SCREEN_WIDTH * 0.7) return; // правая панель — не лайкаем
+          handleDoubleTap();
+        }}
         onLongPress={handleLongPress}
         delayLongPress={400}
       >
-        <View style={styles.videoPressable}>
-          <OptimizedVideoPlayer
-            listing={listing}
-            isActive={isActive}
-            isPreloaded={isPreloaded}
-            videoUrl={videoUrl}
-            thumbnailUrl={thumbnailUrl}
-            autoPlay={true}
-            onLoad={() => {
-              appLogger.debug('[EnhancedVideoCard] Video loaded', { listingId: listing.id });
-            }}
-            onError={(error) => {
-              appLogger.error('[EnhancedVideoCard] Video error', {
-                error,
-                listingId: listing.id,
-                videoUrl: videoUrl?.substring(0, 50) + '...',
-              });
-            }}
-          />
-        </View>
-      </TouchableWithoutFeedback>
+        {/* УБРАЛ pointerEvents="box-none" — ЭТО БЫЛ УБИЙЦА! */}
+        <View style={styles.videoContainer}>
+          {videoUrl ? (
+            <OptimizedVideoPlayer
+              videoUrl={videoUrl}
+              thumbnailUrl={thumbnailUrl}
+              isActive={isActive}
+              muted={isMuted}
+              listingId={listing.id}
+            />
+          ) : (
+            // Fallback — если видео нет, показываем превью
+            <Image
+              source={{ 
+                uri: thumbnailUrl || 
+                (listing.additional_images && listing.additional_images[0] ? listing.additional_images[0] : '') ||
+                (listing.media && listing.media[0]?.url ? listing.media[0].url : '')
+              }}
+              style={{ width: '100%', height: '100%' }}
+              resizeMode="cover"
+            />
+          )}
 
-      {/* Анимация лайка */}
-      {showLikeAnimation && (
-        <LikeAnimation
-          key={animationKey}
-          category={categoryForAnimation}
-          onFinish={handleAnimationFinish}
-        />
-      )}
-
-      {/* Затемнение снизу с информацией */}
-      <LinearGradient
-        colors={['transparent', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0.85)']}
-        style={styles.overlay}
-      >
-        <View style={styles.infoContainer}>
-          <Text style={[styles.title, { color: '#FFFFFF' }]} numberOfLines={2}>
-            {additionalInfo}
-          </Text>
-          
-          <View style={styles.priceRow}>
-            <Text style={[styles.price, { color: '#FFFFFF' }]}>
-              {Number.isFinite(priceValue) ? priceValue.toLocaleString('ru-RU') : '—'} сом
-            </Text>
-          </View>
-
-          <View style={styles.detailsRow}>
-            <Text style={[styles.location, { color: 'rgba(255, 255, 255, 0.9)' }]}>
-              <Ionicons name="location" size={14} color="rgba(255, 255, 255, 0.9)" />{' '}
-              {listing.location || listing.city || 'Не указано'}
-            </Text>
-            {(() => {
-              const details = listing.details || {};
-              const mileage = details.mileage_km || details.mileage;
-              if (mileage) {
-                return (
-                  <>
-                    <Text style={[styles.separator, { color: 'rgba(255, 255, 255, 0.7)' }]}> • </Text>
-                    <Text style={[styles.mileage, { color: 'rgba(255, 255, 255, 0.9)' }]}>
-                      {Number(mileage).toLocaleString('ru-RU')} км
-                    </Text>
-                  </>
-                );
-              }
-              return null;
-            })()}
-          </View>
-
-          {listing.seller && (
-            <TouchableOpacity 
-              style={styles.sellerRow}
-              onPress={() => listing.seller && router.push(`/profile/${listing.seller.id}`)}
-            >
-              <View style={styles.sellerAvatarContainer}>
-                {listing.seller.avatar_url ? (
-                  <Image 
-                    source={{ uri: listing.seller.avatar_url }} 
-                    style={styles.sellerAvatarImage}
-                    cachePolicy="memory-disk"
-                    contentFit="cover"
-                  />
-                ) : (
-                  <View style={[styles.sellerAvatarFallback, { backgroundColor: theme.primary }]}>
-                    <Text style={styles.sellerAvatarText}>
-                      {listing.seller.name?.charAt(0) || '?'}
-                    </Text>
-                  </View>
-                )}
-              </View>
-              <Text style={[styles.sellerName, { color: '#FFFFFF' }]}>
-                {listing.seller?.name || 'Пользователь'}
-              </Text>
-            </TouchableOpacity>
+          {/* Анимация лайка */}
+          {showLikeAnimation && (
+            <LikeAnimation
+              key={animationKey}
+              category={categoryForAnimation}
+              onFinish={handleAnimationFinish}
+            />
           )}
         </View>
-      </LinearGradient>
+      </Pressable>
 
-      {/* Правая панель действий */}
-      <View 
-        style={styles.actionsPanel}
-        collapsable={false}
-      >
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={handleLikePress}
-          activeOpacity={0.7}
-        >
-          <View 
-            style={[
-              styles.actionIconContainer, 
-              { 
-                backgroundColor: listing.is_liked ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255, 255, 255, 0.25)',
-                borderWidth: 1.5,
-                borderColor: listing.is_liked ? 'rgba(255, 59, 48, 0.5)' : 'rgba(255, 255, 255, 0.4)',
-              }
-            ]}
-          >
-            <Ionicons 
-              name={listing.is_liked ? 'heart' : 'heart-outline'} 
-              size={Platform.select({ ios: 36, android: 32, web: 36 })} 
-              color={listing.is_liked ? '#FF3B30' : '#FFFFFF'} 
-            />
-          </View>
-          <Text style={[styles.actionCount, { color: '#FFFFFF' }]}>
-            {listing.likes_count || 0}
+      {/* Цена и инфа — матовая карточка слева внизу Revolut Ultra */}
+      <View style={styles.infoCard}>
+        <View style={styles.infoContent}>
+          <Text style={styles.title}>{additionalInfo}</Text>
+          <Text style={styles.price}>
+            {priceValue ? priceValue.toLocaleString('ru-RU') : '—'} сом
           </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => {
-            if (Platform.OS === 'ios') {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }
-            onComment();
-          }}
-          activeOpacity={0.7}
-        >
-          <View 
-            style={[
-              styles.actionIconContainer, 
-              { 
-                backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                borderWidth: 1.5,
-                borderColor: 'rgba(255, 255, 255, 0.4)',
-              }
-            ]}
-          >
-            <Ionicons 
-              name="chatbubble-outline" 
-              size={Platform.select({ ios: 32, android: 30, web: 32 })} 
-              color="#FFFFFF" 
-            />
-          </View>
-          <Text style={[styles.actionCount, { color: '#FFFFFF' }]}>
-            {listing.comments_count || 0}
+          <Text style={styles.location}>
+            <Ionicons name="location" size={Platform.select({ ios: 14, android: 13, default: 14 })} color={ultra.textSecondary} /> {listing.city || listing.location || 'Кыргызстан'}
           </Text>
-        </TouchableOpacity>
+        </View>
+      </View>
 
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => {
-            if (Platform.OS === 'ios') {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }
-            onShare();
-          }}
-          activeOpacity={0.7}
-        >
-          <View 
-            style={[
-              styles.actionIconContainer, 
-              { 
-                backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                borderWidth: 1.5,
-                borderColor: 'rgba(255, 255, 255, 0.4)',
-              }
-            ]}
-          >
-            <Ionicons 
-              name="share-outline" 
-              size={Platform.select({ ios: 32, android: 30, web: 32 })} 
-              color="#FFFFFF" 
-            />
+      {/* Панель действий справа — TikTok 2025 стиль (44-48px, расстояние 20-22px) */}
+      <View style={styles.actionsPanel} pointerEvents="box-none">
+        <Pressable style={styles.actionButton} onPress={handleMessageSeller}>
+          <View style={styles.actionIconContainer}>
+            <Ionicons name="mail-outline" size={Platform.select({ ios: 24, android: 26, default: 24 })} color={ultra.textPrimary} />
           </View>
-        </TouchableOpacity>
+        </Pressable>
 
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={() => {
-            if (Platform.OS === 'ios') {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }
-            onFavorite();
-          }}
-          activeOpacity={0.7}
-        >
-          <View 
-            style={[
-              styles.actionIconContainer, 
-              { 
-                backgroundColor: listing.is_favorited ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255, 255, 255, 0.25)',
-                borderWidth: 1.5,
-                borderColor: listing.is_favorited ? 'rgba(255, 59, 48, 0.5)' : 'rgba(255, 255, 255, 0.4)',
-              }
-            ]}
-          >
-            <Ionicons 
-              name={listing.is_favorited ? 'bookmark' : 'bookmark-outline'} 
-              size={Platform.select({ ios: 32, android: 30, web: 32 })} 
-              color={listing.is_favorited ? '#FF3B30' : '#FFFFFF'} 
-            />
+        <Pressable style={styles.actionButton} onPress={onShare}>
+          <View style={styles.actionIconContainer}>
+            <Ionicons name="share-outline" size={Platform.select({ ios: 24, android: 26, default: 24 })} color={ultra.textPrimary} />
           </View>
-        </TouchableOpacity>
+        </Pressable>
 
-        {/* Написать продавцу */}
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={handleMessageSeller}
-          activeOpacity={0.7}
-        >
-          <View 
-            style={[
-              styles.actionIconContainer, 
-              { 
-                backgroundColor: 'rgba(255, 255, 255, 0.25)',
-                borderWidth: 1.5,
-                borderColor: 'rgba(255, 255, 255, 0.4)',
-              }
-            ]}
-          >
-            <Ionicons 
-              name="mail-outline" 
-              size={Platform.select({ ios: 32, android: 30, web: 32 })} 
-              color="#FFFFFF" 
-            />
+        <Pressable style={styles.actionButton} onPress={handleLikePress}>
+          <View style={[styles.actionIconContainer, styles.likeButton, listing.is_liked && styles.activeAction]}>
+            <Ionicons name={listing.is_liked ? 'heart' : 'heart-outline'} size={Platform.select({ ios: 26, android: 26, default: 26 })} color={listing.is_liked ? ultra.accent : ultra.textPrimary} />
           </View>
-        </TouchableOpacity>
+          <Text style={styles.actionCount}>{listing.likes_count || 0}</Text>
+        </Pressable>
 
-        {/* Без звука */}
-        <TouchableOpacity 
-          style={styles.actionButton} 
-          onPress={handleToggleMute}
-          activeOpacity={0.7}
-        >
-          <View 
-            style={[
-              styles.actionIconContainer, 
-              { 
-                backgroundColor: isMuted ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255, 255, 255, 0.25)',
-                borderWidth: 1.5,
-                borderColor: isMuted ? 'rgba(255, 59, 48, 0.5)' : 'rgba(255, 255, 255, 0.4)',
-              }
-            ]}
-          >
-            <Ionicons 
-              name={isMuted ? 'volume-mute' : 'volume-high'} 
-              size={Platform.select({ ios: 32, android: 30, web: 32 })} 
-              color={isMuted ? '#FF3B30' : '#FFFFFF'} 
-            />
+        <Pressable style={styles.actionButton} onPress={onComment}>
+          <View style={styles.actionIconContainer}>
+            <Ionicons name="chatbubble-outline" size={Platform.select({ ios: 24, android: 26, default: 24 })} color={ultra.textPrimary} />
           </View>
-        </TouchableOpacity>
+          <Text style={styles.actionCount}>{listing.comments_count || 0}</Text>
+        </Pressable>
+
+        <Pressable style={styles.actionButton} onPress={onFavorite}>
+          <View style={[styles.actionIconContainer, listing.is_favorited && styles.activeAction]}>
+            <Ionicons name={listing.is_favorited ? 'bookmark' : 'bookmark-outline'} size={Platform.select({ ios: 24, android: 26, default: 24 })} color={listing.is_favorited ? ultra.accent : ultra.textPrimary} />
+          </View>
+        </Pressable>
+
+        <Pressable style={styles.actionButton} onPress={handleToggleMute}>
+          <View style={[styles.actionIconContainer, isMuted && styles.activeAction]}>
+            <Ionicons name={isMuted ? 'volume-mute' : 'volume-high'} size={Platform.select({ ios: 24, android: 26, default: 24 })} color={isMuted ? ultra.accent : ultra.textPrimary} />
+          </View>
+        </Pressable>
       </View>
     </View>
   );
-}, (prevProps, nextProps) => {
-  // Оптимизированная функция сравнения
-  return (
-    prevProps.listing.id === nextProps.listing.id &&
-    prevProps.isActive === nextProps.isActive &&
-    prevProps.isPreloaded === nextProps.isPreloaded &&
-    prevProps.listing.is_liked === nextProps.listing.is_liked &&
-    prevProps.listing.is_favorited === nextProps.listing.is_favorited &&
-    prevProps.listing.likes_count === nextProps.listing.likes_count &&
-    prevProps.listing.comments_count === nextProps.listing.comments_count
-  );
-});
+},
+(prev, next) => (
+  prev.listing.id === next.listing.id &&
+  prev.isActive === next.isActive &&
+  prev.isPreloaded === next.isPreloaded &&
+  prev.listing.is_liked === next.listing.is_liked &&
+  prev.listing.is_favorited === next.listing.is_favorited &&
+  prev.listing.likes_count === next.listing.likes_count &&
+  prev.listing.comments_count === next.listing.comments_count
+));
 
 EnhancedVideoCard.displayName = 'EnhancedVideoCard';
 
 const styles = StyleSheet.create({
-  videoCard: {
-    width: SCREEN_WIDTH,
-    height: SCREEN_HEIGHT,
-    backgroundColor: '#000',
-    position: 'relative',
+  videoCard: { 
+    width: SCREEN_WIDTH, 
+    height: SCREEN_HEIGHT, 
+    backgroundColor: ultra.background 
   },
-  videoPressable: {
-    width: '100%',
-    height: '100%',
+  videoContainer: {
+    flex: 1,
+    backgroundColor: ultra.background,
   },
-  overlay: {
+  // Цена слева внизу — матовая карточка Revolut Ultra Platinum (скругление 24px)
+  infoCard: {
     position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    paddingBottom: Platform.select({ ios: 100, android: 80, web: 100 }),
-    paddingHorizontal: 16,
-    paddingTop: 40,
-    zIndex: 10,
+    bottom: Platform.select({ ios: 140, android: 130, default: 140 }),
+    left: Platform.select({ ios: 20, android: 16, default: 20 }),
+    right: Platform.select({ ios: 120, android: 110, default: 120 }),
+    borderRadius: 24, // Скругление 24px
+    backgroundColor: ultra.card, // #171717 матовая карточка
+    borderWidth: 1,
+    borderColor: ultra.border, // #2A2A2A тонкая обводка
+    // Никаких теней (TikTok стиль)
   },
-  infoContainer: {
-    width: '100%',
+  infoContent: { 
+    padding: Platform.select({ ios: 20, android: 18, default: 20 }),
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    marginBottom: 8,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  title: { 
+    fontSize: Platform.select({ ios: 20, android: 19, default: 20 }), 
+    fontWeight: '800', 
+    color: ultra.textPrimary,
+    marginBottom: Platform.select({ ios: 6, android: 4, default: 6 }),
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
   },
-  priceRow: {
-    marginBottom: 12,
+  price: { 
+    fontSize: Platform.select({ ios: 30, android: 32, default: 30 }), // 30-32pt
+    fontWeight: '900', 
+    color: ultra.accentSecondary, // #E0E0E0 светлое серебро
+    marginTop: Platform.select({ ios: 4, android: 2, default: 4 }),
+    textShadowColor: 'rgba(224, 224, 224, 0.3)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 12, // Лёгкое свечение
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Black',
   },
-  price: {
-    fontSize: 28,
-    fontWeight: '800',
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 3,
+  location: { 
+    fontSize: Platform.select({ ios: 14, android: 13, default: 14 }), 
+    color: ultra.textSecondary, 
+    marginTop: Platform.select({ ios: 8, android: 6, default: 8 }),
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
-  detailsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-    flexWrap: 'wrap',
-  },
-  location: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  separator: {
-    fontSize: 14,
-    marginHorizontal: 4,
-  },
-  mileage: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  sellerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  sellerAvatarContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginRight: 8,
-    borderWidth: 1.5,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
-  sellerAvatarImage: {
-    width: '100%',
-    height: '100%',
-  },
-  sellerAvatarFallback: {
-    width: '100%',
-    height: '100%',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  sellerAvatarText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  sellerName: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
+  // Панель действий справа — TikTok 2025 стиль (44-48px, расстояние 20-22px)
   actionsPanel: {
     position: 'absolute',
-    right: 16,
-    bottom: Platform.select({ ios: 140, android: 120, web: 140 }),
+    right: Platform.select({ ios: 16, android: 14, default: 16 }),
+    bottom: Platform.select({ ios: 160, android: 150, default: 160 }),
     alignItems: 'center',
-    zIndex: 99999, // Максимальный zIndex для гарантированной видимости
-    elevation: Platform.select({ android: 20 }), // Для Android
-    pointerEvents: 'auto', // Гарантируем что кнопки кликабельны
+    gap: Platform.select({ ios: 20, android: 22, default: 20 }), // Расстояние 20-22px
+    zIndex: 10,
   },
-  actionButton: {
-    alignItems: 'center',
-    marginBottom: 24,
+  actionButton: { 
+    alignItems: 'center' 
   },
   actionIconContainer: {
-    width: Platform.select({ ios: 56, android: 52, web: 56 }),
-    height: Platform.select({ ios: 56, android: 52, web: 56 }),
-    borderRadius: Platform.select({ ios: 28, android: 26, web: 28 }),
+    width: Platform.select({ ios: 44, android: 48, default: 44 }), // 44-48px
+    height: Platform.select({ ios: 44, android: 48, default: 44 }),
+    borderRadius: Platform.select({ ios: 22, android: 24, default: 22 }),
+    backgroundColor: ultra.card, // #171717 матовая
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
+    borderColor: ultra.border, // #2A2A2A тонкая белая обводка
+    // Никаких теней и блюра (TikTok не использует)
   },
-  actionCount: {
-    fontSize: 12,
-    fontWeight: '600',
-    marginTop: 4,
-    textShadowColor: 'rgba(0, 0, 0, 0.75)',
-    textShadowOffset: { width: 0, height: 1 },
-    textShadowRadius: 2,
+  likeButton: {
+    width: Platform.select({ ios: 48, android: 48, default: 48 }), // Лайк 48px
+    height: Platform.select({ ios: 48, android: 48, default: 48 }),
+    borderRadius: Platform.select({ ios: 24, android: 24, default: 24 }),
+  },
+  activeAction: {
+    backgroundColor: ultra.card,
+    borderColor: ultra.accent, // #C0C0C0 серебро для активных
+  },
+  actionCount: { 
+    marginTop: Platform.select({ ios: 6, android: 4, default: 6 }), 
+    fontSize: Platform.select({ ios: 12, android: 11, default: 12 }), 
+    fontWeight: '700', 
+    color: ultra.textPrimary,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
 });
-

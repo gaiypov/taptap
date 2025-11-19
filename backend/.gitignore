@@ -1,0 +1,36 @@
+# Logs
+logs/
+*.log
+npm-debug.log*
+pm2-error.log
+pm2-out.log
+
+# Environment
+.env
+.env.local
+.env.production
+
+# Build
+dist/
+build/
+
+# Dependencies
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+uploads/
+temp/
+
+# PM2
+.pm2/
+

@@ -13,14 +13,68 @@ import chatRoutes from './api/chat.js';
 import consentRoutes from './api/consents.js';
 import listingsRoutes from './api/listings.js';
 import promotionRoutes from './api/promotions.js';
+import videoRoutes from './api/video.js';
+import moderateRoutes from './api/moderate.js';
+import aiRoutes from './api/ai.js';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler.js';
 
 // Загружаем переменные окружения
 config();
 
+// Проверка обязательных переменных окружения
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret || jwtSecret === 'your-secret-key') {
   throw new Error('JWT_SECRET must be configured with a secure value');
+}
+
+// Проверка APIVIDEO_API_KEY (не критично для старта, но важно для работы видео)
+const apiVideoKey = process.env.APIVIDEO_API_KEY || process.env.API_VIDEO_KEY;
+if (!apiVideoKey) {
+  console.warn('⚠️  APIVIDEO_API_KEY не настроен — функционал загрузки видео будет недоступен');
+  console.warn('   Добавьте в backend/.env: APIVIDEO_API_KEY=your_key_here');
+  console.warn('   Получите ключ на https://dashboard.api.video/\n');
+} else {
+  console.log('✅ APIVIDEO_API_KEY настроен');
+}
+
+// Проверка GOOGLE_VISION_API_KEY (не критично для старта, но важно для модерации)
+const googleVisionKey = process.env.GOOGLE_VISION_API_KEY;
+if (!googleVisionKey) {
+  console.warn('⚠️  GOOGLE_VISION_API_KEY не настроен — модерация контента будет недоступна');
+  console.warn('   Добавьте в backend/.env: GOOGLE_VISION_API_KEY=your_key_here');
+  console.warn('   Получите ключ на https://console.cloud.google.com/\n');
+} else {
+  console.log('✅ GOOGLE_VISION_API_KEY настроен');
+}
+
+// Проверка SMS провайдера (критично для авторизации!)
+const smsLogin = process.env.NIKITA_SMS_LOGIN || process.env.SMS_LOGIN;
+const smsPassword = process.env.NIKITA_SMS_PASSWORD || process.env.SMS_PASSWORD;
+const smsSender = process.env.NIKITA_SMS_SENDER || process.env.SMS_SENDER;
+const smsUrl = process.env.NIKITA_SMS_API_URL || process.env.SMS_API_URL || 'https://smspro.nikita.kg/api/message';
+const nodeEnv = process.env.NODE_ENV || 'development';
+
+if (!smsLogin || !smsPassword || !smsSender) {
+  console.warn('⚠️  SMS провайдер НЕ настроен — авторизация будет работать только в dev режиме!');
+  console.warn('   Добавьте в backend/.env:');
+  console.warn('   NIKITA_SMS_LOGIN=your_login');
+  console.warn('   NIKITA_SMS_PASSWORD=your_password');
+  console.warn('   NIKITA_SMS_SENDER=your_sender');
+  console.warn('   Или используйте: SMS_LOGIN, SMS_PASSWORD, SMS_SENDER');
+  console.warn('   Получите учетные данные на https://smspro.nikita.kg\n');
+  if (nodeEnv === 'production') {
+    console.error('❌ PRODUCTION режим без SMS провайдера! Авторизация не будет работать!\n');
+  }
+} else {
+  console.log('✅ SMS провайдер настроен');
+  console.log(`   URL: ${smsUrl}`);
+  console.log(`   Login: ${smsLogin}`);
+  console.log(`   Sender: ${smsSender}`);
+  console.log(`   Mode: ${nodeEnv}`);
+  if (nodeEnv === 'development') {
+    console.warn('   ⚠️  В development режиме SMS не отправляется реально, используется testCode');
+    console.warn('   Для реальной отправки установите NODE_ENV=production\n');
+  }
 }
 
 const app = express();
@@ -109,6 +163,9 @@ app.use('/api/listings', listingsRoutes);
 app.use('/api/business', businessRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/promotions', promotionRoutes);
+app.use('/api/video', videoRoutes);
+app.use('/api/moderate', moderateRoutes);
+app.use('/api/ai', aiRoutes);
 app.use('/api', analyzeRoutes);
 
 // ==============================================

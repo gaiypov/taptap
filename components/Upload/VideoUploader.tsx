@@ -3,7 +3,7 @@
 import apiVideoService, { type UploadProgress } from '@/services/apiVideo';
 import { db } from '@/services/supabase';
 import { Ionicons } from '@expo/vector-icons';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { VideoView, useVideoPlayer } from '@expo/video';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';

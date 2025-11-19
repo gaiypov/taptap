@@ -19,4 +19,17 @@ EXPOSE_TEST_SMS_CODE=false
 
 # Server Configuration
 PORT=3001
-NODE_ENV=development
+# ВАЖНО: Для реальной отправки SMS установите NODE_ENV=production
+# В development режиме SMS не отправляется реально, используется testCode
+NODE_ENV=production
+
+# API Video Service (api.video)
+# Получите ключ на https://dashboard.api.video/
+APIVIDEO_API_KEY=your-apivideo-api-key-here
+# Альтернативное имя переменной (для совместимости)
+API_VIDEO_KEY=your-apivideo-api-key-here
+
+# Google Vision API (для модерации контента)
+# Получите ключ на https://console.cloud.google.com/
+# Включите Cloud Vision API в проекте
+GOOGLE_VISION_API_KEY=your-google-vision-api-key-here

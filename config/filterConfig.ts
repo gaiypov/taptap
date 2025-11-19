@@ -1,7 +1,4 @@
-// ============================================
-// 360° Universal Filter Configuration
-// Версия: 1.0
-// ============================================
+// config/filterConfig.ts — УНИВЕРСАЛЬНЫЙ ФИЛЬТР 360AutoMVP 2025
 
 export type FilterType =
   | 'searchable-select'
@@ -339,5 +336,30 @@ export const getAllCategories = (): CategoryType[] => {
 export const isCategoryActive = (category: CategoryType): boolean => {
   // Пока только car и horse активны
   return category === 'car' || category === 'horse';
+};
+
+// Автоматическое определение активных фильтров (для бейджа)
+export const getActiveFiltersCount = (filters: Record<string, any>): number => {
+  return Object.values(filters).filter(value => {
+    if (Array.isArray(value)) return value.length > 0;
+    if (typeof value === 'object' && value !== null) return value.min || value.max;
+    return value !== '' && value !== undefined && value !== null;
+  }).length;
+};
+
+// Универсальная функция для получения дефолтных фильтров
+export const getDefaultFilters = (category: CategoryType): Record<string, any> => ({
+  category,
+  city: 'Весь Кыргызстан',
+  price_min: '',
+  price_max: '',
+  // остальные — пустые
+});
+
+// Цвета категорий для UI (для иконок, акцентов и т.д.)
+export const CATEGORY_COLORS: Record<CategoryType, string> = {
+  car: '#E63946',
+  horse: '#F59E0B',
+  real_estate: '#059669',
 };
 

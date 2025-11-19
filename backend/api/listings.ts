@@ -5,22 +5,22 @@ import { z } from 'zod';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import {
-    asyncHandler,
-    AuthorizationError,
-    ConflictError,
-    CustomError,
-    NotFoundError,
-    validateBusinessLimits
+  asyncHandler,
+  AuthorizationError,
+  ConflictError,
+  CustomError,
+  NotFoundError,
+  validateBusinessLimits
 } from '../middleware/errorHandler.js';
 import {
-    createListingSchema,
-    sanitizeInput,
-    searchListingsSchema,
-    updateListingSchema,
-    validateBody,
-    validateListingDetails,
-    validateParams,
-    validateQuery
+  createListingSchema,
+  sanitizeInput,
+  searchListingsSchema,
+  updateListingSchema,
+  validateBody,
+  validateListingDetails,
+  validateParams,
+  validateQuery
 } from '../middleware/validation.js';
 
 const router = express.Router();
@@ -38,20 +38,6 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 // ============================================
 // UTILITY FUNCTIONS
 // ============================================
-
-async function getUserBusinessAccount(userId: string) {
-  const { data: business, error } = await supabase
-    .from('business_accounts')
-    .select('*')
-    .eq('user_id', userId)
-    .single();
-
-  if (error && error.code !== 'PGRST116') { // Not found error
-    throw new CustomError('Failed to fetch business account', 500, 'DATABASE_ERROR');
-  }
-
-  return business;
-}
 
 async function getUserTeamMemberships(userId: string) {
   const { data: memberships, error } = await supabase
@@ -421,7 +407,7 @@ router.put('/:id',
     const data = req.validatedData;
 
     // Check access
-    const { hasAccess, isOwner, businessId } = await checkListingAccess(id, userId);
+    const { hasAccess } = await checkListingAccess(id, userId);
     if (!hasAccess) {
       throw new AuthorizationError('You do not have permission to update this listing');
     }
@@ -500,7 +486,7 @@ router.delete('/:id',
     const userId = req.user!.id;
 
     // Check access
-    const { hasAccess, isOwner, businessId } = await checkListingAccess(id, userId);
+    const { hasAccess } = await checkListingAccess(id, userId);
     if (!hasAccess) {
       throw new AuthorizationError('You do not have permission to delete this listing');
     }

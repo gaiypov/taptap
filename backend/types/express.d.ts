@@ -1,0 +1,9 @@
+// Express Request type extension
+import 'express';
+
+declare module 'express-serve-static-core' {
+  interface Request {
+    id?: string;
+  }
+}
+

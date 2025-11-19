@@ -64,14 +64,22 @@ export const auth = {
       }
       
       // Отправляем запрос на backend для отправки SMS и сохранения кода
-      console.log('🔑 Sending SMS request to backend...');
+      // Используем localhost для web, IP для мобильных устройств
+      const isWeb = typeof window !== 'undefined';
+      const apiUrl = 
+        Constants.expoConfig?.extra?.EXPO_PUBLIC_API_URL || 
+        process.env.EXPO_PUBLIC_API_URL ||
+        Constants.expoConfig?.extra?.apiUrl || 
+        Constants.manifest2?.extra?.expoClient?.extra?.apiUrl || 
+        (isWeb ? 'http://localhost:3001/api' : 'http://192.168.1.16:3001/api');
+      console.log('🔑 Sending SMS request to backend...', { apiUrl, phone: formattedPhone });
       
       // Добавляем таймаут для запроса
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 секунд таймаут
       
       try {
-        const response = await fetch(`${Constants.expoConfig?.extra?.apiUrl || 'http://192.168.1.16:3001/api'}/auth/request-code`, {
+        const response = await fetch(`${apiUrl}/auth/request-code`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -86,23 +94,32 @@ export const auth = {
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          console.log('❌ Backend SMS failed:', errorData);
+          console.error('❌ Backend SMS failed:', { 
+            status: response.status, 
+            statusText: response.statusText,
+            error: errorData 
+          });
           return {
             success: false,
-            error: errorData.message || 'Не удалось отправить SMS',
+            error: errorData.error || errorData.message || `Ошибка сервера: ${response.status}`,
           };
         }
 
         const result = await response.json();
-        console.log('✅ SMS sent successfully via backend');
+        console.log('✅ SMS sent successfully via backend', result);
+        
+        // Извлекаем testCode из data, если есть (только в development)
+        const testCode = result.data?.testCode;
         
         return {
           success: true,
-          warning: 'SMS отправлено на ваш номер',
+          warning: result.data?.warning || 'SMS отправлено на ваш номер',
           codeLength: 4, // 4-значный код для nikita.kg
+          ...(testCode ? { testCode } : {}), // Возвращаем testCode только если есть
         };
       } catch (fetchError: any) {
         clearTimeout(timeoutId);
+        console.error('❌ SMS request fetch error:', fetchError);
         throw fetchError;
       }
     } catch (error: any) {
@@ -141,9 +158,31 @@ export const auth = {
         return { success: false, error: 'Неверный формат номера' };
       }
       
-      const response = await api.auth.verifyCode({ phone: formattedPhone, code });
+      console.log('🔑 Verifying SMS code...', { phone: formattedPhone, codeLength: code.length });
+      
+      let response;
+      try {
+        response = await api.auth.verifyCode({ phone: formattedPhone, code });
+      } catch (apiError: any) {
+        // Обработка ошибок axios
+        console.error('❌ API verify code error:', apiError);
+        const errorData = apiError?.response?.data || apiError?.data || {};
+        return {
+          success: false,
+          error: errorData.error || errorData.message || apiError?.message || 'Ошибка проверки кода',
+          codeLength: errorData.codeLength,
+        };
+      }
+      
+      console.log('✅ Verify code response:', { success: response?.success, hasUser: !!response?.data?.user, hasToken: !!response?.data?.token });
 
       if (!response?.success || !response.data?.user || !response.data?.token) {
+        console.error('❌ Verify code failed:', { 
+          success: response?.success, 
+          error: response?.error,
+          hasUser: !!response?.data?.user,
+          hasToken: !!response?.data?.token 
+        });
         return { success: false, error: response?.error || 'Неверный код или код истек' };
       }
 
@@ -157,13 +196,39 @@ export const auth = {
         await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
       }
 
+      console.log('✅ User authenticated successfully:', { userId: user.id, phone: user.phone });
       return { success: true, user, codeLength };
     } catch (error: any) {
-      console.error('Verify code error:', error);
-      const apiError = error?.response?.data;
+      console.error('❌ Verify code error:', error);
+      console.error('Error details:', {
+        message: error?.message,
+        response: error?.response?.data,
+        status: error?.response?.status,
+        code: error?.code,
+      });
+      
+      // Обработка сетевых ошибок
+      const isNetworkError = 
+        error?.message?.includes('Network request failed') ||
+        error?.message?.includes('Failed to fetch') ||
+        error?.message?.includes('network') ||
+        error?.name === 'AbortError' ||
+        error?.name === 'TimeoutError' ||
+        error?.code === 'ENOTFOUND' ||
+        error?.code === 'ETIMEDOUT' ||
+        error?.code === 'ECONNREFUSED';
+
+      if (isNetworkError) {
+        return {
+          success: false,
+          error: 'Проблема с подключением к сети. Проверьте интернет и попробуйте снова.',
+        };
+      }
+
+      const apiError = error?.response?.data || error?.data;
       return {
         success: false,
-        error: apiError?.error || error.message,
+        error: apiError?.error || error?.message || 'Ошибка проверки кода',
         codeLength: apiError?.codeLength,
       };
     }

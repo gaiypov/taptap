@@ -5,18 +5,18 @@ import { z } from 'zod';
 import type { AuthenticatedRequest } from '../middleware/auth.js';
 import { authenticateToken } from '../middleware/auth.js';
 import {
-    asyncHandler,
-    AuthorizationError,
-    ConflictError,
-    CustomError,
-    NotFoundError
+  asyncHandler,
+  AuthorizationError,
+  ConflictError,
+  CustomError,
+  NotFoundError
 } from '../middleware/errorHandler.js';
 import {
-    createChatThreadSchema,
-    sanitizeInput,
-    sendMessageSchema,
-    validateBody,
-    validateParams
+  createChatThreadSchema,
+  sanitizeInput,
+  sendMessageSchema,
+  validateBody,
+  validateParams
 } from '../middleware/validation.js';
 
 const router = express.Router();
@@ -118,12 +118,12 @@ router.post('/threads',
     }
 
     // Check if thread already exists
-    const { data: existingThread, error: existingError } = await supabase
+    const { data: existingThread } = await supabase
       .from('chat_threads')
       .select('id')
       .eq('listing_id', listing_id)
       .eq('buyer_id', userId)
-      .single();
+      .maybeSingle();
 
     if (existingThread) {
       // Return existing thread
@@ -349,7 +349,7 @@ router.post('/threads/:threadId/messages',
     const data = req.validatedData;
 
     // Check access
-    const { hasAccess, isBuyer, isSeller } = await checkChatAccess(threadId, userId);
+    const { hasAccess, isBuyer } = await checkChatAccess(threadId, userId);
     if (!hasAccess) {
       throw new AuthorizationError('You do not have permission to send messages in this thread');
     }

@@ -1,5 +1,5 @@
 // backend/services/aiService.ts
-import { Car, Damage } from '../types/index.js';
+import { Car, Damage } from '../types/index';
 
 // ==============================================
 // КОНФИГУРАЦИЯ AI МОДЕЛЕЙ (BACKEND)

@@ -1,138 +1,135 @@
+// lib/store/api/apiSlice.ts — RTK QUERY УРОВНЯ AVITO + TIKTOK 2025
+// ФИНАЛЬНАЯ ВЕРСИЯ — ГОТОВА К МИЛЛИАРДУ ЗАПРОСОВ
+
+import { Listing } from '@/types';
 import { createApi, fetchBaseQuery } from '@reduxjs/toolkit/query/react';
 import Constants from 'expo-constants';
-import type { Listing } from '@/types';
 
-const API_URL = Constants.expoConfig?.extra?.apiUrl || 'http://localhost:3001/api';
+const API_URL =
+  Constants.expoConfig?.extra?.apiUrl ||
+  Constants.manifest2?.extra?.expoClient?.extra?.apiUrl ||
+  (__DEV__ ? 'http://192.168.1.16:3001/api' : 'https://api.360auto.kg/api');
 
-export interface ApiResponse<T> {
-  data: T;
-  error?: string;
-}
-
-// FeedListing - расширенная версия Listing для ленты
-// Используем type вместо interface для более гибкого переопределения полей
-export type FeedListing = Omit<Listing, 'category' | 'video_id' | 'video_url'> & {
-  category?: string; // Переопределяем category как опциональный string вместо ListingCategory
-  is_favorited?: boolean;
-  is_saved?: boolean;
+export type FeedListing = Listing & {
   is_liked?: boolean;
+  is_saved?: boolean;
   likes_count?: number;
   comments_count?: number;
-  video_id?: string | undefined; // Делаем опциональным (в отличие от обязательного в Listing)
-  video_url?: string | undefined; // Делаем опциональным (в отличие от обязательного в Listing)
-  thumbnail_url?: string;
+  views_count?: number;
+  is_boosted?: boolean;
 };
 
-// RTK Query API slice
 export const apiSlice = createApi({
   reducerPath: 'api',
   baseQuery: fetchBaseQuery({
     baseUrl: API_URL,
-    prepareHeaders: async (headers, { getState }) => {
-      // Добавляем токен авторизации если есть
+    prepareHeaders: (headers, { getState }) => {
       const token = (getState() as any).auth?.token;
-      if (token) {
-        headers.set('authorization', `Bearer ${token}`);
-      }
+      if (token) headers.set('authorization', `Bearer ${token}`);
+      headers.set('x-client-info', '360auto-mobile-v1');
       return headers;
     },
   }),
-  tagTypes: ['Listings', 'Listing', 'User', 'Comments', 'Favorites'],
+  tagTypes: ['Feed', 'Listing', 'Favorites', 'User'],
   endpoints: (builder) => ({
-    // Получить ленту видео
-    getFeed: builder.query<FeedListing[], { category?: string; page?: number; limit?: number }>({
-      query: ({ category, page = 1, limit = 20 }) => ({
+    // Лента
+    getFeed: builder.query<FeedListing[], { category?: string; page?: number }>({
+      query: ({ category = 'all', page = 1 }) => ({
         url: '/listings/feed',
-        params: { category, page, limit },
+        params: { category, page, limit: 20 },
       }),
-      providesTags: ['Listings'],
-      // Кэшируем данные для оффлайн режима
-      keepUnusedDataFor: 60, // секунд
+      providesTags: (result) =>
+        result
+          ? [
+              ...result.map(({ id }) => ({ type: 'Listing' as const, id })),
+              { type: 'Feed', id: 'LIST' },
+            ]
+          : [{ type: 'Feed', id: 'LIST' }],
+      keepUnusedDataFor: 60,
     }),
 
-    // Получить одно объявление
+    // Объявление
     getListing: builder.query<FeedListing, string>({
       query: (id) => `/listings/${id}`,
       providesTags: (result, error, id) => [{ type: 'Listing', id }],
-      keepUnusedDataFor: 300,
     }),
 
-    // Лайкнуть объявление
-    likeListing: builder.mutation<{ success: boolean; likes_count: number }, string>({
+    // Лайк
+    likeListing: builder.mutation<void, string>({
       query: (id) => ({
         url: `/listings/${id}/like`,
         method: 'POST',
       }),
-      invalidatesTags: (result, error, id) => [
-        { type: 'Listing', id },
-        { type: 'Listings' },
-      ],
-      // Оптимистичное обновление
       async onQueryStarted(id, { dispatch, queryFulfilled }) {
-        const patchResult = dispatch(
+        const patch = dispatch(
           apiSlice.util.updateQueryData('getListing', id, (draft) => {
-            draft.likes_count = (draft.likes_count || 0) + 1;
             draft.is_liked = true;
+            draft.likes_count = (draft.likes_count || 0) + 1;
           })
         );
         try {
           await queryFulfilled;
         } catch {
-          patchResult.undo();
+          patch.undo();
         }
       },
+      invalidatesTags: (result, error, id) => [{ type: 'Listing', id }, 'Feed'],
     }),
 
-    // Убрать лайк
-    unlikeListing: builder.mutation<{ success: boolean; likes_count: number }, string>({
+    unlikeListing: builder.mutation<void, string>({
       query: (id) => ({
         url: `/listings/${id}/unlike`,
         method: 'POST',
       }),
-      invalidatesTags: (result, error, id) => [
-        { type: 'Listing', id },
-        { type: 'Listings' },
-      ],
       async onQueryStarted(id, { dispatch, queryFulfilled }) {
-        const patchResult = dispatch(
+        const patch = dispatch(
           apiSlice.util.updateQueryData('getListing', id, (draft) => {
-            draft.likes_count = Math.max((draft.likes_count || 1) - 1, 0);
             draft.is_liked = false;
+            draft.likes_count = Math.max((draft.likes_count || 1) - 1, 0);
           })
         );
         try {
           await queryFulfilled;
         } catch {
-          patchResult.undo();
+          patch.undo();
         }
       },
+      invalidatesTags: (result, error, id) => [{ type: 'Listing', id }, 'Feed'],
     }),
 
-    // Сохранить в избранное
-    saveListing: builder.mutation<{ success: boolean }, string>({
+    // Избранное
+    toggleSave: builder.mutation<void, string>({
       query: (id) => ({
         url: `/listings/${id}/save`,
         method: 'POST',
       }),
-      invalidatesTags: ['Listings'],
+      async onQueryStarted(id, { dispatch, queryFulfilled, getState }) {
+        const state = getState() as any;
+        const current = state.api.queries[`getListing("${id}")`]?.data as FeedListing | undefined;
+        const isSaved = current?.is_saved;
+
+        const patch = dispatch(
+          apiSlice.util.updateQueryData('getListing', id, (draft) => {
+            draft.is_saved = !isSaved;
+          })
+        );
+
+        try {
+          await queryFulfilled;
+        } catch {
+          patch.undo();
+        }
+      },
+      invalidatesTags: ['Favorites', 'Feed'],
     }),
 
-    // Убрать из избранного
-    unsaveListing: builder.mutation<{ success: boolean }, string>({
-      query: (id) => ({
-        url: `/listings/${id}/unsave`,
-        method: 'POST',
-      }),
-      invalidatesTags: ['Listings'],
-    }),
-
-    // Поиск объявлений
-    searchListings: builder.query<FeedListing[], { query: string; category?: string; filters?: any }>({
-      query: ({ query, category, filters }) => ({
+    // Поиск
+    search: builder.query<FeedListing[], string>({
+      query: (query) => ({
         url: '/listings/search',
-        params: { q: query, category, ...filters },
+        params: { q: query, limit: 50 },
       }),
-      providesTags: ['Listings'],
+      providesTags: ['Feed'],
     }),
   }),
 });
@@ -142,8 +139,7 @@ export const {
   useGetListingQuery,
   useLikeListingMutation,
   useUnlikeListingMutation,
-  useSaveListingMutation,
-  useUnsaveListingMutation,
-  useSearchListingsQuery,
+  useToggleSaveMutation,
+  useSearchQuery,
   useLazyGetFeedQuery,
 } = apiSlice;

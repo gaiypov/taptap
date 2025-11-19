@@ -1,12 +1,13 @@
 // app/(tabs)/index.tsx - Оптимизированная видео лента лучше TikTok
 // С интеграцией api.video HLS стриминг, прелоадером и кэшированием
 
-import { EnhancedVideoCard } from '@/components/VideoFeed/EnhancedVideoCard';
+import { EnhancedVideoCard, type EnhancedVideoCardProps } from '@/components/VideoFeed/EnhancedVideoCard';
 import { VideoCardSkeleton } from '@/components/common/SkeletonLoader';
 import { CATEGORIES } from '@/constants/categories';
 import { useAppDispatch, useAppSelector } from '@/lib/store/hooks';
 import { addPreloadedIndex, clearPreloadedIndexes, setActiveCategory, setCurrentIndex } from '@/lib/store/slices/feedSlice';
 import { useAppTheme } from '@/lib/theme';
+import { ultra } from '@/lib/theme/ultra';
 import { apiVideo } from '@/services/apiVideo';
 import { auth } from '@/services/auth';
 import { db, supabase } from '@/services/supabase';
@@ -16,19 +17,17 @@ import { appLogger } from '@/utils/logger';
 import { Ionicons } from '@expo/vector-icons';
 import { FlashList } from '@shopify/flash-list';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
-import { useRouter } from 'expo-router';
+import { useRouter, useSegments } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Animated,
-  FlatList,
-  Platform,
-  RefreshControl,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-  useColorScheme
+    Animated,
+    FlatList,
+    Platform,
+    RefreshControl,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 // Используем FlashList для native платформ, FlatList для web
@@ -116,9 +115,8 @@ export function getThumbnailUrl(listing: FeedListing): string | undefined {
 // Оптимизированный компонент главной страницы
 export default function ImprovedIndexScreen() {
   const router = useRouter();
+  const segments = useSegments();
   const theme = useAppTheme();
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === 'dark';
   const flatListRef = useRef<any>(null);
   const dispatch = useAppDispatch();
   
@@ -127,10 +125,22 @@ export default function ImprovedIndexScreen() {
   const activeCategory = useAppSelector(state => state.feed.activeCategory);
   const preloadedIndexesRedux = useAppSelector(state => state.feed.preloadedIndexes);
   
+  // Проверяем, находимся ли мы на главном экране (вкладка index)
+  // segments может быть ['(tabs)', 'index'] или просто ['index'] в зависимости от структуры
+  // По умолчанию считаем, что мы на главном экране (чтобы видео могло играть)
+  const isFeedFocused = useMemo(() => {
+    if (segments.length === 0) return true; // По умолчанию считаем, что на главном
+    const lastSegment = segments[segments.length - 1] as string;
+    // Проверяем, что последний сегмент - это 'index' (главная вкладка)
+    return lastSegment === 'index' || 
+           (segments.length >= 2 && segments[0] === '(tabs)' && (segments[1] as string) === 'index');
+  }, [segments]);
+  
   // Локальное состояние
   const [listings, setListings] = useState<FeedListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [sortBy, setSortBy] = useState<'newest' | 'price_low' | 'price_high' | 'popular'>('newest');
   
   // Анимации для категорий
   const categoryAnimations = useRef<Record<string, Animated.Value>>({});
@@ -309,7 +319,7 @@ export default function ImprovedIndexScreen() {
               .from('listings')
               .select(`
                 *,
-                seller:users!seller_user_id(id, name, avatar_url, phone)
+                seller:profiles!seller_id(id, name, avatar_url)
               `)
               .eq('category', cat)
               // Убираем фильтр по status, чтобы видеть все записи (включая тестовые)
@@ -460,39 +470,62 @@ export default function ImprovedIndexScreen() {
       });
       
       if (mapped.length > 0) {
+        // Применяем сортировку
+        let sorted = [...mapped];
+        
+        switch (sortBy) {
+          case 'newest':
+            sorted.sort((a, b) => {
+              const dateA = new Date(a.created_at || 0).getTime();
+              const dateB = new Date(b.created_at || 0).getTime();
+              return dateB - dateA;
+            });
+            break;
+          case 'price_low':
+            sorted.sort((a, b) => (a.price || 0) - (b.price || 0));
+            break;
+          case 'price_high':
+            sorted.sort((a, b) => (b.price || 0) - (a.price || 0));
+            break;
+          case 'popular':
+            sorted.sort((a, b) => (b.likes_count || 0) - (a.likes_count || 0));
+            break;
+        }
+        
         try {
           const { sortFeedListings, getUserCity } = await import('@/services/feedAlgorithm');
           const user = await auth.getCurrentUser();
           const userCity = user ? await getUserCity(user.id) : undefined;
-          const sorted = sortFeedListings(mapped as any[], { userCity });
+          // Применяем алгоритм сортировки после базовой сортировки
+          const algorithmSorted = sortFeedListings(sorted as any[], { userCity });
           
           // Сохраняем в кэш
           listingsCache.current[category] = {
-            data: sorted as FeedListing[],
+            data: algorithmSorted as FeedListing[],
             timestamp: Date.now(),
           };
           
-          setListings(sorted as FeedListing[]);
+          setListings(algorithmSorted as FeedListing[]);
           // Устанавливаем первый элемент как активный
           dispatch(setCurrentIndex(0));
           // Устанавливаем прелоад для первых трех элементов
           dispatch(clearPreloadedIndexes());
-          [0, 1, 2].filter(i => i < sorted.length).forEach(i => dispatch(addPreloadedIndex(i)));
+          [0, 1, 2].filter(i => i < algorithmSorted.length).forEach(i => dispatch(addPreloadedIndex(i)));
         } catch (error) {
           appLogger.warn('Error sorting listings, using default order', { error });
           
           // Сохраняем в кэш даже без сортировки
           listingsCache.current[category] = {
-            data: mapped,
+            data: sorted,
             timestamp: Date.now(),
           };
           
-          setListings(mapped);
+          setListings(sorted);
           // Устанавливаем первый элемент как активный
           dispatch(setCurrentIndex(0));
           // Устанавливаем прелоад для первых трех элементов
           dispatch(clearPreloadedIndexes());
-          [0, 1, 2].filter(i => i < mapped.length).forEach(i => dispatch(addPreloadedIndex(i)));
+          [0, 1, 2].filter(i => i < sorted.length).forEach(i => dispatch(addPreloadedIndex(i)));
         }
       } else {
         setListings([]);
@@ -513,11 +546,11 @@ export default function ImprovedIndexScreen() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [dispatch]);
+  }, [dispatch, sortBy]);
 
-  // Загрузка при монтировании и изменении категории
+  // Загрузка при монтировании и изменении категории или сортировки
   useEffect(() => {
-    appLogger.debug(`Category changed or component mounted: ${activeCategory}`);
+    appLogger.debug(`Category changed or component mounted: ${activeCategory}, sortBy: ${sortBy}`);
     let isMounted = true;
     
     fetchListings(activeCategory).then(() => {
@@ -538,7 +571,7 @@ export default function ImprovedIndexScreen() {
     return () => {
       isMounted = false;
     };
-  }, [activeCategory, fetchListings, dispatch]);
+  }, [activeCategory, sortBy, fetchListings, dispatch]);
 
   // Скролл к началу при загрузке новых объявлений после смены категории
   const prevCategoryRef = useRef<string>(activeCategory);
@@ -756,7 +789,7 @@ export default function ImprovedIndexScreen() {
   }).current;
 
   const viewabilityConfig = useMemo(() => ({
-    itemVisiblePercentThreshold: 50, // Более агрессивная проверка для плавности
+    itemVisiblePercentThreshold: 70, // Видео запускается когда 70% на экране (как в TikTok)
     minimumViewTime: 100,
   }), []);
 
@@ -766,16 +799,20 @@ export default function ImprovedIndexScreen() {
     { viewabilityConfig, onViewableItemsChanged }
   ], [viewabilityConfig, onViewableItemsChanged]); // onViewableItemsChanged стабилен через useRef, но добавляем для линтера
 
+  // Логика остановки видео при уходе с главного экрана обрабатывается в _layout.tsx
+  // Здесь мы только используем isFeedFocused для определения активности видео
+
   // Рендер элемента списка
   const renderItem = useCallback(({ item, index }: { item: FeedListing; index: number }) => {
     // Определяем активность и прелоад
-    const isItemActive = currentIndex === index;
+    // Если мы не на главном экране, все видео неактивны
+    const isItemActive = isFeedFocused && currentIndex === index;
     const isItemPreloaded = preloadedIndexes.includes(index) || index === 0 || index === currentIndex + 1 || index === currentIndex - 1;
     
     return (
       <EnhancedVideoCard
         key={`${item.id}-${index}`}
-        listing={item as any}
+        listing={item as EnhancedVideoCardProps['listing']}
         isActive={isItemActive}
         isPreloaded={isItemPreloaded}
         onLike={() => handleLike(item.id)}
@@ -784,7 +821,7 @@ export default function ImprovedIndexScreen() {
         onShare={() => handleShare(item)}
       />
     );
-  }, [currentIndex, preloadedIndexes, handleLike, handleFavorite, handleComment, handleShare]);
+  }, [currentIndex, preloadedIndexes, isFeedFocused, handleLike, handleFavorite, handleComment, handleShare]);
 
   if (loading && !refreshing) {
     return (
@@ -801,101 +838,36 @@ export default function ImprovedIndexScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Верхняя панель с категориями */}
+      {/* Шапка сверху — матовая панель Revolut Ultra */}
       <View style={styles.topBar}>
-        <LinearGradient
-          colors={[
-            isDark ? 'rgba(0,0,0,0.9)' : 'rgba(255,255,255,0.95)',
-            isDark ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)',
-            'transparent'
-          ]}
-          style={styles.topGradient}
-        >
-          <FlatList
-            horizontal
-            data={filteredCategories}
-            keyExtractor={(item) => item.id}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.categoriesContainer}
-            renderItem={({ item }) => {
+        <View style={styles.categoryHeader}>
+          <View style={styles.headerContent}>
+            {filteredCategories.map((item, index) => {
               const isActive = activeCategory === item.id;
-              const animValue = categoryAnimations.current[item.id] || new Animated.Value(isActive ? 1 : 0);
-              
-              // Анимации для кнопки
-              const scaleAnim = animValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [1, 1.05],
-              });
-              
-              const opacityAnim = animValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0.7, 1],
-              });
-              
-              const backgroundColorAnim = animValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: isDark 
-                  ? ['rgba(255,255,255,0.08)', 'rgba(102, 126, 234, 0.25)']
-                  : ['rgba(0,0,0,0.03)', 'rgba(102, 126, 234, 0.15)'],
-              });
-              
-              const shadowOpacityAnim = animValue.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 0.3],
-              });
-              
+              const categoryName = item.name === 'Автомобили' ? 'Авто' : item.name === 'Лошади' ? 'Лошади' : item.name === 'Недвижимость' ? 'Недвижимость' : item.name;
               return (
-                <TouchableOpacity
-                  activeOpacity={0.8}
-                  onPress={() => handleCategoryChange(item.id)}
-                  style={styles.categoryButtonWrapper}
-                >
-                  <Animated.View
-                    style={[
-                      styles.categoryButton,
-                      {
-                        transform: [{ scale: scaleAnim }],
-                        opacity: opacityAnim,
-                        backgroundColor: backgroundColorAnim,
-                        borderWidth: isActive ? 2.5 : 1.5, // Статический borderWidth, не анимируем
-                        borderColor: theme.primary,
-                        shadowOpacity: shadowOpacityAnim,
-                      },
-                    ]}
+                <React.Fragment key={item.id}>
+                  <TouchableOpacity
+                    activeOpacity={0.8}
+                    onPress={() => handleCategoryChange(item.id)}
+                    style={styles.categoryTab}
                   >
-                    <Animated.View
-                      style={{
-                        transform: [
-                          {
-                            scale: animValue.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [1, 1.1],
-                            }),
-                          },
-                        ],
-                      }}
-                    >
-                      <Text style={styles.categoryIcon}>{item.icon}</Text>
-                    </Animated.View>
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        {
-                          color: isActive 
-                            ? theme.primary 
-                            : theme.textSecondary,
-                          fontWeight: isActive ? '700' : '600',
-                        },
-                      ]}
-                    >
-                      {item.name}
+                    <Text style={[
+                      styles.categoryText,
+                      isActive && styles.activeText
+                    ]}>
+                      {categoryName}
                     </Text>
-                  </Animated.View>
-                </TouchableOpacity>
+                    {isActive && <View style={styles.categoryUnderline} />}
+                  </TouchableOpacity>
+                  {index < filteredCategories.length - 1 && (
+                    <Text style={styles.categorySeparator}>•</Text>
+                  )}
+                </React.Fragment>
               );
-            }}
-          />
-        </LinearGradient>
+            })}
+          </View>
+        </View>
       </View>
 
       {/* Видео лента */}
@@ -910,32 +882,33 @@ export default function ImprovedIndexScreen() {
         ListEmptyComponent={
           !loading && listings.length === 0 ? (
             <View style={[styles.emptyContainer, { backgroundColor: theme.background }]} pointerEvents="box-none">
-              <Ionicons name="videocam-off" size={80} color={theme.textSecondary} style={{ opacity: 0.6, marginBottom: 24 }} />
-              <Text style={[styles.emptyText, { color: theme.text, fontSize: 24, fontWeight: '700', marginBottom: 8 }]}>
+              <Ionicons name="videocam-off" size={80} color={ultra.textMuted} style={{ opacity: 0.6, marginBottom: 24 }} />
+              <Text style={[styles.emptyText, { color: ultra.textPrimary, fontSize: 24, fontWeight: '700', marginBottom: 8 }]}>
                 Нет объявлений
               </Text>
-              <Text style={[styles.emptySubtext, { color: theme.textSecondary, marginBottom: 32 }]}>
+              <Text style={[styles.emptySubtext, { color: ultra.textMuted, marginBottom: 32 }]}>
                 В категории &quot;{CATEGORIES.find(c => c.id === activeCategory)?.name || activeCategory}&quot; пока нет объявлений
               </Text>
               <TouchableOpacity
-                style={[styles.emptyButton, { backgroundColor: theme.primary }]}
+                style={[styles.emptyButton, { backgroundColor: ultra.surface, borderWidth: 1, borderColor: ultra.accent }]}
                 onPress={() => router.push('/(tabs)/upload')}
                 activeOpacity={0.8}
               >
-                <Ionicons name="add-circle-outline" size={24} color="#FFF" style={{ marginRight: 8 }} />
+                <Ionicons name="add-circle-outline" size={24} color={ultra.textPrimary} style={{ marginRight: 8 }} />
                 <Text style={styles.emptyButtonText}>Создать объявление</Text>
               </TouchableOpacity>
               <TouchableOpacity
-                style={[styles.emptyButtonSecondary, { borderColor: theme.primary }]}
+                style={[styles.emptyButtonSecondary, { borderColor: ultra.accent }]}
                 onPress={onRefresh}
                 activeOpacity={0.8}
               >
-                <Ionicons name="refresh-outline" size={20} color={theme.primary} style={{ marginRight: 8 }} />
-                <Text style={[styles.emptyButtonSecondaryText, { color: theme.primary }]}>Обновить</Text>
+                <Ionicons name="refresh-outline" size={20} color={ultra.accent} style={{ marginRight: 8 }} />
+                <Text style={[styles.emptyButtonSecondaryText, { color: ultra.accent }]}>Обновить</Text>
               </TouchableOpacity>
             </View>
           ) : null
         }
+        pagingEnabled
         snapToInterval={SCREEN_HEIGHT}
         snapToAlignment="start"
         decelerationRate="fast"
@@ -944,7 +917,7 @@ export default function ImprovedIndexScreen() {
           <RefreshControl 
             refreshing={refreshing} 
             onRefresh={onRefresh} 
-            tintColor={theme.primary}
+            tintColor={ultra.accent}
           />
         }
         onEndReachedThreshold={0.5}
@@ -987,12 +960,90 @@ const styles = StyleSheet.create({
     zIndex: 10,
     paddingTop: Platform.OS === 'ios' ? 50 : 20,
   },
+  // Шапка сверху — полупрозрачная с блюром Vision Pro
+  categoryHeader: {
+    position: 'absolute',
+    top: Platform.select({ ios: 50, android: 44, default: 50 }),
+    left: Platform.select({ ios: 20, android: 16, default: 20 }),
+    right: Platform.select({ ios: 20, android: 16, default: 20 }),
+    height: Platform.select({ ios: 56, android: 52, default: 56 }),
+    borderRadius: Platform.select({ ios: 28, android: 26, default: 28 }),
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+  },
+  headerContent: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    width: '100%',
+    paddingHorizontal: Platform.select({ ios: 16, android: 12, default: 16 }),
+    alignItems: 'center',
+  },
+  categoryTab: {
+    paddingHorizontal: Platform.select({ ios: 12, android: 10, default: 12 }),
+    paddingVertical: Platform.select({ ios: 8, android: 6, default: 8 }),
+  },
+  categoryText: {
+    fontSize: Platform.select({ ios: 18, android: 17, default: 18 }),
+    fontWeight: '600',
+    letterSpacing: Platform.select({ ios: 0.3, android: 0.2, default: 0.3 }),
+    color: ultra.textMuted,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
+  },
+  categorySeparator: {
+    fontSize: Platform.select({ ios: 18, android: 17, default: 18 }),
+    color: ultra.textMuted,
+    marginHorizontal: Platform.select({ ios: 8, android: 6, default: 8 }),
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'System' }),
+  },
+  activeText: {
+    color: ultra.textPrimary,
+    fontWeight: '800',
+  },
+  categoryUnderline: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: Platform.select({ ios: 3, android: 2.5, default: 3 }),
+    backgroundColor: ultra.textPrimary,
+  },
   topGradient: {
     paddingBottom: 16,
+    backgroundColor: ultra.background,
   },
   categoriesContainer: {
     paddingHorizontal: 16,
     gap: 10,
+    marginBottom: 12,
+  },
+  sortBar: {
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    gap: 8,
+    marginTop: 4,
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    gap: 4,
+  },
+  sortButtonActive: {
+    backgroundColor: 'rgba(160, 160, 160, 0.2)',
+    borderColor: ultra.accent,
+  },
+  sortButtonText: {
+    fontSize: Platform.select({ ios: 12, android: 11, default: 12 }),
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
   categoryButtonWrapper: {
     marginRight: 10,
@@ -1005,7 +1056,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     ...Platform.select({
       ios: {
-        shadowColor: '#667eea',
+        shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
         shadowRadius: 8,
       },
@@ -1013,14 +1064,6 @@ const styles = StyleSheet.create({
         elevation: 4,
       },
     }),
-  },
-  categoryIcon: {
-    fontSize: 22,
-    marginRight: 10,
-  },
-  categoryText: {
-    fontSize: 15,
-    letterSpacing: 0.3,
   },
   videoCard: {
     width: SCREEN_WIDTH,
@@ -1368,16 +1411,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyText: {
-    fontSize: 20,
+    fontSize: Platform.select({ ios: 20, android: 19, default: 20 }),
     fontWeight: '600',
-    marginTop: 24,
+    marginTop: Platform.select({ ios: 24, android: 20, default: 24 }),
     textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
   },
   emptySubtext: {
-    fontSize: 16,
-    marginTop: 8,
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
+    marginTop: Platform.select({ ios: 8, android: 6, default: 8 }),
     opacity: 0.7,
     textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
   emptyButton: {
     flexDirection: 'row',

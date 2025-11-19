@@ -1,21 +1,27 @@
+// app/(tabs)/upload.tsx
+// REVOLUT ULTRA STYLE — UPLOAD SCREEN
+// Optimized for conversion & aesthetics
+
 import { CategoryModal } from '@/components/Upload/CategoryModal';
 import { TipsModal } from '@/components/Upload/TipsModal';
 import { CategoryType, UPLOAD_TEXTS } from '@/config/uploadTexts';
 import { Ionicons } from '@expo/vector-icons';
 import { Camera } from 'expo-camera';
+import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    Alert,
-    Animated,
-    Linking,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Alert,
+  Animated,
+  Easing,
+  Linking,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
 } from 'react-native';
 
 export default function UploadScreen() {
@@ -23,236 +29,220 @@ export default function UploadScreen() {
   const [category, setCategory] = useState<CategoryType>('auto');
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showTips, setShowTips] = useState(false);
+  
+  // Animations
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const rotateAnim = useRef(new Animated.Value(0)).current;
-  
-  const config = UPLOAD_TEXTS[category];
+  const contentFade = useRef(new Animated.Value(0)).current;
+  const contentSlide = useRef(new Animated.Value(20)).current;
 
-  // Пульсирующая анимация иконки
+  const config = UPLOAD_TEXTS[category];
+  const mainButton = config.mainButton;
+
   useEffect(() => {
-    const loopAnimation = Animated.loop(
+    // Intro Animation
+    Animated.parallel([
+      Animated.timing(contentFade, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.timing(contentSlide, { toValue: 0, duration: 600, useNativeDriver: true }),
+    ]).start();
+
+    // Pulse Animation
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.05,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 2000,
+          easing: Easing.inOut(Easing.ease),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulse.start();
+
+    // Subtle Rotation
+    const spin = Animated.loop(
       Animated.timing(rotateAnim, {
         toValue: 1,
-        duration: 4000,
-        useNativeDriver: Platform.OS !== 'web',
+        duration: 20000, // Very slow rotation
+        easing: Easing.linear,
+        useNativeDriver: true,
       })
     );
-
-    loopAnimation.start();
+    spin.start();
 
     return () => {
-      loopAnimation.stop();
+      pulse.stop();
+      spin.stop();
     };
-  }, [rotateAnim]);
+  }, [contentFade, contentSlide, rotateAnim, scaleAnim]);
 
   const spin = rotateAnim.interpolate({
     inputRange: [0, 1],
     outputRange: ['0deg', '360deg'],
   });
 
-  const handleRecordVideo = async () => {
-    if ('disabled' in config.mainButton && config.mainButton.disabled) {
-      return;
-    }
-    
+  const requestPermissionsAndNavigate = async () => {
+    if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     try {
-      // 1. Запросить разрешения
-      const cameraPermission = await Camera.requestCameraPermissionsAsync();
-      const micPermission = await Camera.requestMicrophonePermissionsAsync();
-      if (!micPermission.granted) {
-        Alert.alert(
-          'Нужны разрешения',
-          'Разрешите доступ к микрофону для записи звука',
-          [
-            { text: 'Отмена', style: 'cancel' },
-            {
-              text: 'Открыть настройки',
-              onPress: () => Linking.openSettings()
-            }
-          ]
-        );
-        return;
-      }
-      // expo-audio doesn't have requestPermissionsAsync, permissions are handled via app.json
-      // We'll use Camera permissions for audio recording in video context
-      
-      if (!cameraPermission.granted) {
+      const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
+      const { status: micStatus } = await Camera.requestMicrophonePermissionsAsync();
+
+      if (cameraStatus !== 'granted' || micStatus !== 'granted') {
         Alert.alert(
           'Нужны разрешения',
           'Разрешите доступ к камере и микрофону для записи видео',
           [
             { text: 'Отмена', style: 'cancel' },
-            { 
-              text: 'Открыть настройки', 
-              onPress: () => Linking.openSettings() 
-            }
+            { text: 'Открыть настройки', onPress: () => Linking.openSettings() },
           ]
         );
         return;
       }
-      
-      // 2. Перейти на экран камеры
-      router.push({
-        pathname: '/camera',
-        params: { category }
-      });
-      
+
+      const dbCategory = category === 'auto' ? 'car' : category;
+      router.push({ pathname: '/listing/new', params: { category: dbCategory } });
     } catch (error) {
-      console.error('Camera permission error:', error);
-      Alert.alert(
-        'Ошибка',
-        'Не удалось получить разрешения для камеры'
-      );
+      console.error('Permission error:', error);
+      Alert.alert('Ошибка', 'Не удалось получить разрешения');
     }
   };
 
-  const handleGallery = () => {
-    // TODO: Implement gallery picker
-    alert('Загрузка из галереи скоро появится!');
-  };
-
-  const handlePhoto = () => {
-    // TODO: Implement photo picker
-    alert('Загрузка фото скоро появится!');
-  };
-
   return (
-    <ScrollView style={styles.container}>
-      
-      {/* Header с переключателем категорий */}
-      <TouchableOpacity 
-        style={styles.categorySelector}
-        onPress={() => setShowCategoryModal(true)}
+    <View style={styles.container}>
+      <ScrollView 
+        style={styles.scrollView} 
+        contentContainerStyle={styles.scrollContent}
+        bounces={false} 
+        showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.categoryIcon}>{config.icon}</Text>
-        <Text style={styles.categoryTitle}>{config.title}</Text>
-        <Ionicons name="chevron-down" size={20} color="#FFFFFF" />
-      </TouchableOpacity>
-      
-      {/* Hero секция с анимацией */}
-      <View style={styles.hero}>
-        <Animated.View 
-          style={[
-            styles.heroCircle, 
-            {
-              transform: [
-                { scale: scaleAnim }, 
-                { rotate: spin }
-              ]
-            }
-          ]}
-        >
-          <Ionicons name="cloud-upload-outline" size={80} color="#FFFFFF" />
-        </Animated.View>
-        
-        <Text style={styles.heroEmoji}>{config.hero.emoji}</Text>
-        <Text style={styles.heroTitle}>{config.hero.title}</Text>
-        <Text style={styles.heroSubtitle}>{config.hero.subtitle}</Text>
-        
-        <View style={styles.heroBadge}>
-          <Text style={styles.heroBadgeText}>{config.hero.cta}</Text>
-        </View>
-      </View>
-      
-      {/* Статистика */}
-      <View style={styles.statsCard}>
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>
-            {config.stats.sold.split(' ')[0]}
-          </Text>
-          <Text style={styles.statLabel}>
-            {config.stats.sold.split(' ').slice(1).join(' ')}
-          </Text>
-        </View>
-        
-        <View style={styles.statDivider} />
-        
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{config.stats.rating}</Text>
-          <Text style={styles.statLabel}>Средний рейтинг</Text>
-        </View>
-        
-        <View style={styles.statDivider} />
-        
-        <View style={styles.statItem}>
-          <Text style={styles.statNumber}>{config.stats.aiScore}</Text>
-          <Text style={styles.statLabel}>AI точность</Text>
-        </View>
-      </View>
-      
-      {/* AI Promise */}
-      <View style={styles.aiCard}>
-        <Text style={styles.aiIcon}>{config.aiPromise.icon}</Text>
-        <Text style={styles.aiTitle}>{config.aiPromise.title}</Text>
-        <Text style={styles.aiSubtitle}>{config.aiPromise.subtitle}</Text>
-        
-        <View style={styles.aiFeatures}>
-          {config.aiPromise.features.map((feature, i) => (
-            <View key={i} style={styles.aiFeature}>
-              <Ionicons name="checkmark-circle" size={20} color="#10B981" />
-              <Text style={styles.aiFeatureText}>{feature}</Text>
+        <Animated.View style={{ opacity: contentFade, transform: [{ translateY: contentSlide }] }}>
+          
+          {/* 1. CLICKABLE HEADER (MOVED DOWN) */}
+          <Pressable 
+            style={styles.headerButton}
+            onPress={() => {
+              if (Platform.OS === 'ios') Haptics.selectionAsync();
+              setShowCategoryModal(true);
+            }}
+          >
+            <View style={styles.headerContent}>
+              <Text style={styles.headerEmoji}>{config.icon}</Text>
+              <Text style={styles.headerTitle}>{config.title}</Text>
+              <Ionicons name="chevron-down" size={20} color="#666" style={{ marginLeft: 8 }} />
             </View>
-          ))}
-        </View>
-      </View>
-      
-      {/* Главная кнопка */}
-      <TouchableOpacity 
-        style={[
-          styles.mainButton,
-          'disabled' in config.mainButton && config.mainButton.disabled && styles.mainButtonDisabled
-        ]}
-        onPress={() => handleRecordVideo()}
-        disabled={'disabled' in config.mainButton ? config.mainButton.disabled : false}
-      >
-        <LinearGradient
-          colors={'disabled' in config.mainButton && config.mainButton.disabled 
-            ? ['#9CA3AF', '#6B7280'] 
-            : ['#E63946', '#D62828']}
-          style={styles.mainButtonGradient}
-        >
-          <Ionicons 
-            name={'disabled' in config.mainButton && config.mainButton.disabled ? "lock-closed" : "videocam"} 
-            size={24} 
-            color="#FFFFFF" 
-          />
-          <Text style={styles.mainButtonText}>
-            {config.mainButton.text}
-          </Text>
-          <Text style={styles.mainButtonEmoji}>
-            {config.mainButton.emoji}
-          </Text>
-        </LinearGradient>
-        <Text style={styles.mainButtonSubtitle}>
-          {config.mainButton.subtitle}
-        </Text>
-      </TouchableOpacity>
-      
-      {/* Кнопка "Советы по съемке" */}
-      <TouchableOpacity 
-        style={styles.tipsButton}
-        onPress={() => setShowTips(true)}
-      >
-        <Ionicons name="bulb-outline" size={20} color="#E63946" />
-        <Text style={styles.tipsButtonText}>
-          Как правильно снимать {category === 'auto' ? 'авто' : category === 'horse' ? 'коня' : 'недвижимость'}?
-        </Text>
-      </TouchableOpacity>
-      
-      {/* Альтернативные способы */}
-      <View style={styles.alternativeButtons}>
-        <TouchableOpacity style={styles.altButton} onPress={handleGallery}>
-          <Ionicons name="images-outline" size={24} color="#111827" />
-          <Text style={styles.altButtonText}>Галерея</Text>
-        </TouchableOpacity>
-        
-        <TouchableOpacity style={styles.altButton} onPress={handlePhoto}>
-          <Ionicons name="camera-outline" size={24} color="#111827" />
-          <Text style={styles.altButtonText}>Фото</Text>
-        </TouchableOpacity>
-      </View>
-      
-      {/* Modal выбора категории */}
+            <View style={styles.headerUnderline} />
+          </Pressable>
+
+          {/* 2. HERO CIRCLE */}
+          <View style={styles.heroSection}>
+            <View style={styles.circleContainer}>
+              {/* Rotating Ring */}
+              <Animated.View 
+                style={[
+                  styles.circleRing, 
+                  { transform: [{ rotate: spin }] }
+                ]} 
+              />
+              
+              {/* Pulsing Core */}
+              <Animated.View 
+                style={[
+                  styles.circleCore,
+                  { transform: [{ scale: scaleAnim }] }
+                ]}
+              >
+                 <LinearGradient
+                    colors={['#2C2C2C', '#171717']}
+                    style={styles.circleGradient}
+                  >
+                    <Ionicons name="cloud-upload-outline" size={64} color="#E0E0E0" />
+                  </LinearGradient>
+              </Animated.View>
+
+              {/* Rocket Badge */}
+              <View style={styles.rocketBadge}>
+                <Text style={{ fontSize: 24 }}>{config.hero.emoji}</Text>
+              </View>
+            </View>
+
+            <Text style={styles.heroTitleText}>{config.hero.title}</Text>
+            <Text style={styles.heroSubtitleText}>{config.hero.subtitle}</Text>
+            
+            <View style={styles.viewsBadge}>
+              <Text style={styles.viewsBadgeText}>{config.hero.cta}</Text>
+            </View>
+          </View>
+
+          {/* 3. AI PROMISE CARD */}
+          <View style={styles.aiCard}>
+            <View style={styles.aiHeader}>
+              <Text style={{ fontSize: 24 }}>{config.aiPromise.icon}</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.aiCardTitle}>{config.aiPromise.title}</Text>
+                <Text style={styles.aiCardSubtitle}>{config.aiPromise.subtitle}</Text>
+              </View>
+            </View>
+            
+            <View style={styles.divider} />
+            
+            <View style={styles.featuresList}>
+              {config.aiPromise.features.map((feature, index) => (
+                <View key={index} style={styles.featureRow}>
+                  <Ionicons name="checkmark-circle" size={18} color="#C0C0C0" />
+                  <Text style={styles.featureText}>{feature}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* 4. MAIN ACTION */}
+          <Pressable
+            style={styles.mainButton}
+            onPress={requestPermissionsAndNavigate}
+          >
+             <LinearGradient
+                colors={['#2C2C2C', '#1A1A1A']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.mainButtonGradient}
+              >
+                <Ionicons name="videocam" size={24} color="#FFF" />
+                <Text style={styles.mainButtonText}>{mainButton.text}</Text>
+              </LinearGradient>
+          </Pressable>
+
+          {/* 5. SECONDARY ACTIONS */}
+          <View style={styles.secondaryActions}>
+            <Pressable 
+              style={styles.actionButton} 
+              onPress={() => {
+                 if (Platform.OS === 'ios') Haptics.selectionAsync();
+                 setShowTips(true);
+              }}
+            >
+              <Ionicons name="bulb-outline" size={22} color="#E0E0E0" />
+              <Text style={styles.actionButtonText}>Как снимать</Text>
+            </Pressable>
+            
+            <Pressable 
+              style={styles.actionButton}
+              onPress={() => alert('Скоро!')}
+            >
+              <Ionicons name="images-outline" size={22} color="#E0E0E0" />
+              <Text style={styles.actionButtonText}>Галерея</Text>
+            </Pressable>
+          </View>
+
+        </Animated.View>
+      </ScrollView>
+
       <CategoryModal 
         visible={showCategoryModal}
         onSelect={(cat) => {
@@ -261,214 +251,226 @@ export default function UploadScreen() {
         }}
         onClose={() => setShowCategoryModal(false)}
       />
-      
-      {/* Modal с советами */}
       <TipsModal
         visible={showTips}
         category={category}
-        tips={config.tips}
+        tips={[...config.tips]}
         onClose={() => setShowTips(false)}
       />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
-    paddingTop: 60,
+    backgroundColor: '#0D0D0D',
   },
-  categorySelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 20,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginBottom: 30,
-  },
-  categoryIcon: {
-    fontSize: 24,
-    marginRight: 10,
-  },
-  categoryTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
+  scrollView: {
     flex: 1,
   },
-  hero: {
+  scrollContent: {
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
+    paddingBottom: 40,
+    paddingHorizontal: 20,
+  },
+  
+  // Header
+  headerButton: {
+    alignSelf: 'center',
+    marginBottom: 40,
     alignItems: 'center',
-    marginBottom: 30,
   },
-  heroCircle: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    backgroundColor: '#E63946',
+  headerContent: {
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
+    gap: 8,
+    marginBottom: 8,
   },
-  heroEmoji: {
-    fontSize: 48,
-    marginBottom: 10,
-  },
-  heroTitle: {
+  headerEmoji: {
     fontSize: 28,
-    fontWeight: 'bold',
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
+  },
+  headerUnderline: {
+    width: 40,
+    height: 4,
+    backgroundColor: '#333',
+    borderRadius: 2,
+  },
+
+  // Hero
+  heroSection: {
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  circleContainer: {
+    width: 200,
+    height: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  circleRing: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: 100,
+    borderWidth: 1,
+    borderColor: '#333',
+    borderStyle: 'dashed',
+  },
+  circleCore: {
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    shadowColor: '#C0C0C0',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 5,
+  },
+  circleGradient: {
+    flex: 1,
+    borderRadius: 70,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  rocketBadge: {
+    position: 'absolute',
+    bottom: 0,
+    right: 20,
+    backgroundColor: '#1A1A1A',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  heroTitleText: {
+    fontSize: 26,
+    fontWeight: '800',
     color: '#FFFFFF',
     textAlign: 'center',
     marginBottom: 8,
+    letterSpacing: -0.5,
   },
-  heroSubtitle: {
+  heroSubtitleText: {
     fontSize: 16,
-    color: '#8E8E93',
+    color: '#999',
     textAlign: 'center',
-    marginBottom: 15,
+    marginBottom: 16,
   },
-  heroBadge: {
-    backgroundColor: '#E63946',
-    paddingHorizontal: 20,
+  viewsBadge: {
+    paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
+    backgroundColor: '#1A1A1A',
+    borderWidth: 1,
+    borderColor: '#333',
   },
-  heroBadgeText: {
-    color: '#FFFFFF',
-    fontWeight: 'bold',
+  viewsBadgeText: {
+    color: '#C0C0C0',
+    fontWeight: '700',
     fontSize: 14,
   },
-  statsCard: {
+
+  // AI Card
+  aiCard: {
+    backgroundColor: '#171717',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+    marginBottom: 32,
+  },
+  aiHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
+    gap: 16,
     alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 20,
-    paddingVertical: 20,
-    borderRadius: 16,
-    marginBottom: 30,
+    marginBottom: 16,
   },
-  statItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: 'bold',
-    color: '#E63946',
+  aiCardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#FFFFFF',
     marginBottom: 4,
   },
-  statLabel: {
-    fontSize: 12,
-    color: '#8E8E93',
-    textAlign: 'center',
+  aiCardSubtitle: {
+    fontSize: 13,
+    color: '#888',
   },
-  statDivider: {
-    width: 1,
-    height: 40,
-    backgroundColor: '#2C2C2E',
+  divider: {
+    height: 1,
+    backgroundColor: '#2A2A2A',
+    marginBottom: 16,
   },
-  aiCard: {
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 20,
-    padding: 20,
-    borderRadius: 16,
-    marginBottom: 30,
+  featuresList: {
+    gap: 12,
   },
-  aiIcon: {
-    fontSize: 32,
-    marginBottom: 10,
-  },
-  aiTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-    marginBottom: 5,
-  },
-  aiSubtitle: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginBottom: 15,
-  },
-  aiFeatures: {
-    gap: 10,
-  },
-  aiFeature: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  aiFeatureText: {
-    fontSize: 14,
-    color: '#FFFFFF',
-    flex: 1,
-  },
-  mainButton: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-    borderRadius: 16,
-    overflow: 'hidden',
-  },
-  mainButtonDisabled: {
-    opacity: 0.6,
-  },
-  mainButtonGradient: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 18,
-    gap: 10,
-  },
-  mainButtonText: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: '#FFFFFF',
-  },
-  mainButtonEmoji: {
-    fontSize: 18,
-  },
-  mainButtonSubtitle: {
-    fontSize: 14,
-    color: '#8E8E93',
-    textAlign: 'center',
-    marginTop: 8,
-  },
-  tipsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#1C1C1E',
-    marginHorizontal: 20,
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginBottom: 20,
-    gap: 10,
-  },
-  tipsButtonText: {
-    fontSize: 16,
-    color: '#FFFFFF',
-    flex: 1,
-  },
-  alternativeButtons: {
+  featureRow: {
     flexDirection: 'row',
     gap: 12,
-    marginHorizontal: 20,
-    marginBottom: 40,
+    alignItems: 'flex-start',
   },
-  altButton: {
+  featureText: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    paddingVertical: 16,
-    alignItems: 'center',
-    gap: 8,
+    color: '#E0E0E0',
+    fontSize: 15,
+    lineHeight: 20,
   },
-  altButtonText: {
-    fontSize: 14,
-    color: '#111827',
+
+  // Main Button
+  mainButton: {
+    height: 64,
+    borderRadius: 32,
+    overflow: 'hidden',
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+  mainButtonGradient: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+  },
+  mainButtonText: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+
+  // Secondary Actions
+  secondaryActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flex: 1,
+    height: 56,
+    backgroundColor: '#171717',
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#2A2A2A',
+  },
+  actionButtonText: {
+    color: '#E0E0E0',
+    fontSize: 15,
     fontWeight: '600',
   },
 });

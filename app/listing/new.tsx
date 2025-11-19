@@ -17,12 +17,12 @@ export default function NewListingPage() {
   const [videoUri, setVideoUri] = useState<string | null>(null);
 
   // Если нет категории, редирект на главную
-  if (!category || !['car', 'horse'].includes(category)) {
+  if (!category || !['car', 'horse', 'real_estate'].includes(category)) {
     router.push('/(tabs)');
     return null;
   }
 
-  const categoryType = category as 'car' | 'horse';
+  const categoryType = category as 'car' | 'horse' | 'real_estate';
 
   return (
     <View style={styles.container}>

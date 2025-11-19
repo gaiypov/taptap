@@ -6,7 +6,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface CameraCaptureProps {
-  category: 'car' | 'horse';
+  category: 'car' | 'horse' | 'real_estate';
   onComplete: (videoUri: string) => void;
   onBack: () => void;
 }
@@ -37,12 +37,24 @@ const categoryConfig = {
       '🏁 Отлично! Завершайте',
     ],
   },
+  real_estate: {
+    icon: '🏠',
+    name: 'Недвижимость',
+    hints: [
+      '🚶 Медленно пройдите по комнатам',
+      '🪟 Покажите вид из окон',
+      '🛋️ Покажите мебель и ремонт',
+      '🏡 Двор и подъезд',
+      '🏁 Отлично! Завершайте',
+    ],
+  },
 };
 
 export default function CameraCapture({ category, onComplete, onBack }: CameraCaptureProps) {
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
   const [currentHintIndex, setCurrentHintIndex] = useState(0);
+  const [isCameraReady, setIsCameraReady] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<ExpoCameraView>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -54,11 +66,16 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
       if (recordingTime < MIN_DURATION) {
         Alert.alert(
           'Слишком короткое видео',
-          `Минимальная длительность видео: ${MIN_DURATION} секунд`
+          `Минимальная длительность видео: ${MIN_DURATION} секунд. Продолжите запись.`
         );
         return;
       }
-      cameraRef.current.stopRecording();
+      try {
+        cameraRef.current.stopRecording();
+      } catch (error) {
+        console.error('Stop recording error:', error);
+        Alert.alert('Ошибка', 'Не удалось остановить запись');
+      }
     }
   }, [isRecording, recordingTime]);
 
@@ -111,26 +128,50 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
   }, [isRecording, pulseAnim]);
 
   const startRecording = async () => {
-    if (!cameraRef.current) return;
+    if (!isCameraReady) {
+      Alert.alert('Камера не готова', 'Подождите, пока камера инициализируется...');
+      return;
+    }
+
+    if (!cameraRef.current) {
+      Alert.alert('Ошибка', 'Камера не инициализирована');
+      return;
+    }
 
     try {
       setIsRecording(true);
       setRecordingTime(0);
       setCurrentHintIndex(0);
       
-      const video = await cameraRef.current.recordAsync({
+      // Небольшая задержка для стабилизации
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // recordAsync возвращает Promise, который резолвится когда запись завершена
+      const recordingPromise = cameraRef.current.recordAsync({
         maxDuration: MAX_DURATION,
+        quality: '720p',
       });
 
-      if (video) {
-        // Pass video URI directly instead of converting to File
-        onComplete(video.uri);
-      }
-    } catch (error) {
-      console.error('Recording error:', error);
-      Alert.alert('Ошибка', 'Не удалось записать видео');
-    } finally {
+      // Обрабатываем результат записи
+      recordingPromise
+        .then((video: { uri: string }) => {
+          if (video?.uri) {
+            setIsRecording(false);
+            onComplete(video.uri);
+          } else {
+            setIsRecording(false);
+            Alert.alert('Ошибка', 'Видео не было записано');
+          }
+        })
+        .catch((error: any) => {
+          console.error('Recording error:', error);
+          setIsRecording(false);
+          Alert.alert('Ошибка', error.message || 'Не удалось записать видео');
+        });
+    } catch (error: any) {
+      console.error('Start recording error:', error);
       setIsRecording(false);
+      Alert.alert('Ошибка', error.message || 'Не удалось начать запись');
     }
   };
 
@@ -171,6 +212,15 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
         style={styles.camera}
         facing="back"
         mode="video"
+        onCameraReady={() => {
+          console.log('✅ Camera ready in CameraCapture');
+          setIsCameraReady(true);
+        }}
+        onMountError={(error) => {
+          console.error('❌ Camera mount error in CameraCapture:', error);
+          setIsCameraReady(false);
+          Alert.alert('Ошибка камеры', 'Не удалось инициализировать камеру. Попробуйте перезапустить приложение.');
+        }}
       />
 
       {/* Overlay gradient */}
@@ -231,9 +281,11 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
       <View style={styles.recordButtonContainer}>
         <TouchableOpacity
           onPress={toggleRecording}
+          disabled={!isCameraReady && !isRecording}
           style={[
             styles.recordButton,
-            isRecording && styles.recordButtonRecording
+            isRecording && styles.recordButtonRecording,
+            (!isCameraReady && !isRecording) && styles.recordButtonDisabled
           ]}
         >
           {isRecording ? (
@@ -396,6 +448,10 @@ const styles = StyleSheet.create({
   },
   recordButtonRecording: {
     transform: [{ scale: 0.9 }],
+  },
+  recordButtonDisabled: {
+    opacity: 0.5,
+    backgroundColor: '#666',
   },
   recordIcon: {
     width: 64,

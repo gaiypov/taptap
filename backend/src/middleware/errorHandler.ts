@@ -34,6 +34,12 @@ export class ValidationError extends CustomError {
   }
 }
 
+export class BadRequestError extends CustomError {
+  constructor(message: string, details?: any) {
+    super(message, 400, 'BAD_REQUEST', true, details);
+  }
+}
+
 export class AuthenticationError extends CustomError {
   constructor(message: string = 'Authentication required') {
     super(message, 401, 'AUTHENTICATION_ERROR', true);

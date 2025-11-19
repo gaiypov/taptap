@@ -1,7 +1,7 @@
 // components/Feed/ListingVideoPlayer.tsx
 import type { Listing } from '@/types';
 import { isCarListing, isHorseListing } from '@/types';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { VideoView, useVideoPlayer } from '@expo/video';
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 

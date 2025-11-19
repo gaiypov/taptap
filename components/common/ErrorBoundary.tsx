@@ -1,5 +1,7 @@
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ultra } from '@/lib/theme/ultra';
+import { LinearGradient } from 'expo-linear-gradient';
 
 interface Props {
   children: ReactNode;
@@ -80,6 +82,12 @@ export class ErrorBoundary extends Component<Props, State> {
             )}
 
             <TouchableOpacity style={styles.button} onPress={this.resetError}>
+              <LinearGradient
+                colors={[ultra.gradientStart, ultra.gradientEnd]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
               <Text style={styles.buttonText}>Попробовать снова</Text>
             </TouchableOpacity>
           </View>
@@ -94,7 +102,7 @@ export class ErrorBoundary extends Component<Props, State> {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: ultra.background,
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
@@ -110,47 +118,48 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#fff',
+    color: ultra.textPrimary,
     marginBottom: 12,
     textAlign: 'center',
   },
   message: {
     fontSize: 16,
-    color: '#999',
+    color: ultra.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
     lineHeight: 24,
   },
   button: {
-    backgroundColor: '#FF3B30',
     paddingHorizontal: 32,
     paddingVertical: 16,
     borderRadius: 12,
     marginTop: 20,
+    overflow: 'hidden',
   },
   buttonText: {
-    color: '#fff',
+    color: ultra.textPrimary,
     fontSize: 16,
     fontWeight: '600',
   },
   errorDetails: {
     marginTop: 20,
     padding: 16,
-    backgroundColor: '#1a1a1a',
+    backgroundColor: ultra.card,
     borderRadius: 8,
     maxHeight: 200,
     width: '100%',
+    borderWidth: 1,
+    borderColor: ultra.border,
   },
   errorTitle: {
-    color: '#FF3B30',
+    color: ultra.accent,
     fontSize: 14,
     fontWeight: '600',
     marginBottom: 8,
   },
   errorText: {
-    color: '#666',
+    color: ultra.textSecondary,
     fontSize: 12,
     fontFamily: 'monospace',
   },
 });
-

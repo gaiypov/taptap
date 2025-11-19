@@ -3,13 +3,13 @@
 // Production Ready for Kyrgyzstan Launch
 // ============================================
 
-import { Router } from 'express';
+import express, { Router, type Response } from 'express';
 import { z } from 'zod';
-import { AuthenticatedRequest, authenticateToken } from '../middleware/auth';
-import { asyncHandler, auditLog, AuthorizationError, ConflictError, CustomError, NotFoundError } from '../middleware/errorHandler';
-import { defaultLimiter } from '../middleware/rateLimit';
-import { addBusinessMemberSchema, createBusinessAccountSchema, validateBody, validateParams } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import { AuthenticatedRequest, authenticateToken } from '../../middleware/auth';
+import { asyncHandler, auditLog, AuthorizationError, ConflictError, CustomError, NotFoundError } from '../../middleware/errorHandler';
+import { defaultLimiter } from '../../middleware/rateLimit';
+import { addBusinessMemberSchema, createBusinessAccountSchema, validateBody, validateParams } from '../../middleware/validate';
+import { serviceSupabase as supabase } from '../../../services/supabaseClient';
 
 const router = Router();
 
@@ -21,7 +21,7 @@ router.post('/create',
   authenticateToken,
   validateBody(createBusinessAccountSchema),
   defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
     const { name, tax_id, phone_public } = req.body;
 
@@ -85,7 +85,7 @@ router.post('/create',
 router.get('/',
   authenticateToken,
   defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
 
     const { data: businessMember } = await supabase
@@ -126,7 +126,7 @@ router.put('/',
   authenticateToken,
   validateBody(createBusinessAccountSchema.partial()),
   defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
     const updateData = req.body;
 
@@ -174,7 +174,7 @@ router.post('/members',
   authenticateToken,
   validateBody(addBusinessMemberSchema),
   defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
     const { user_id: newMemberId, role } = req.body;
 
@@ -248,7 +248,7 @@ router.post('/members',
 router.get('/members',
   authenticateToken,
   defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
 
     // Check if user is business member
@@ -293,7 +293,7 @@ router.delete('/members/:userId',
   authenticateToken,
   validateParams(z.object({ userId: z.string().uuid() })),
   defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const currentUserId = req.user!.id;
     const { userId: memberToRemove } = req.params;
 
@@ -355,7 +355,7 @@ router.delete('/members/:userId',
 router.get('/listings',
   authenticateToken,
   defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
 
     // Check if user is business member

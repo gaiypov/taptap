@@ -1,186 +1,233 @@
-// app/(tabs)/favorites.tsx
-// Избранное
-
+import { ultra } from '@/lib/theme/ultra';
 import { db, supabase } from '@/services/supabase';
 import type { Listing } from '@/types';
+import { appLogger } from '@/utils/logger';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Image,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Platform,
+  RefreshControl,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function FavoritesScreen() {
   const router = useRouter();
   const [favorites, setFavorites] = useState<Listing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  useEffect(() => {
-    loadFavorites();
-  }, []);
+  const loadFavorites = useCallback(async (isRefresh = false) => {
+    if (!isRefresh) setLoading(true);
+    setRefreshing(isRefresh);
 
-  const loadFavorites = async () => {
     try {
-      setLoading(true);
-      
-      // Get current user
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setLoading(false);
+        if (!isRefresh) setFavorites([]);
         return;
       }
 
-      // Get saved listings (используем новый API)
       const { data: savesData, error } = await db.getUserSaves(user.id);
-      
       if (error) throw error;
-      
-      // Извлекаем listings из saves (savesData это массив с полями listing_id и listing)
-      const savedListings = (savesData || []).map((save: any) => {
-        // Если есть вложенный listing объект
-        if (save.listing) {
-          return save.listing;
-        }
-        // Если listing_id есть, но объекта нет, возвращаем null (будет отфильтрован)
-        return null;
-      }).filter(Boolean) as Listing[];
-      
-      setFavorites(savedListings);
-    } catch (error) {
-      console.error('Error loading favorites:', error);
+
+      const saves = Array.isArray(savesData) ? savesData : [];
+      const listings = saves
+        .map((save: any) => save.listing)
+        .filter((listing: any) => listing && listing.id) as Listing[];
+
+      setFavorites(listings);
+    } catch (error: any) {
+      appLogger.error('[Favorites] Error loading favorites', { error });
+      Alert.alert('Ошибка', 'Не удалось загрузить избранное. Попробуйте позже.');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, []);
 
-  const handleListingPress = (listingId: string) => {
+  useEffect(() => {
+    loadFavorites();
+  }, [loadFavorites]);
+
+  const removeFromFavorites = useCallback(async (listingId: string) => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const { error } = await db.unsaveListing(user.id, listingId);
+      if (error) throw error;
+
+      setFavorites(prev => prev.filter(item => item.id !== listingId));
+    } catch (error: any) {
+      appLogger.error('[Favorites] Error removing favorite', { error });
+      Alert.alert('Ошибка', 'Не удалось удалить из избранного');
+    }
+  }, []);
+
+  const handleListingPress = useCallback((listingId: string) => {
     router.push(`/car/${listingId}`);
-  };
+  }, [router]);
 
-  if (loading) {
+  if (loading && favorites.length === 0) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container} edges={['top']}>
         <StatusBar style="light" />
         <View style={styles.header}>
           <Text style={styles.headerTitle}>Избранное</Text>
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#667eea" />
+          <ActivityIndicator size="large" color={ultra.accent} />
         </View>
-      </View>
-    );
-  }
-
-  if (favorites.length === 0) {
-    return (
-      <View style={styles.container}>
-        <StatusBar style="light" />
-        <View style={styles.header}>
-          <Text style={styles.headerTitle}>Избранное</Text>
-        </View>
-        <View style={styles.emptyContainer}>
-          <Ionicons name="heart-outline" size={64} color="#8E8E93" />
-          <Text style={styles.emptyText}>Нет избранного</Text>
-          <Text style={styles.emptySubtext}>
-            Сохраняйте понравившиеся объявления
-          </Text>
-        </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <StatusBar style="light" />
-      
+
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Избранное</Text>
-        <Text style={styles.headerCount}>{favorites.length} шт.</Text>
+        {favorites.length > 0 && (
+          <Text style={styles.headerCount}>{favorites.length} шт.</Text>
+        )}
       </View>
 
       <FlatList
         data={favorites}
         keyExtractor={(item) => item.id}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => loadFavorites(true)}
+            tintColor={ultra.accent}
+            colors={[ultra.accent]}
+          />
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Ionicons name="heart-outline" size={Platform.select({ ios: 80, android: 75, default: 80 })} color={ultra.textMuted} />
+            <Text style={styles.emptyText}>Нет избранного</Text>
+            <Text style={styles.emptySubtext}>
+              Сохраняйте понравившиеся объявления, нажимая ❤️
+            </Text>
+          </View>
+        }
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={styles.card}
-            onPress={() => handleListingPress(item.id)}
-          >
-            {item.thumbnail_url ? (
-              <Image
-                source={{ uri: item.thumbnail_url }}
-                style={styles.image}
-              />
-            ) : (
-              <View style={styles.imagePlaceholder}>
-                <Ionicons name="images-outline" size={40} color="#8E8E93" />
-              </View>
-            )}
-            
-            <View style={styles.content}>
-              <Text style={styles.title} numberOfLines={2}>
-                {item.title}
-              </Text>
-              <Text style={styles.price}>
-                {item.price?.toLocaleString('ru-RU')} сом
-              </Text>
-              
-              {item.seller && (
-                <View style={styles.seller}>
-                  {item.seller.avatar_url ? (
-                    <Image
-                      source={{ uri: item.seller.avatar_url }}
-                      style={styles.avatar}
-                    />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <Ionicons name="person" size={16} color="#FFF" />
-                    </View>
-                  )}
-                  <Text style={styles.sellerName}>{item.seller.name}</Text>
+          <Animated.View entering={FadeIn} exiting={FadeOut}>
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => handleListingPress(item.id)}
+              activeOpacity={0.8}
+            >
+              {item.thumbnail_url ? (
+                <Image
+                  source={{ uri: item.thumbnail_url }}
+                  style={styles.image}
+                />
+              ) : (
+                <View style={styles.imagePlaceholder}>
+                  <Ionicons name="image-outline" size={Platform.select({ ios: 48, android: 44, default: 48 })} color={ultra.textMuted} />
                 </View>
               )}
-            </View>
 
-            <View style={styles.actions}>
-              <Ionicons name="heart" size={24} color="#FF3B30" />
-            </View>
-          </TouchableOpacity>
+              <View style={styles.content}>
+                <Text style={styles.title} numberOfLines={2}>
+                  {item.title}
+                </Text>
+                <Text style={styles.price}>
+                  {item.price?.toLocaleString('ru-RU')} сом
+                </Text>
+
+                {item.seller && (
+                  <View style={styles.seller}>
+                    {item.seller.avatar_url ? (
+                      <Image
+                        source={{ uri: item.seller.avatar_url }}
+                        style={styles.avatar}
+                      />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <Ionicons name="person" size={16} color="#FFF" />
+                      </View>
+                    )}
+                    <Text style={styles.sellerName}>{item.seller.name || 'Продавец'}</Text>
+                  </View>
+                )}
+              </View>
+
+              <TouchableOpacity
+                style={styles.favoriteButton}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  removeFromFavorites(item.id);
+                }}
+                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="heart" size={Platform.select({ ios: 28, android: 26, default: 28 })} color={ultra.accent} />
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </Animated.View>
         )}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={favorites.length === 0 ? styles.emptyContainer : styles.listContent}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={Platform.OS !== 'web'}
+        initialNumToRender={10}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        updateCellsBatchingPeriod={50}
+        getItemLayout={(data, index) => ({
+          length: Platform.select({ ios: 152, android: 144, default: 152 }) || 152,
+          offset: (Platform.select({ ios: 152, android: 144, default: 152 }) || 152) * index,
+          index,
+        })}
       />
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: ultra.background, // #0D0D0D
   },
   header: {
-    paddingTop: 50,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
+    paddingTop: Platform.select({ ios: 12, android: 8, default: 12 }),
+    paddingBottom: Platform.select({ ios: 16, android: 14, default: 16 }),
+    paddingHorizontal: Platform.select({ ios: 20, android: 16, default: 20 }),
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: ultra.border,
   },
   headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#FFF',
+    fontSize: Platform.select({ ios: 32, android: 30, default: 32 }),
+    fontWeight: '800',
+    color: ultra.textPrimary,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
   },
   headerCount: {
-    fontSize: 14,
-    color: '#8E8E93',
+    fontSize: Platform.select({ ios: 14, android: 13, default: 14 }),
+    color: ultra.textSecondary,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
   loadingContainer: {
     flex: 1,
@@ -191,85 +238,121 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: Platform.select({ ios: 40, android: 32, default: 40 }),
+    paddingVertical: Platform.select({ ios: 60, android: 50, default: 60 }),
   },
   emptyText: {
-    marginTop: 16,
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#FFF',
+    marginTop: Platform.select({ ios: 20, android: 18, default: 20 }),
+    fontSize: Platform.select({ ios: 22, android: 20, default: 22 }),
+    fontWeight: '800',
+    color: ultra.textPrimary,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
   },
   emptySubtext: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#8E8E93',
+    marginTop: Platform.select({ ios: 8, android: 6, default: 8 }),
+    fontSize: Platform.select({ ios: 15, android: 14, default: 15 }),
+    color: ultra.textSecondary,
     textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
   listContent: {
-    padding: 16,
+    padding: Platform.select({ ios: 16, android: 12, default: 16 }),
+    paddingBottom: Platform.select({ ios: 100, android: 90, default: 100 }),
   },
   card: {
     flexDirection: 'row',
-    backgroundColor: '#1C1C1E',
-    borderRadius: 16,
-    marginBottom: 16,
+    backgroundColor: ultra.card,
+    borderRadius: Platform.select({ ios: 20, android: 18, default: 20 }),
+    marginBottom: Platform.select({ ios: 16, android: 14, default: 16 }),
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: ultra.border,
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   image: {
-    width: 120,
-    height: 120,
-    backgroundColor: '#2C2C2E',
+    width: Platform.select({ ios: 120, android: 110, default: 120 }),
+    height: Platform.select({ ios: 120, android: 110, default: 120 }),
+    backgroundColor: ultra.background,
   },
   imagePlaceholder: {
-    width: 120,
-    height: 120,
-    backgroundColor: '#2C2C2E',
+    width: Platform.select({ ios: 120, android: 110, default: 120 }),
+    height: Platform.select({ ios: 120, android: 110, default: 120 }),
+    backgroundColor: ultra.background,
     justifyContent: 'center',
     alignItems: 'center',
   },
   content: {
     flex: 1,
-    padding: 12,
+    padding: Platform.select({ ios: 12, android: 10, default: 12 }),
     justifyContent: 'space-between',
   },
   title: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
-    marginBottom: 4,
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
+    fontWeight: '800',
+    color: ultra.textPrimary,
+    marginBottom: Platform.select({ ios: 4, android: 3, default: 4 }),
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
   },
   price: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#667eea',
-    marginBottom: 8,
+    fontSize: Platform.select({ ios: 20, android: 19, default: 20 }),
+    fontWeight: '900',
+    color: ultra.accentSecondary, // #E0E0E0 светлое серебро
+    marginBottom: Platform.select({ ios: 8, android: 6, default: 8 }),
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Black',
   },
   seller: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   avatar: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    marginRight: 8,
+    width: Platform.select({ ios: 24, android: 22, default: 24 }),
+    height: Platform.select({ ios: 24, android: 22, default: 24 }),
+    borderRadius: Platform.select({ ios: 12, android: 11, default: 12 }),
+    marginRight: Platform.select({ ios: 8, android: 6, default: 8 }),
   },
   avatarPlaceholder: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: '#667eea',
+    width: Platform.select({ ios: 24, android: 22, default: 24 }),
+    height: Platform.select({ ios: 24, android: 22, default: 24 }),
+    borderRadius: Platform.select({ ios: 12, android: 11, default: 12 }),
+    backgroundColor: ultra.accent,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 8,
+    marginRight: Platform.select({ ios: 8, android: 6, default: 8 }),
   },
   sellerName: {
-    fontSize: 12,
-    color: '#8E8E93',
+    fontSize: Platform.select({ ios: 12, android: 11, default: 12 }),
+    color: ultra.textSecondary,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
-  actions: {
-    justifyContent: 'center',
-    paddingRight: 16,
+  favoriteButton: {
+    position: 'absolute',
+    top: Platform.select({ ios: 12, android: 10, default: 12 }),
+    right: Platform.select({ ios: 12, android: 10, default: 12 }),
+    backgroundColor: ultra.background + 'E6',
+    padding: Platform.select({ ios: 8, android: 7, default: 8 }),
+    borderRadius: Platform.select({ ios: 20, android: 18, default: 20 }),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.2,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
 });
 

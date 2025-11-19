@@ -5,6 +5,8 @@ import feedReducer from './slices/feedSlice';
 import authReducer from './slices/authSlice';
 import videoReducer from './slices/videoSlice';
 import offlineReducer from './slices/offlineSlice';
+import chatReducer from './slices/chatSlice';
+import listingsReducer from './slices/listingsSlice';
 
 export const store = configureStore({
   reducer: {
@@ -13,6 +15,8 @@ export const store = configureStore({
     auth: authReducer,
     video: videoReducer,
     offline: offlineReducer,
+    chat: chatReducer,
+    listings: listingsReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({
@@ -30,3 +34,6 @@ setupListeners(store.dispatch);
 
 export type RootState = ReturnType<typeof store.getState>;
 export type AppDispatch = typeof store.dispatch;
+
+// Экспортируем типизированные хуки
+export * from './hooks';

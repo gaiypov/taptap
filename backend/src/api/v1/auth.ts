@@ -1,243 +1,219 @@
-// ============================================
-// 360⁰ Marketplace - Authentication API
-// Production Ready for Kyrgyzstan Launch
-// ============================================
+// SMS Auth API — Production Ready Kyrgyzstan 2025
+// Защита от спама • Rate limiting • Безопасная валидация • RLS-ready
 
-import { Router } from 'express';
-import jwt from 'jsonwebtoken';
-import { asyncHandler, auditLog, CustomError } from '../middleware/errorHandler';
-import { authLimiter } from '../middleware/rateLimit';
-import { requestSmsCodeSchema, validateBody, verifySmsCodeSchema } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import express from 'express';
+import { z } from 'zod';
+import { asyncHandler, BadRequestError } from '../../middleware/errorHandler';
+import { authenticateToken } from '../../middleware/auth'; // если нужно для каких-то роутов
+import { requestSmsCode, verifySmsCode, VERIFICATION_CODE_LENGTH } from '../../../services/authService';
+import { getSmsStatus } from '../../../services/smsService';
+import { defaultLimiter, createRateLimiter } from '../../middleware/rateLimit';
+import { appLogger } from '../../utils/logger';
 
-const router = Router();
-
-// Ensure JWT_SECRET is set
-if (!process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required for production');
-}
-
-const JWT_SECRET = process.env.JWT_SECRET;
+const router = express.Router();
 
 // ============================================
-// REQUEST SMS CODE
+// Глобальные схемы валидации
 // ============================================
 
-router.post('/request-code', 
-  authLimiter,
-  validateBody(requestSmsCodeSchema),
-  asyncHandler(async (req, res) => {
-    const { phone } = req.body;
+const phoneSchema = z.string()
+  .min(9, 'Номер слишком короткий')
+  .max(15, 'Номер слишком длинный')
+  .regex(/^996\d{9}$/, 'Номер должен быть в формате 996XXXXXXXXX (без + и пробелов)');
 
-    // Check if user already exists
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id, phone')
-      .eq('phone', phone)
-      .single();
+const requestCodeSchema = z.object({
+  phone: phoneSchema,
+});
 
-    // Generate verification code
-    const { data: code } = await supabase
-      .rpc('create_verification_code', { p_phone: phone });
+const verifyCodeSchema = z.object({
+  phone: phoneSchema,
+  code: z.string().length(VERIFICATION_CODE_LENGTH, `Код должен быть из ${VERIFICATION_CODE_LENGTH} цифр`),
+});
 
-    if (!code) {
-      throw new CustomError('Failed to generate verification code', 500, 'CODE_GENERATION_FAILED');
-    }
+// ============================================
+// Статус SMS-провайдера
+// ============================================
 
-    // TODO: Send SMS via external service
-    // For now, log the code (remove in production)
-    console.log(`SMS Code for ${phone}: ${code}`);
+router.get('/sms-status', (_req, res) => {
+  res.json({
+    success: true,
+    data: {
+      status: getSmsStatus(),
+      codeLength: VERIFICATION_CODE_LENGTH,
+    },
+  });
+});
 
-    auditLog(null, 'sms_code_requested', 'verification_code', phone);
+// ============================================
+// Жёсткий rate-limiter на запрос кода
+// 3 запроса в минуту с одного IP + 10 в час на один номер
+// ============================================
 
-    res.json({
-      success: true,
-      data: {
-        phone,
-        message: 'Verification code sent successfully'
-      }
-    });
-  })
+const requestCodeLimiter = createRateLimiter(
+  60_000,     // 1 минута
+  3,          // максимум 3 запроса
+  'Слишком много попыток. Подождите 1 минуту',
+  (req) => `reqcode_ip:${req.ip}`
+);
+
+const phoneDailyLimiter = createRateLimiter(
+  60 * 60 * 1000, // 1 час
+  10,
+  'Слишком много SMS на этот номер. Попробуйте позже',
+  (req) => {
+    const phone = (req.body as any)?.phone;
+    return phone ? `reqcode_phone:${phone}` : req.ip;
+  }
 );
 
 // ============================================
-// VERIFY SMS CODE
+// POST /request-code
 // ============================================
 
-router.post('/verify-code',
-  authLimiter,
-  validateBody(verifySmsCodeSchema),
-  asyncHandler(async (req, res) => {
-    const { phone, code, name, age, consent_offer_agreement, consent_personal_data_processing } = req.body;
-
-    // Verify SMS code
-    const { data: isValid } = await supabase
-      .rpc('verify_sms_code', { p_phone: phone, p_code: code });
-
-    if (!isValid) {
-      throw new CustomError('Invalid verification code', 400, 'INVALID_CODE');
+router.post(
+  '/request-code',
+  requestCodeLimiter,
+  phoneDailyLimiter,
+  asyncHandler(async (req: express.Request, res: express.Response) => {
+    const parseResult = requestCodeSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      appLogger.warn('Invalid phone format', { ip: req.ip, body: req.body });
+      throw new BadRequestError('Неверный формат номера телефона');
     }
 
-    // Check if user exists
-    const { data: existingUser } = await supabase
-      .from('users')
-      .select('id, phone, name, age')
-      .eq('phone', phone)
-      .single();
+    const { phone } = parseResult.data;
 
-    let userId: string;
-    let isNewUser = false;
+    // Нормализуем номер (на всякий случай)
+    const normalizedPhone = phone.replace(/\D/g, '').replace(/^8/, '996');
 
-    if (existingUser) {
-      // Update existing user
-      userId = existingUser.id;
-      const { error } = await supabase
-        .from('users')
-        .update({ name, age, updated_at: new Date().toISOString() })
-        .eq('id', userId);
+    appLogger.info('SMS code requested', { phone: normalizedPhone, ip: req.ip });
 
-      if (error) {
-        throw new CustomError('Failed to update user', 500, 'USER_UPDATE_FAILED', true, error);
-      }
-    } else {
-      // Create new user
-      const { data: newUser, error } = await supabase
-        .from('users')
-        .insert({
-          phone,
-          name,
-          age
-        })
-        .select('id')
-        .single();
+    const result = await requestSmsCode(normalizedPhone);
 
-      if (error) {
-        throw new CustomError('Failed to create user', 500, 'USER_CREATION_FAILED', true, error);
+    if (!result.success) {
+      appLogger.warn('SMS request failed', { phone: normalizedPhone, error: result.error });
+
+      // В development даже при ошибке возвращаем testCode если есть
+      if (process.env.NODE_ENV === 'development' && result.testCode) {
+        return res.json({
+          success: true,
+          data: {
+            warning: result.warning || 'SMS провайдер не настроен, используйте testCode',
+            testCode: result.testCode,
+          },
+        });
       }
 
-      userId = newUser.id;
-      isNewUser = true;
-    }
-
-    // Grant consents
-    await supabase.rpc('grant_user_consent', {
-      p_user_id: userId,
-      p_consent_type: 'offer_agreement',
-      p_ip_address: req.ip,
-      p_user_agent: req.get('User-Agent'),
-      p_version: '1.0'
-    });
-
-    await supabase.rpc('grant_user_consent', {
-      p_user_id: userId,
-      p_consent_type: 'personal_data_processing',
-      p_ip_address: req.ip,
-      p_user_agent: req.get('User-Agent'),
-      p_version: '1.0'
-    });
-
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        userId,
-        role: 'user',
-        phone
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    auditLog(userId, 'user_authenticated', 'user', userId, { isNewUser });
-
-    res.json({
-      success: true,
-      data: {
-        token,
-        user: {
-          id: userId,
-          phone,
-          name,
-          age,
-          isNewUser
-        }
-      }
-    });
-  })
-);
-
-// ============================================
-// REFRESH TOKEN
-// ============================================
-
-router.post('/refresh',
-  asyncHandler(async (req, res) => {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
-
-    if (!token) {
-      throw new CustomError('Refresh token required', 401, 'REFRESH_TOKEN_REQUIRED');
-    }
-
-    try {
-      const decoded = jwt.verify(token, JWT_SECRET) as any;
-      
-      // Verify user still exists
-      const { data: user } = await supabase
-        .from('users')
-        .select('id, phone, name, age')
-        .eq('id', decoded.userId)
-        .single();
-
-      if (!user) {
-        throw new CustomError('User not found', 404, 'USER_NOT_FOUND');
-      }
-
-      // Generate new token
-      const newToken = jwt.sign(
-        {
-          userId: user.id,
-          role: 'user',
-          phone: user.phone
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      res.json({
-        success: true,
-        data: {
-          token: newToken,
-          user: {
-            id: user.id,
-            phone: user.phone,
-            name: user.name,
-            age: user.age
-          }
-        }
+      return res.status(429).json({
+        success: false,
+        error: result.error || 'Не удалось отправить SMS',
+        code: 'SMS_SEND_FAILED',
+        warning: result.warning,
+        retryAfter: 60,
       });
-    } catch (error) {
-      throw new CustomError('Invalid refresh token', 401, 'INVALID_REFRESH_TOKEN');
     }
+
+    // В development ВСЕГДА возвращаем testCode
+    const responseData: any = {
+      warning: result.warning,
+    };
+    
+    if (process.env.NODE_ENV === 'development') {
+      responseData.testCode = result.testCode || '111111'; // Fallback если нет кода
+      appLogger.info('SMS code (dev)', { phone: normalizedPhone, testCode: responseData.testCode });
+    }
+
+    res.json({
+      success: true,
+      data: responseData,
+    });
   })
 );
 
 // ============================================
-// LOGOUT
+// POST /verify-code
 // ============================================
 
-router.post('/logout',
-  asyncHandler(async (req, res) => {
-    // In a stateless JWT system, logout is handled client-side
-    // by removing the token from storage
-    // We could implement a token blacklist here if needed
+// Лимитер на верификацию — 10 попыток в минуту на номер
+const verifyCodeLimiter = createRateLimiter(
+  60_000,
+  10,
+  'Слишком много попыток ввода кода',
+  (req) => `verify:${(req.body as any)?.phone || req.ip}`
+);
 
-    auditLog(req.user?.id || null, 'user_logged_out', 'user', req.user?.id || 'unknown');
+router.post(
+  '/verify-code',
+  verifyCodeLimiter,
+  asyncHandler(async (req: express.Request, res: express.Response) => {
+    const parseResult = verifyCodeSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      const errors = parseResult.error.format();
+      const errorMessages = Object.values(errors)
+        .map((e: any) => {
+          if (Array.isArray(e)) {
+            return e;
+          }
+          if (e && typeof e === 'object' && '_errors' in e) {
+            return e._errors;
+          }
+          return [];
+        })
+        .flat()
+        .filter(Boolean);
+      throw new BadRequestError('Неверные данные: ' + errorMessages.join(', '));
+    }
+
+    const { phone, code } = parseResult.data;
+    const normalizedPhone = phone.replace(/\D/g, '').replace(/^8/, '996');
+
+    appLogger.info('SMS code verification attempt', { phone: normalizedPhone, ip: req.ip });
+
+    const result = await verifySmsCode(normalizedPhone, code.trim());
+
+    if (!result.success) {
+      appLogger.warn('SMS verification failed', {
+        phone: normalizedPhone,
+        codeLength: code.length,
+        error: result.error,
+        ip: req.ip,
+      });
+
+      // Специальный код для брутфорса — чтобы фронт мог показать "заблокировано"
+      if (result.error?.includes('заблокирован')) {
+        return res.status(403).json({
+          success: false,
+          error: result.error,
+          code: 'PHONE_BLOCKED',
+        });
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: result.error || 'Неверный код',
+        code: 'INVALID_CODE',
+        attemptsLeft: result.attemptsLeft,
+      });
+    }
+
+    if (!result.user) {
+      appLogger.error('SMS verification successful but user is missing', { phone: normalizedPhone });
+      return res.status(500).json({
+        success: false,
+        error: 'Ошибка при создании пользователя',
+        code: 'USER_CREATION_FAILED',
+      });
+    }
+
+    appLogger.info('SMS verification successful', { userId: result.user.id, phone: normalizedPhone });
 
     res.json({
       success: true,
       data: {
-        message: 'Logged out successfully'
-      }
+        user: result.user,
+        token: result.token,
+        isNewUser: result.isNewUser,
+      },
     });
   })
 );

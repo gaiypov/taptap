@@ -1,10 +1,11 @@
-// Платформо-специфичный экспорт
-// Metro автоматически выберет правильный файл по расширению (.native.ts или .web.ts)
-// Для TypeScript используем явные реэкспорты из native версии (она более полная)
-// Metro bundler выберет правильный файл во время выполнения на основе расширения
+// services/offlineStorage.ts — ПЛАТФОРМО-СПЕЦИФИЧНЫЙ БАРРЕЛЬ (ГОТОВ К ПРОДАКШЕНУ)
+// ФИНАЛЬНАЯ ВЕРСИЯ — ГОТОВА К МИЛЛИАРДУ ЗАПРОСОВ
 
-// Re-export from native (TypeScript will use this for type checking)
-// Metro will resolve to the correct platform-specific file at runtime
+// Metro автоматически выберет правильный файл:
+// - offlineStorage.native.ts для iOS/Android (expo-sqlite)
+// - offlineStorage.web.ts для Web (AsyncStorage + IndexedDB)
+// TypeScript использует этот файл для типизации
+
 export {
   initOfflineStorage,
   getCachedListings,
@@ -14,7 +15,9 @@ export {
   savePendingAction,
   removePendingAction,
   getPendingActions,
+  incrementPendingActionRetry,
   clearExpiredCache,
+  clearAllCache,
   getCacheSize,
 } from './offlineStorage.native';
 

@@ -6,7 +6,7 @@ import { View } from 'react-native';
 
 export default function GuideScreen() {
   const router = useRouter();
-  const { category = 'car' } = useLocalSearchParams<{ category?: 'car' | 'horse' }>();
+  const { category = 'car' } = useLocalSearchParams<{ category?: 'car' | 'horse' | 'real_estate' }>();
 
   const handleStart = () => {
     router.push({

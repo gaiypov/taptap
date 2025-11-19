@@ -8,18 +8,7 @@ import { formatPriceWithUSD } from '@/constants/currency';
 import { Ionicons } from '@expo/vector-icons';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
-
-// Helper component for price display
-function PriceDisplay({ price }: { price: number }) {
-  const priceInfo = formatPriceWithUSD(price);
-  return (
-    <View>
-      <Text style={styles.carPrice}>{priceInfo.kgs}</Text>
-      <Text style={styles.carPriceUSD}>{priceInfo.usd}</Text>
-    </View>
-  );
-}
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { VideoView, useVideoPlayer } from '@expo/video';
 import { Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
@@ -35,6 +24,17 @@ import {
 } from 'react-native';
 
 import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
+
+// Helper component for price display
+function PriceDisplay({ price }: { price: number }) {
+  const priceInfo = formatPriceWithUSD(price);
+  return (
+    <View>
+      <Text style={styles.carPrice}>{priceInfo.kgs}</Text>
+      <Text style={styles.carPriceUSD}>{priceInfo.usd}</Text>
+    </View>
+  );
+}
 
 interface VideoFeedProps {
   initialCarId?: string;

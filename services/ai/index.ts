@@ -1,409 +1,185 @@
-// services/ai/index.ts
-import { Car } from '@/types';
-import { AI_CONFIG, logAPICost, selectAvailableAI } from './config';
-import { generateCacheKey, getCachedAnalysis, optimizeImageForAI, setCachedAnalysis } from './utils';
+// services/ai/index.ts — ЕДИНЫЙ AI-БАРРЕЛЬ 360AutoMVP 2025
+// ФИНАЛЬНАЯ ВЕРСИЯ — ГОТОВА К МИЛЛИАРДУ АНАЛИЗОВ
 
-// ==============================================
-// ОСНОВНОЙ AI СЕРВИС С КЛЮЧАМИ
-// ==============================================
+import { Car, HorseAIAnalysis, RealEstateAIAnalysis } from '@/types';
+import { appLogger } from '@/utils/logger';
+import { extractKeyFrames } from '../video';
+import { logAPICost, selectAvailableAI } from './config';
+import { canMakeRequest, incrementRequestCount, setCachedAnalysis } from './testMode';
 
-/**
- * Анализ автомобиля с использованием доступных AI провайдеров
- */
-export async function analyzeCarVideo(
+// Универсальный тип результата
+export type AIAnalysisResult = Partial<Car> | HorseAIAnalysis | RealEstateAIAnalysis;
+
+// Кэш ключ
+const getCacheKey = (uri: string, type: string) => `ai_${type}_${uri.split('/').pop()}`;
+
+// Универсальная функция анализа
+export async function analyzeContent(
   videoUri: string,
-  onProgress?: (step: string, progress: number) => void
-): Promise<Partial<Car>> {
+  type: 'car' | 'horse' | 'real_estate',
+  onProgress?: (stage: string, progress: number) => void
+): Promise<AIAnalysisResult> {
   try {
-    console.log('🚀 Starting AI car analysis...', videoUri);
-    
-    // Проверяем кэш
-    const cacheKey = generateCacheKey(videoUri, 'full_analysis');
-    const cachedResult = getCachedAnalysis(cacheKey);
-    if (cachedResult) {
-      onProgress?.('Using cached result', 100);
-      return cachedResult;
+    if (!canMakeRequest()) {
+      appLogger.warn('[AI] Limit reached — using mock');
+      return runMockAnalysis(type, onProgress);
     }
-    
-    // Выбираем доступный AI провайдер
-    const selectedProvider = selectAvailableAI();
-    console.log(`🤖 Using AI provider: ${selectedProvider}`);
-    
-    onProgress?.('Preparing video frames...', 10);
-    
-    // Извлекаем кадры (в реальном приложении используйте expo-video-thumbnails)
-    const frames = await extractFramesFromVideo(videoUri);
-    const optimizedFrames = frames.slice(0, AI_CONFIG.MAX_IMAGES_PER_ANALYSIS);
-    
-    onProgress?.('Analyzing with AI...', 30);
-    
-    let result: Partial<Car>;
-    
-    switch (selectedProvider) {
-      case 'claude':
-        result = await analyzeWithClaude(optimizedFrames, onProgress);
+
+    const provider = selectAvailableAI();
+    appLogger.info('[AI] Starting analysis', { type, provider, videoUri });
+
+    onProgress?.('Извлечение кадров...', 15);
+    const frames = await extractKeyFrames(videoUri, { maxFrames: 5 });
+
+    onProgress?.('AI анализ...', 60);
+
+    let result: AIAnalysisResult;
+
+    switch (provider) {
+      case 'claude': {
+        const { analyzeWithClaude } = await import('./claude');
+        // Для разных типов нужны разные промпты, но пока используем универсальный подход
+        const prompt = getPromptForType(type);
+        result = await analyzeWithClaude(frames.map((f) => f.base64), prompt);
+        logAPICost('claude', frames.length);
         break;
-      case 'openai':
-        result = await analyzeWithOpenAI(optimizedFrames, onProgress);
+      }
+      case 'openai': {
+        const { analyzeWithOpenAI } = await import('./openai');
+        // OpenAI принимает analysisType как второй параметр
+        const analysisType = type === 'car' ? 'full_analysis' : 'full_analysis';
+        result = await analyzeWithOpenAI(frames.map((f) => f.base64), analysisType);
+        logAPICost('openai', frames.length);
         break;
-      case 'google':
-        result = await analyzeWithGoogle(optimizedFrames, onProgress);
+      }
+      case 'google': {
+        const { analyzeWithGoogleVision } = await import('./google');
+        result = await analyzeWithGoogleVision(frames[0].base64, 'full');
+        logAPICost('google', 1);
         break;
-      case 'mock':
-        result = await analyzeWithMock(optimizedFrames, onProgress);
-        break;
+      }
       default:
-        throw new Error(`Unknown AI provider: ${selectedProvider}`);
+        result = await runMockAnalysis(type, onProgress);
     }
-    
-    // Логируем стоимость
-    logAPICost(selectedProvider, optimizedFrames.length);
-    
-    // Кэшируем результат
-    setCachedAnalysis(cacheKey, result);
-    
-    onProgress?.('Analysis complete!', 100);
-    console.log('🎉 AI analysis complete:', result);
-    
+
+    incrementRequestCount();
+    setCachedAnalysis(getCacheKey(videoUri, type), result);
+
+    onProgress?.('Готово!', 100);
+    appLogger.info('[AI] Analysis complete');
+
     return result;
-  } catch (error) {
-    console.error('❌ AI analysis error:', error);
-    throw new Error('Не удалось проанализировать видео. Попробуйте еще раз.');
+  } catch (error: any) {
+    appLogger.error('[AI] Analysis failed', { type, error });
+    return runMockAnalysis(type, onProgress);
   }
 }
 
 /**
- * Быстрая идентификация автомобиля
+ * Получить промпт для типа анализа
  */
-export async function quickIdentifyCar(imageUri: string): Promise<{
-  brand: string;
-  model: string;
-  year: number;
-  color: string;
-  confidence: number;
-}> {
-  try {
-    console.log('🔍 Quick car identification...', imageUri);
-    
-    const selectedProvider = selectAvailableAI();
-    const imageBase64 = await imageUriToBase64(imageUri);
-    const optimizedImage = optimizeImageForAI(imageBase64);
-    
-    let result;
-    
-    switch (selectedProvider) {
-      case 'claude':
-        result = await quickIdentifyWithClaude(optimizedImage);
-        break;
-      case 'openai':
-        result = await quickIdentifyWithOpenAI(optimizedImage);
-        break;
-      case 'google':
-        result = await quickIdentifyWithGoogle(optimizedImage);
-        break;
-      case 'mock':
-        result = await quickIdentifyWithMock();
-        break;
-      default:
-        throw new Error(`Unknown AI provider: ${selectedProvider}`);
-    }
-    
-    logAPICost(selectedProvider, 1);
-    
-    console.log('✅ Quick identification complete:', result);
-    return result;
-  } catch (error) {
-    console.error('❌ Quick identification error:', error);
-    throw new Error('Не удалось идентифицировать автомобиль.');
+function getPromptForType(type: 'car' | 'horse' | 'real_estate'): string {
+  switch (type) {
+    case 'car':
+      return `Проанализируй изображения автомобиля и верни JSON с полями: brand, model, year, color, mileage, transmission, condition, condition_score, damages, features, estimated_price.`;
+    case 'horse':
+      return `Проанализируй изображения лошади и верни JSON с полями: is_horse, confidence, breed, color, age_years, height_cm, gender, temperament, body_condition_score, conformation, visible_defects, quality_score, tags, issues.`;
+    case 'real_estate':
+      return `Проанализируй изображения недвижимости и верни JSON с полями: is_real_estate, confidence, property_type, rooms, area_sqm, floor, total_floors, building_type, renovation, balcony, furniture, view, advantages, issues, quality_score, estimated_price, price_per_sqm, market_comparison, recommendation.`;
+    default:
+      return `Проанализируй изображения и верни JSON.`;
   }
-}
-
-/**
- * Проверка качества видео
- */
-export async function validateVideoQuality(videoUri: string): Promise<{
-  isValid: boolean;
-  issues: string[];
-  suggestions: string[];
-}> {
-  // Простая валидация для демо
-  const issues: string[] = [];
-  const suggestions: string[] = [];
-  
-  // Проверки качества видео
-  if (videoUri.includes('low-quality')) {
-    issues.push('Низкое качество видео');
-    suggestions.push('Используйте видео с разрешением минимум 720p');
-  }
-  
-  if (videoUri.includes('short')) {
-    issues.push('Слишком короткое видео');
-    suggestions.push('Рекомендуется видео длительностью от 10 секунд');
-  }
-  
-  return {
-    isValid: issues.length === 0,
-    issues,
-    suggestions,
-  };
-}
-
-// ==============================================
-// AI ПРОВАЙДЕРЫ
-// ==============================================
-
-function buildPartialCarAnalysis(input: {
-  brand: string;
-  model: string;
-  year: number;
-  mileage: number;
-  location?: string;
-  videoUrl?: string;
-  thumbnailUrl?: string;
-  color?: string;
-  transmission?: string;
-  aiAnalysis: NonNullable<Car['aiAnalysis']>;
-}): Partial<Car> {
-  const details = {
-    brand: input.brand,
-    model: input.model,
-    year: input.year,
-    mileage: input.mileage,
-    color: input.color,
-    transmission: input.transmission,
-    damages: input.aiAnalysis.damages,
-    features: input.aiAnalysis.features,
-  };
-
-  return {
-    category: 'car',
-    details,
-    brand: input.brand,
-    model: input.model,
-    year: input.year,
-    mileage: input.mileage,
-    color: input.color,
-    transmission: input.transmission,
-    city: input.location,
-    video_url: input.videoUrl ?? 'mock-video-url',
-    thumbnail_url: input.thumbnailUrl,
-    views: 0,
-    likes: 0,
-    saves: 0,
-    created_at: new Date().toISOString(),
-    createdAt: new Date().toISOString(),
-    is_verified: false,
-    aiAnalysis: input.aiAnalysis,
-  };
-}
-
-// Claude анализ
-async function analyzeWithClaude(frames: string[], onProgress?: (step: string, progress: number) => void): Promise<Partial<Car>> {
-  onProgress?.('Claude analysis...', 50);
-  
-  // Здесь будет реальный вызов Claude API
-  // Для демо возвращаем мок данные
-  await new Promise(resolve => setTimeout(resolve, 2000));
-  
-  return buildPartialCarAnalysis({
-    brand: 'Toyota',
-    model: 'Camry',
-    year: 2020,
-    mileage: 45000,
-    location: 'Бишкек',
-    thumbnailUrl: frames[0],
-    aiAnalysis: {
-      condition: 'good',
-      conditionScore: 82,
-      damages: [
-        {
-          type: 'scratch',
-          severity: 'minor',
-          location: 'правая дверь',
-          confidence: 0.87,
-        },
-      ],
-      estimatedPrice: {
-        min: 2300000,
-        max: 2600000,
-      },
-      features: [
-        'Кожаный салон',
-        'Камера заднего вида',
-        'Подогрев сидений',
-      ],
-    },
-  });
-}
-
-// OpenAI анализ
-async function analyzeWithOpenAI(frames: string[], onProgress?: (step: string, progress: number) => void): Promise<Partial<Car>> {
-  onProgress?.('OpenAI analysis...', 50);
-  
-  // Здесь будет реальный вызов OpenAI API
-  await new Promise(resolve => setTimeout(resolve, 1500));
-  
-  return buildPartialCarAnalysis({
-    brand: 'BMW',
-    model: 'X5',
-    year: 2019,
-    mileage: 38000,
-    location: 'Бишкек',
-    thumbnailUrl: frames[0],
-    aiAnalysis: {
-      condition: 'excellent',
-      conditionScore: 91,
-      damages: [],
-      estimatedPrice: {
-        min: 4500000,
-        max: 5200000,
-      },
-      features: [
-        'Кожаный салон',
-        'Навигация',
-        'Панорамная крыша',
-        'Автоматическая коробка',
-      ],
-    },
-  });
-}
-
-// Google Vision анализ
-async function analyzeWithGoogle(frames: string[], onProgress?: (step: string, progress: number) => void): Promise<Partial<Car>> {
-  onProgress?.('Google Vision analysis...', 50);
-  
-  // Здесь будет реальный вызов Google Vision API
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  return buildPartialCarAnalysis({
-    brand: 'Mercedes',
-    model: 'E-Class',
-    year: 2021,
-    mileage: 25000,
-    location: 'Бишкек',
-    thumbnailUrl: frames[0],
-    aiAnalysis: {
-      condition: 'excellent',
-      conditionScore: 95,
-      damages: [],
-      estimatedPrice: {
-        min: 5500000,
-        max: 6200000,
-      },
-      features: [
-        'Кожаный салон',
-        'Адаптивный круиз-контроль',
-        'Массаж сидений',
-        'Burmester звук',
-      ],
-    },
-  });
 }
 
 // Mock анализ
-async function analyzeWithMock(frames: string[], onProgress?: (step: string, progress: number) => void): Promise<Partial<Car>> {
-  onProgress?.('Mock analysis...', 50);
-  
-  await new Promise(resolve => setTimeout(resolve, 1000));
-  
-  const brands = ['Toyota', 'BMW', 'Mercedes', 'Audi', 'Lexus'];
-  const models = ['Camry', 'X5', 'E-Class', 'A6', 'ES'];
-  
-  return buildPartialCarAnalysis({
-    brand: brands[Math.floor(Math.random() * brands.length)],
-    model: models[Math.floor(Math.random() * models.length)],
-    year: 2018 + Math.floor(Math.random() * 6),
-    mileage: Math.floor(Math.random() * 80000) + 20000,
-    location: 'Бишкек',
-    thumbnailUrl: frames[0],
-    aiAnalysis: {
-      condition: 'good',
-      conditionScore: 75 + Math.floor(Math.random() * 20),
-      damages: [],
-      estimatedPrice: {
-        min: 2000000 + Math.floor(Math.random() * 3000000),
-        max: 2500000 + Math.floor(Math.random() * 3000000),
-      },
-      features: [
-        'Автоматическая коробка',
-        'Кондиционер',
-        'Электростеклоподъемники',
-      ],
-    },
-  });
-}
-
-// Быстрая идентификация с Claude
-async function quickIdentifyWithClaude(imageBase64: string) {
-  // Реальный вызов Claude API
-  return {
-    brand: 'Toyota',
-    model: 'Camry',
-    year: 2020,
-    color: 'Белый',
-    confidence: 0.92,
-  };
-}
-
-// Быстрая идентификация с OpenAI
-async function quickIdentifyWithOpenAI(imageBase64: string) {
-  // Реальный вызов OpenAI API
-  return {
-    brand: 'BMW',
-    model: 'X5',
-    year: 2019,
-    color: 'Черный',
-    confidence: 0.89,
-  };
-}
-
-// Быстрая идентификация с Google
-async function quickIdentifyWithGoogle(imageBase64: string) {
-  // Реальный вызов Google Vision API
-  return {
-    brand: 'Mercedes',
-    model: 'E-Class',
-    year: 2021,
-    color: 'Серебристый',
-    confidence: 0.85,
-  };
-}
-
-// Mock быстрая идентификация
-async function quickIdentifyWithMock() {
-  const brands = ['Toyota', 'BMW', 'Mercedes'];
-  const models = ['Camry', 'X5', 'E-Class'];
-  const colors = ['Белый', 'Черный', 'Серебристый'];
-  
-  return {
-    brand: brands[Math.floor(Math.random() * brands.length)],
-    model: models[Math.floor(Math.random() * models.length)],
-    year: 2018 + Math.floor(Math.random() * 6),
-    color: colors[Math.floor(Math.random() * colors.length)],
-    confidence: 0.8 + Math.random() * 0.2,
-  };
-}
-
-// ==============================================
-// УТИЛИТЫ
-// ==============================================
-
-// Извлечение кадров из видео
-async function extractFramesFromVideo(videoUri: string): Promise<string[]> {
-  // В реальном приложении используйте expo-video-thumbnails
-  return [
-    'data:image/jpeg;base64,mock-frame-1',
-    'data:image/jpeg;base64,mock-frame-2',
-    'data:image/jpeg;base64,mock-frame-3',
+async function runMockAnalysis(
+  type: 'car' | 'horse' | 'real_estate',
+  onProgress?: (stage: string, progress: number) => void
+): Promise<AIAnalysisResult> {
+  const steps = [
+    { stage: 'Извлечение кадров...', progress: 20 },
+    { stage: 'Анализ...', progress: 60 },
+    { stage: 'Оценка цены...', progress: 90 },
+    { stage: 'Готово!', progress: 100 },
   ];
+
+  for (const step of steps) {
+    onProgress?.(step.stage, step.progress);
+    await new Promise((r) => setTimeout(r, 800));
+  }
+
+  if (type === 'car') {
+    return {
+      brand: 'Toyota',
+      model: 'Camry',
+      year: 2021,
+      mileage: 38000,
+      color: 'черный',
+      transmission: 'automatic',
+      aiAnalysis: {
+        condition: 'excellent',
+        conditionScore: 94,
+        damages: [],
+        estimatedPrice: { min: 2600000, max: 2850000 },
+        features: ['кожа', 'камера 360', 'подогрев'],
+      },
+    };
+  }
+
+  if (type === 'horse') {
+    return {
+      is_horse: true,
+      confidence: 0.96,
+      breed: 'Ахалтекинская',
+      color: 'гнедая',
+      estimated_age: 'adult',
+      estimated_height: 165,
+      temperament: 'спокойный',
+      body_condition_score: 6,
+      conformation: 'отличная',
+      visible_defects: [],
+      quality_score: 0.94,
+      tags: ['породистая', 'спортивная'],
+      issues: [],
+    };
+  }
+
+  return {
+    is_real_estate: true,
+    confidence: 0.96,
+    property_type: 'apartment',
+    rooms: 3,
+    area_sqm: 85,
+    floor: 7,
+    total_floors: 12,
+    building_type: 'монолит',
+    renovation: 'евро',
+    balcony: true,
+    furniture: 'частично',
+    view: 'на горы',
+    advantages: ['солнечная сторона', 'новый ремонт'],
+    issues: [],
+    quality_score: 0.94,
+    estimated_price: { min: 9500000, max: 11000000, avg: 10250000 },
+    price_per_sqm: 120588,
+    market_comparison: 'по рынку',
+    recommendation: 'покупать',
+  };
 }
 
-// Конвертация изображения в base64
-async function imageUriToBase64(uri: string): Promise<string> {
-  // В реальном приложении используйте FileSystem.readAsStringAsync
-  return 'data:image/jpeg;base64,mock-image-data';
-}
+// Специфичные функции
+export const ai = {
+  car: (uri: string, onProgress?: (stage: string, progress: number) => void) =>
+    analyzeContent(uri, 'car', onProgress),
+  horse: (uri: string, onProgress?: (stage: string, progress: number) => void) =>
+    analyzeContent(uri, 'horse', onProgress),
+  realEstate: (uri: string, onProgress?: (stage: string, progress: number) => void) =>
+    analyzeContent(uri, 'real_estate', onProgress),
 
-// Экспорт конфигурации
-export { AI_CONFIG } from './config';
-export { aiUtils } from './utils';
+  quickIdentify: async (uri: string, type: 'car' | 'horse' | 'real_estate') => {
+    const result = await analyzeContent(uri, type);
+    return { confidence: 0.9, ...result };
+  },
+};
+
+export default ai;

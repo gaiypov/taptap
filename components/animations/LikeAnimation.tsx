@@ -1,192 +1,266 @@
+import { ultra } from '@/lib/theme/ultra';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, Text, Easing } from 'react-native';
+import { Animated, Easing, StyleSheet, View } from 'react-native';
 
 type LikeAnimationProps = {
   category: 'car' | 'horse' | 'real_estate';
   onFinish?: () => void;
 };
 
-export const LikeAnimation: React.FC<LikeAnimationProps> = ({ category, onFinish }) => {
-  const translateY = useRef(new Animated.Value(0)).current;
-  const opacity = useRef(new Animated.Value(1)).current;
-  const translateX = useRef(new Animated.Value(0)).current;
-  const scale = useRef(new Animated.Value(1)).current;
-  const rotation = useRef(new Animated.Value(0)).current;
+// Цвета Revolut Ultra
+const ULTRA_PLATINUM = '#E0E0E0';
+const ULTRA_GLOW = '#FFFFFF';
+const PARTICLE_COLOR = '#C0C0C0';
 
-  const getEmoji = () => {
+export const LikeAnimation: React.FC<LikeAnimationProps> = ({ category, onFinish }) => {
+  // Основные анимации
+  const scale = useRef(new Animated.Value(0)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(0)).current;
+  const rotate = useRef(new Animated.Value(0)).current;
+  
+  // Частицы (искры)
+  const particles = Array.from({ length: 8 }).map(() => ({
+    x: useRef(new Animated.Value(0)).current,
+    y: useRef(new Animated.Value(0)).current,
+    scale: useRef(new Animated.Value(0)).current,
+    opacity: useRef(new Animated.Value(0)).current,
+  }));
+
+  useEffect(() => {
+    // 1. Появление (Pop in)
+    Animated.parallel([
+      Animated.spring(scale, {
+        toValue: 1.5,
+        friction: 5,
+        tension: 40,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 200,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    // 2. Тематическая анимация
+    let mainAnimation: Animated.CompositeAnimation;
+
+    if (category === 'car') {
+      // Машина: "газует" и уезжает
+      mainAnimation = Animated.sequence([
+        // Дрожание (прогрев)
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(rotate, { toValue: -0.05, duration: 50, useNativeDriver: true }),
+            Animated.timing(rotate, { toValue: 0.05, duration: 50, useNativeDriver: true }),
+          ]),
+          { iterations: 4 }
+        ),
+        // Резкий старт вправо-вверх
+        Animated.parallel([
+          Animated.timing(translateY, {
+            toValue: -100,
+            duration: 400,
+            easing: Easing.back(2),
+            useNativeDriver: true,
+          }),
+          Animated.timing(scale, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.timing(rotate, {
+            toValue: -0.2, // наклон вперед при разгоне
+            duration: 400,
+            useNativeDriver: true,
+          })
+        ])
+      ]);
+    } else if (category === 'horse') {
+      // Лошадь: встает на дыбы и скачет
+      mainAnimation = Animated.sequence([
+        // На дыбы
+        Animated.timing(rotate, {
+          toValue: -0.3,
+          duration: 300,
+          easing: Easing.out(Easing.back(1.5)),
+          useNativeDriver: true,
+        }),
+        // Прыжок вперед
+        Animated.parallel([
+          Animated.timing(translateY, {
+            toValue: -150,
+            duration: 500,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }),
+          Animated.timing(scale, {
+            toValue: 0,
+            duration: 500,
+            useNativeDriver: true,
+          }),
+          Animated.timing(rotate, {
+            toValue: 0.2,
+            duration: 500,
+            useNativeDriver: true,
+          })
+        ])
+      ]);
+    } else {
+      // Недвижимость: подпрыгивает и "пульсирует" уютом
+      mainAnimation = Animated.sequence([
+        Animated.spring(scale, {
+          toValue: 1.8,
+          friction: 3,
+          useNativeDriver: true,
+        }),
+        Animated.parallel([
+          Animated.timing(translateY, {
+            toValue: -100,
+            duration: 600,
+            useNativeDriver: true,
+          }),
+          Animated.timing(opacity, {
+            toValue: 0,
+            duration: 600,
+            useNativeDriver: true,
+          })
+        ])
+      ]);
+    }
+
+    // Анимация частиц (салют)
+    const particleAnimations = particles.map((p, i) => {
+      const angle = (i * 2 * Math.PI) / particles.length;
+      const distance = 80; // Чуть шире разлет
+      
+      return Animated.parallel([
+        Animated.timing(p.x, {
+          toValue: Math.cos(angle) * distance,
+          duration: 700,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(p.y, {
+          toValue: Math.sin(angle) * distance,
+          duration: 700,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.sequence([
+          Animated.timing(p.scale, { toValue: 1.5, duration: 200, useNativeDriver: true }),
+          Animated.timing(p.scale, { toValue: 0, duration: 500, useNativeDriver: true }),
+        ]),
+        Animated.sequence([
+          Animated.timing(p.opacity, { toValue: 0.8, duration: 100, useNativeDriver: true }),
+          Animated.timing(p.opacity, { toValue: 0, duration: 600, useNativeDriver: true }),
+        ])
+      ]);
+    });
+
+    // Запуск всей последовательности
+    setTimeout(() => {
+      Animated.parallel([
+        mainAnimation,
+        ...particleAnimations
+      ]).start(() => {
+        onFinish && onFinish();
+      });
+    }, 200); // Небольшая задержка после появления
+
+  }, []);
+
+  const getIcon = () => {
     switch (category) {
       case 'car':
-        return '🚗';
+        return <Ionicons name="car-sport" size={80} color={ULTRA_PLATINUM} style={styles.iconShadow} />;
       case 'horse':
-        return '🐎';
+        return <MaterialCommunityIcons name="horse" size={80} color={ULTRA_PLATINUM} style={styles.iconShadow} />;
       case 'real_estate':
-        return '🏠';
+        return <Ionicons name="home" size={80} color={ULTRA_PLATINUM} style={styles.iconShadow} />;
       default:
-        return '❤️';
+        return <Ionicons name="heart" size={80} color={ULTRA_PLATINUM} style={styles.iconShadow} />;
     }
   };
 
-  useEffect(() => {
-    let animation: Animated.CompositeAnimation;
-
-    if (category === 'car') {
-      // Машина едет вверх с легким покачиванием
-      animation = Animated.parallel([
-        Animated.timing(translateY, {
-          toValue: -300,
-          duration: 1200,
-          easing: Easing.out(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 1200,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.sequence([
-          Animated.timing(rotation, {
-            toValue: -0.15,
-            duration: 150,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotation, {
-            toValue: 0.15,
-            duration: 300,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-          Animated.timing(rotation, {
-            toValue: 0,
-            duration: 150,
-            easing: Easing.inOut(Easing.ease),
-            useNativeDriver: true,
-          }),
-        ]),
-      ]);
-    } else if (category === 'horse') {
-      // Лошадь бежит вправо с прыжком
-      animation = Animated.parallel([
-        Animated.sequence([
-          Animated.timing(translateY, {
-            toValue: -80,
-            duration: 200,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(translateY, {
-            toValue: -40,
-            duration: 300,
-            easing: Easing.in(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.timing(translateY, {
-            toValue: 0,
-            duration: 200,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.timing(translateX, {
-          toValue: 400,
-          duration: 1000,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 1000,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(scale, {
-          toValue: 0.6,
-          duration: 1000,
-          easing: Easing.in(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]);
-    } else {
-      // Недвижимость появляется из сердца и увеличивается
-      animation = Animated.parallel([
-        Animated.sequence([
-          Animated.timing(scale, {
-            toValue: 0.3,
-            duration: 100,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-          Animated.spring(scale, {
-            toValue: 1.5,
-            tension: 50,
-            friction: 4,
-            useNativeDriver: true,
-          }),
-          Animated.timing(scale, {
-            toValue: 1.2,
-            duration: 200,
-            easing: Easing.out(Easing.quad),
-            useNativeDriver: true,
-          }),
-        ]),
-        Animated.timing(translateY, {
-          toValue: -150,
-          duration: 1200,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: 1200,
-          delay: 400,
-          easing: Easing.out(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ]);
-    }
-
-    animation.start(() => {
-      onFinish && onFinish();
-    });
-  }, [category, onFinish]);
-
-  const spin = rotation.interpolate({
-    inputRange: [-1, 0, 1],
-    outputRange: ['-15deg', '0deg', '15deg'],
+  // Интерполяция поворота
+  const spin = rotate.interpolate({
+    inputRange: [-1, 1],
+    outputRange: ['-45deg', '45deg'],
   });
 
   return (
-    <Animated.View
-      style={[
-        styles.container,
-        {
-          transform: [
-            { translateY },
-            { translateX },
-            { scale },
-            { rotate: category === 'car' ? spin : '0deg' },
-          ],
-          opacity,
-        },
-      ]}
-      pointerEvents="none"
-    >
-      <Text style={styles.icon}>{getEmoji()}</Text>
-    </Animated.View>
+    <View style={styles.wrapper} pointerEvents="none">
+      {/* Частицы */}
+      {particles.map((p, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.particle,
+            {
+              transform: [
+                { translateX: p.x },
+                { translateY: p.y },
+                { scale: p.scale }
+              ],
+              opacity: p.opacity,
+              backgroundColor: i % 2 === 0 ? '#FFFFFF' : '#C0C0C0' // Чередование белого и серебра
+            }
+          ]}
+        />
+      ))}
+
+      {/* Основная иконка */}
+      <Animated.View
+        style={[
+          styles.container,
+          {
+            transform: [
+              { scale },
+              { translateY },
+              { rotate: spin }
+            ],
+            opacity,
+          },
+        ]}
+      >
+        {getIcon()}
+      </Animated.View>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
-  container: {
+  wrapper: {
     position: 'absolute',
-    alignSelf: 'center',
-    top: '40%',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
     zIndex: 9999,
   },
-  icon: {
-    fontSize: 64,
-    textAlign: 'center',
+  container: {
+    justifyContent: 'center',
+    alignItems: 'center',
   },
+  iconShadow: {
+    // Эффект свечения (Glow)
+    textShadowColor: 'rgba(255, 255, 255, 0.6)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 20,
+  },
+  particle: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    shadowColor: '#FFF',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  }
 });
-

@@ -100,12 +100,13 @@ export const chatLimiter = rateLimit({
 
 export function createRateLimiter(
   windowMs: number,
-  max: number,
-  message: string
+  max: number | ((req: any) => number),
+  message: string,
+  keyGenerator?: (req: any) => string
 ) {
   return rateLimit({
     windowMs,
-    max,
+    max: typeof max === 'function' ? max : max,
     message: {
       success: false,
       error: 'RATE_LIMIT_EXCEEDED',
@@ -113,6 +114,7 @@ export function createRateLimiter(
     },
     standardHeaders: true,
     legacyHeaders: false,
+    keyGenerator,
     skip: (req) => {
       // Skip rate limiting in development
       return process.env.NODE_ENV === 'development';

@@ -244,6 +244,29 @@ export interface HorseAIAnalysis {
   reason?: string;
 }
 
+export interface RealEstateAIAnalysis {
+  is_real_estate: boolean;
+  confidence: number;
+  property_type?: 'apartment' | 'house' | 'land' | 'commercial';
+  rooms?: number | 'студия';
+  area_sqm?: number;
+  floor?: number;
+  total_floors?: number;
+  building_type?: 'кирпич' | 'панель' | 'монолит' | 'дерево';
+  renovation?: 'евро' | 'хороший' | 'средний' | 'требует ремонта' | 'черновая';
+  balcony?: boolean;
+  furniture?: 'полностью' | 'частично' | 'без мебели';
+  view?: 'на горы' | 'на двор' | 'на дорогу' | 'на парк' | 'нет вида';
+  advantages?: string[];
+  issues?: string[];
+  quality_score?: number;
+  estimated_price?: { min: number; max: number; avg: number };
+  price_per_sqm?: number;
+  market_comparison?: 'ниже рынка' | 'по рынку' | 'выше рынка';
+  recommendation?: 'покупать' | 'торговаться' | 'подождать' | 'избегать';
+  reason?: string;
+}
+
 // ------------------------------------------------------------
 // Listing aggregate
 // ------------------------------------------------------------

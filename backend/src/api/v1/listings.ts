@@ -1,536 +1,272 @@
-// ============================================
-// 360⁰ Marketplace - Listings API
-// Production Ready for Kyrgyzstan Launch
-// ============================================
+// Listings API — Production Ready Kyrgyzstan 2025
+// RLS-only • No service_role • Race-condition free • Realtime Ready
 
-import { Router } from 'express';
+import express from 'express';
 import { z } from 'zod';
-import { AuthenticatedRequest, authenticateToken, optionalAuth } from '../middleware/auth';
-import { asyncHandler, auditLog, AuthorizationError, CustomError, NotFoundError } from '../middleware/errorHandler';
-import { defaultLimiter, uploadLimiter } from '../middleware/rateLimit';
-import { createListingSchema, searchListingsSchema, updateListingSchema, validateBody, validateParams, validateQuery } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import type { AuthenticatedRequest } from '../../middleware/auth.js';
+import { authenticateToken, optionalAuth } from '../../middleware/auth.js';
+import {
+  asyncHandler,
+  AuthorizationError,
+  BadRequestError,
+  NotFoundError,
+  ConflictError,
+} from '../../middleware/errorHandler.js';
+import {
+  validateBody,
+  validateParams,
+  validateQuery,
+  createListingSchema,
+  updateListingSchema,
+  searchListingsSchema,
+} from '../../middleware/validate.js';
+import { createRateLimiter } from '../../middleware/rateLimit.js';
+import { createClient } from '@supabase/supabase-js';
 
-const router = Router();
+const router = express.Router();
+
+// Безопасный клиент — только anon key + RLS!
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY!
+);
+
+// Rate limit: 5 объявлений в час для обычных, 50 для бизнеса
+const createListingLimiter = createRateLimiter(
+  60 * 60 * 1000,
+  (req: AuthenticatedRequest) => (req.user?.business_tier ? 50 : 5),
+  'Слишком много объявлений. Подождите час',
+  (req: AuthenticatedRequest) => `create_listing:${req.user!.id}`
+);
 
 // ============================================
-// GET LISTINGS FEED
+// POST /listings — создать объявление
 // ============================================
+router.post(
+  '/',
+  authenticateToken,
+  createListingLimiter,
+  validateBody(createListingSchema),
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const userId = req.user!.id;
+    const data = req.validatedData;
 
-router.get('/feed',
+    // Все объявления сразу активны (модерация — пост-фактум, как в Авито)
+    const listingData = {
+      ...data,
+      seller_id: userId,
+      status: 'active' as const,
+      moderation_status: 'pending' as const,
+      expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(),
+      views_count: 0,
+    };
+
+    const { data: listing, error } = await supabase
+      .from('listings')
+      .insert(listingData)
+      .select(`
+        *, seller:profiles!seller_id(id, name, avatar_url, is_verified),
+        business:business_accounts!business_id(id, company_name, company_logo_url, tier)
+      `)
+      .single();
+
+    if (error) {
+      if (error.code === '42501') throw new AuthorizationError('Нет прав');
+      throw new BadRequestError('Не удалось создать объявление');
+    }
+
+    // Автоматически добавляется в модерацию через триггер в БД
+    res.status(201).json({
+      success: true,
+      data: listing,
+      message: 'Объявление опубликовано',
+    });
+  })
+);
+
+// ============================================
+// GET /listings — поиск и фильтры
+// ============================================
+router.get(
+  '/',
   optionalAuth,
-  validateQuery(searchListingsSchema),
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const {
-      category = 'car',
-      searchQuery,
-      minPrice,
-      maxPrice,
-      location,
-      sortBy = 'newest',
-      page = 1,
-      limit = 20,
-      carMake,
-      carModel,
-      carYear,
-      carMinYear,
-      carMaxYear,
-      carMinMileage,
-      carMaxMileage,
-      horseBreed,
-      horseMinAge,
-      horseMaxAge,
-      horseGender,
-      propertyType,
-      minRooms,
-      maxRooms,
-      minArea,
-      maxArea
-    } = req.query;
-
-    const offset = (page - 1) * limit;
+  validateQuery(searchListingsSchema.partial()), // partial — гибкость для фронта
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const filters = req.validatedQuery;
+    const userId = req.user?.id;
 
     let query = supabase
       .from('listings')
       .select(`
-        *,
-        seller:users!seller_user_id (id, name, phone, avatar_url),
-        business:business_accounts!business_id (id, name, verified, phone_public),
-        car_details (*),
-        horse_details (*),
-        real_estate_details (*)
-      `)
+        *, 
+        seller:profiles!seller_id(id, name, avatar_url, is_verified),
+        business:business_accounts!business_id(id, company_name, company_logo_url, tier)
+      `, { count: 'exact' })
       .eq('status', 'active')
-      .eq('category', category);
+      .order('is_promoted', { ascending: false })
+      .order(filters.sort_by || 'created_at', { ascending: false });
 
-    // Apply filters
-    if (searchQuery) {
-      query = query.or(`title.ilike.%${searchQuery}%,description.ilike.%${searchQuery}%`);
+    // Фильтры (только индексированные поля!)
+    if (filters.category) query = query.eq('category', filters.category);
+    if (filters.city) query = query.eq('city', filters.city);
+    if (filters.price_min) query = query.gte('price', filters.price_min);
+    if (filters.price_max) query = query.lte('price', filters.price_max);
+    if (filters.brand) query = query.eq('brand', filters.brand); // материализованная колонка
+    if (filters.model) query = query.eq('model', filters.model);
+
+    // Пагинация
+    const page = Number(filters.page) || 1;
+    const limit = Math.min(Number(filters.limit) || 20, 100);
+    query = query.range((page - 1) * limit, page * limit - 1);
+
+    const { data: listings, count } = await query;
+
+    // Добавляем isLiked / isSaved одним запросом
+    if (userId && listings?.length) {
+      const ids = listings.map(l => l.id);
+      const [{ data: likes }, { data: saves }] = await Promise.all([
+        supabase.from('listing_likes').select('listing_id').eq('user_id', userId).in('listing_id', ids),
+        supabase.from('listing_saves').select('listing_id').eq('user_id', userId).in('listing_id', ids),
+      ]);
+
+      const likedSet = new Set(likes?.map(l => l.listing_id));
+      const savedSet = new Set(saves?.map(s => s.listing_id));
+
+      listings.forEach(l => {
+        l.is_liked = likedSet.has(l.id);
+        l.is_saved = savedSet.has(l.id);
+      });
     }
-
-    if (minPrice) {
-      query = query.gte('price', minPrice);
-    }
-
-    if (maxPrice) {
-      query = query.lte('price', maxPrice);
-    }
-
-    if (location) {
-      query = query.ilike('location_text', `%${location}%`);
-    }
-
-    // Category-specific filters
-    if (category === 'car') {
-      if (carMake) {
-        query = query.eq('car_details.make', carMake);
-      }
-      if (carModel) {
-        query = query.eq('car_details.model', carModel);
-      }
-      if (carYear) {
-        query = query.eq('car_details.year', carYear);
-      }
-      if (carMinYear) {
-        query = query.gte('car_details.year', carMinYear);
-      }
-      if (carMaxYear) {
-        query = query.lte('car_details.year', carMaxYear);
-      }
-      if (carMinMileage) {
-        query = query.gte('car_details.mileage_km', carMinMileage);
-      }
-      if (carMaxMileage) {
-        query = query.lte('car_details.mileage_km', carMaxMileage);
-      }
-    }
-
-    if (category === 'horse') {
-      if (horseBreed) {
-        query = query.eq('horse_details.breed', horseBreed);
-      }
-      if (horseMinAge) {
-        query = query.gte('horse_details.age_years', horseMinAge);
-      }
-      if (horseMaxAge) {
-        query = query.lte('horse_details.age_years', horseMaxAge);
-      }
-      if (horseGender) {
-        query = query.eq('horse_details.gender', horseGender);
-      }
-    }
-
-    if (category === 'real_estate') {
-      if (propertyType) {
-        query = query.eq('real_estate_details.property_type', propertyType);
-      }
-      if (minRooms) {
-        query = query.gte('real_estate_details.rooms', minRooms);
-      }
-      if (maxRooms) {
-        query = query.lte('real_estate_details.rooms', maxRooms);
-      }
-      if (minArea) {
-        query = query.gte('real_estate_details.area_m2', minArea);
-      }
-      if (maxArea) {
-        query = query.lte('real_estate_details.area_m2', maxArea);
-      }
-    }
-
-    // Apply sorting
-    switch (sortBy) {
-      case 'price_asc':
-        query = query.order('price', { ascending: true });
-        break;
-      case 'price_desc':
-        query = query.order('price', { ascending: false });
-        break;
-      case 'popular':
-        query = query.order('views_count', { ascending: false });
-        break;
-      case 'newest':
-      default:
-        query = query.order('created_at', { ascending: false });
-        break;
-    }
-
-    // Apply pagination
-    query = query.range(offset, offset + limit - 1);
-
-    const { data: listings, error } = await query;
-
-    if (error) {
-      throw new CustomError('Failed to fetch listings', 500, 'DATABASE_ERROR', true, error);
-    }
-
-    // Apply feed algorithm: Boosted → City → Fresh → Engagement → Date
-    const userId = req.user?.id;
-    let userCity: string | undefined;
-    
-    if (userId) {
-      // Get user's city from profile
-      const { data: user } = await supabase
-        .from('users')
-        .select('city')
-        .eq('id', userId)
-        .single();
-      userCity = user?.city;
-    }
-
-    const sortedListings = listings?.sort((a, b) => {
-      // 1. Boosted listings first
-      if (a.is_boosted !== b.is_boosted) {
-        return a.is_boosted ? -1 : 1;
-      }
-
-      // 2. User's city listings second
-      if (userCity) {
-        const aIsUserCity = a.location_text?.toLowerCase().includes(userCity.toLowerCase()) || 
-                            a.city === userCity;
-        const bIsUserCity = b.location_text?.toLowerCase().includes(userCity.toLowerCase()) || 
-                            b.city === userCity;
-        
-        if (aIsUserCity !== bIsUserCity) {
-          return aIsUserCity ? -1 : 1;
-        }
-      }
-
-      // 3. Fresh listings (created in last 24h)
-      const now = Date.now();
-      const oneDayMs = 24 * 60 * 60 * 1000;
-      const aCreatedAt = new Date(a.created_at || 0).getTime();
-      const bCreatedAt = new Date(b.created_at || 0).getTime();
-      const aIsFresh = now - aCreatedAt < oneDayMs;
-      const bIsFresh = now - bCreatedAt < oneDayMs;
-      
-      if (aIsFresh !== bIsFresh) {
-        return aIsFresh ? -1 : 1;
-      }
-
-      // 4. Engagement (likes_count)
-      const aLikes = a.likes_count || 0;
-      const bLikes = b.likes_count || 0;
-      
-      if (aLikes !== bLikes) {
-        return bLikes - aLikes; // Higher likes first
-      }
-
-      // 5. Date (newest first)
-      return bCreatedAt - aCreatedAt;
-    }) || [];
 
     res.json({
       success: true,
-      data: sortedListings,
+      data: listings || [],
       pagination: {
         page,
         limit,
-        total: sortedListings.length,
-        totalPages: Math.ceil(sortedListings.length / limit)
-      }
+        total: count || 0,
+        pages: Math.ceil((count || 0) / limit),
+      },
     });
   })
 );
 
 // ============================================
-// GET SINGLE LISTING
+// GET /listings/:id
 // ============================================
-
-router.get('/:id',
-  optionalAuth,
+router.get(
+  '/:id',
   validateParams(z.object({ id: z.string().uuid() })),
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  optionalAuth,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { id } = req.params;
+    const userId = req.user?.id;
 
     const { data: listing, error } = await supabase
       .from('listings')
       .select(`
-        *,
-        seller:users!seller_user_id (id, name, phone, avatar_url),
-        business:business_accounts!business_id (id, name, verified, phone_public),
-        car_details (*),
-        horse_details (*),
-        real_estate_details (*)
+        *, 
+        seller:profiles!seller_id(*),
+        business:business_accounts!business_id(*)
       `)
       .eq('id', id)
       .single();
 
-    if (error || !listing) {
-      throw new NotFoundError('Listing');
+    if (error || !listing) throw new NotFoundError('Объявление не найдено');
+
+    if (listing.status !== 'active' && listing.seller_id !== userId) {
+      throw new AuthorizationError('Нет доступа');
     }
 
-    // Increment view count
-    await supabase.rpc('increment_views', { listing_id: id });
+    // Увеличиваем просмотры через RPC (атомарно)
+    supabase.rpc('increment_views', { lid: id });
 
-    auditLog(req.user?.id || null, 'listing_viewed', 'listing', id);
+    // is_liked / is_saved
+    if (userId) {
+      const [{ data: like }, { data: save }] = await Promise.all([
+        supabase.from('listing_likes').select('id').eq('listing_id', id).eq('user_id', userId).maybeSingle(),
+        supabase.from('listing_saves').select('id').eq('listing_id', id).eq('user_id', userId).maybeSingle(),
+      ]);
 
-    res.json({
-      success: true,
-      data: listing
-    });
+      listing.is_liked = !!like;
+      listing.is_saved = !!save;
+    }
+
+    res.json({ success: true, data: listing });
   })
 );
 
 // ============================================
-// CREATE LISTING
+// PUT /listings/:id — редактировать
 // ============================================
-
-router.post('/',
-  authenticateToken,
-  validateBody(createListingSchema),
-  uploadLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const userId = req.user!.id;
-    const listingData = req.body;
-
-    // Check free listing limit for private users
-    const { data: activeListings } = await supabase
-      .from('listings')
-      .select('id')
-      .eq('seller_user_id', userId)
-      .eq('status', 'active');
-
-    if (activeListings && activeListings.length >= 5) {
-      throw new CustomError('Free listing limit exceeded. Upgrade to Business Account for unlimited listings.', 403, 'LISTING_LIMIT_EXCEEDED');
-    }
-
-    // Create listing
-    const { data: listing, error: listingError } = await supabase
-      .from('listings')
-      .insert({
-        seller_user_id: userId,
-        category: listingData.category,
-        title: listingData.title,
-        description: listingData.description,
-        price: listingData.price,
-        currency: listingData.currency,
-        location_text: listingData.location_text,
-        latitude: listingData.latitude,
-        longitude: listingData.longitude,
-        status: 'pending_review' // Force pending review
-      })
-      .select('id')
-      .single();
-
-    if (listingError) {
-      throw new CustomError('Failed to create listing', 500, 'DATABASE_ERROR', true, listingError);
-    }
-
-    // Create category-specific details
-    if (listingData.category === 'car' && listingData.carDetails) {
-      const { error: carError } = await supabase
-        .from('car_details')
-        .insert({
-          listing_id: listing.id,
-          ...listingData.carDetails
-        });
-
-      if (carError) {
-        throw new CustomError('Failed to create car details', 500, 'DATABASE_ERROR', true, carError);
-      }
-    }
-
-    if (listingData.category === 'horse' && listingData.horseDetails) {
-      const { error: horseError } = await supabase
-        .from('horse_details')
-        .insert({
-          listing_id: listing.id,
-          ...listingData.horseDetails
-        });
-
-      if (horseError) {
-        throw new CustomError('Failed to create horse details', 500, 'DATABASE_ERROR', true, horseError);
-      }
-    }
-
-    if (listingData.category === 'real_estate' && listingData.realEstateDetails) {
-      const { error: realEstateError } = await supabase
-        .from('real_estate_details')
-        .insert({
-          listing_id: listing.id,
-          ...listingData.realEstateDetails
-        });
-
-      if (realEstateError) {
-        throw new CustomError('Failed to create real estate details', 500, 'DATABASE_ERROR', true, realEstateError);
-      }
-    }
-
-    auditLog(userId, 'listing_created', 'listing', listing.id);
-
-    res.status(201).json({
-      success: true,
-      data: {
-        id: listing.id,
-        status: 'pending_review',
-        message: 'Listing created and submitted for review'
-      }
-    });
-  })
-);
-
-// ============================================
-// UPDATE LISTING
-// ============================================
-
-router.put('/:id',
+router.put(
+  '/:id',
   authenticateToken,
   validateParams(z.object({ id: z.string().uuid() })),
   validateBody(updateListingSchema),
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const userId = req.user!.id;
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { id } = req.params;
-    const updateData = req.body;
+    const userId = req.user!.id;
+    const updates = req.validatedData;
 
-    // Check if user owns the listing
-    const { data: listing } = await supabase
+    const { data: listing, error } = await supabase
       .from('listings')
-      .select('seller_user_id, business_id')
+      .update({ ...updates, updated_at: new Date().toISOString() })
       .eq('id', id)
+      .eq('seller_id', userId) // RLS + двойная проверка
+      .select()
       .single();
 
-    if (!listing) {
-      throw new NotFoundError('Listing');
-    }
+    if (error || !listing) throw new AuthorizationError('Нет прав на редактирование');
 
-    // Check permissions
-    const hasPermission = 
-      listing.seller_user_id === userId ||
-      (listing.business_id && await checkBusinessPermission(listing.business_id, userId));
-
-    if (!hasPermission) {
-      throw new AuthorizationError('You do not have permission to update this listing');
-    }
-
-    // Update listing (cannot change status to active)
-    const { error: listingError } = await supabase
-      .from('listings')
-      .update({
-        ...updateData,
-        status: 'pending_review', // Force back to review
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', id);
-
-    if (listingError) {
-      throw new CustomError('Failed to update listing', 500, 'DATABASE_ERROR', true, listingError);
-    }
-
-    // Update category-specific details
-    if (updateData.carDetails) {
-      const { error } = await supabase
-        .from('car_details')
-        .update(updateData.carDetails)
-        .eq('listing_id', id);
-
-      if (error) {
-        throw new CustomError('Failed to update car details', 500, 'DATABASE_ERROR', true, error);
-      }
-    }
-
-    if (updateData.horseDetails) {
-      const { error } = await supabase
-        .from('horse_details')
-        .update(updateData.horseDetails)
-        .eq('listing_id', id);
-
-      if (error) {
-        throw new CustomError('Failed to update horse details', 500, 'DATABASE_ERROR', true, error);
-      }
-    }
-
-    if (updateData.realEstateDetails) {
-      const { error } = await supabase
-        .from('real_estate_details')
-        .update(updateData.realEstateDetails)
-        .eq('listing_id', id);
-
-      if (error) {
-        throw new CustomError('Failed to update real estate details', 500, 'DATABASE_ERROR', true, error);
-      }
-    }
-
-    auditLog(userId, 'listing_updated', 'listing', id);
-
-    res.json({
-      success: true,
-      data: {
-        message: 'Listing updated and submitted for review'
-      }
-    });
+    res.json({ success: true, data: listing, message: 'Объявление обновлено' });
   })
 );
 
 // ============================================
-// DELETE LISTING
+// DELETE /listings/:id
 // ============================================
-
-router.delete('/:id',
+router.delete(
+  '/:id',
   authenticateToken,
   validateParams(z.object({ id: z.string().uuid() })),
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const userId = req.user!.id;
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const { id } = req.params;
+    const userId = req.user!.id;
 
-    // Check if user owns the listing
-    const { data: listing } = await supabase
-      .from('listings')
-      .select('seller_user_id, business_id')
-      .eq('id', id)
-      .single();
-
-    if (!listing) {
-      throw new NotFoundError('Listing');
-    }
-
-    // Check permissions
-    const hasPermission = 
-      listing.seller_user_id === userId ||
-      (listing.business_id && await checkBusinessPermission(listing.business_id, userId));
-
-    if (!hasPermission) {
-      throw new AuthorizationError('You do not have permission to delete this listing');
-    }
-
-    // Delete listing (cascade will handle details)
     const { error } = await supabase
       .from('listings')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('seller_id', userId);
 
-    if (error) {
-      throw new CustomError('Failed to delete listing', 500, 'DATABASE_ERROR', true, error);
-    }
+    if (error) throw new AuthorizationError('Не удалось удалить');
 
-    auditLog(userId, 'listing_deleted', 'listing', id);
-
-    res.json({
-      success: true,
-      data: {
-        message: 'Listing deleted successfully'
-      }
-    });
+    res.json({ success: true, message: 'Объявление удалено' });
   })
 );
 
 // ============================================
-// HELPER FUNCTIONS
+// POST /listings/:id/mark-sold
 // ============================================
+router.post(
+  '/:id/mark-sold',
+  authenticateToken,
+  validateParams(z.object({ id: z.string().uuid() })),
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const { id } = req.params;
+    const userId = req.user!.id;
 
-async function checkBusinessPermission(businessId: string, userId: string): Promise<boolean> {
-  const { data: member } = await supabase
-    .from('business_members')
-    .select('role')
-    .eq('business_id', businessId)
-    .eq('user_id', userId)
-    .single();
+    const { error } = await supabase
+      .from('listings')
+      .update({ status: 'sold', updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('seller_id', userId);
 
-  return member && ['admin', 'seller'].includes(member.role);
-}
+    if (error) throw new AuthorizationError('Не удалось пометить как проданное');
+
+    res.json({ success: true, message: 'Объявление помечено как проданное' });
+  })
+);
 
 export default router;

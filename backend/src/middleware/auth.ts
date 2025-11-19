@@ -18,7 +18,10 @@ export interface AuthenticatedRequest extends Request {
     id: string;
     role: string;
     phone: string;
+    business_tier?: string;
   };
+  validatedData?: any;
+  validatedQuery?: any;
 }
 
 export function authenticateToken(req: AuthenticatedRequest, res: Response, next: NextFunction) {

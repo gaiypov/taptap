@@ -1,8 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { CameraType, CameraView, useCameraPermissions } from 'expo-camera';
-import { LinearGradient } from 'expo-linear-gradient';
+import { CameraType, CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
     Alert,
     StatusBar,
@@ -19,17 +18,37 @@ export default function CameraScreen() {
   const { category } = useLocalSearchParams<{ category: string }>();
   const cameraRef = useRef<CameraView>(null);
   
-  const [recording, setRecording] = useState(false);
+  const [isCameraReady, setIsCameraReady] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
   const [countdown, setCountdown] = useState(120); // 2 минуты максимум
-  const [permission, requestPermission] = useCameraPermissions();
+  const [cameraPermission, requestCameraPermission] = useCameraPermissions();
+  const [microphonePermission, requestMicrophonePermission] = useMicrophonePermissions();
   const [cameraType, setCameraType] = useState<CameraType>('back');
-  const [cameraReady, setCameraReady] = useState(false);
   
+  // Запрос разрешений при монтировании
+  useEffect(() => {
+    (async () => {
+      if (!cameraPermission) {
+        await requestCameraPermission();
+      }
+      if (!microphonePermission) {
+        await requestMicrophonePermission();
+      }
+    })();
+  }, [cameraPermission, requestCameraPermission, microphonePermission, requestMicrophonePermission]);
+  
+  const stopRecording = useCallback(() => {
+    if (cameraRef.current && isRecording) {
+      cameraRef.current.stopRecording();
+      setIsRecording(false);
+    }
+  }, [isRecording]);
+
   // Таймер обратного отсчета
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
     
-    if (recording && countdown > 0) {
+    if (isRecording && countdown > 0) {
       interval = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
@@ -44,85 +63,7 @@ export default function CameraScreen() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [recording, countdown]);
-  
-  // Запрос разрешений при монтировании
-  useEffect(() => {
-    (async () => {
-      if (!permission) {
-        await requestPermission();
-        // Permission state will be updated automatically
-      }
-    })();
-  }, [permission, requestPermission]);
-  
-  const startRecording = async () => {
-    // Проверяем разрешения
-    if (!permission?.granted) {
-      Alert.alert(
-        'Нужны разрешения',
-        'Для записи видео нужен доступ к камере',
-        [
-          { text: 'Отмена', style: 'cancel' },
-          { text: 'Разрешить', onPress: requestPermission }
-        ]
-      );
-      return;
-    }
-
-    if (!cameraRef.current) {
-      Alert.alert('Ошибка', 'Камера не инициализирована.');
-      return;
-    }
-
-    if (!cameraReady) {
-      Alert.alert('Ошибка', 'Камера не готова. Пожалуйста, подождите загрузки камеры.');
-      return;
-    }
-
-    try {
-      setRecording(true);
-      setCountdown(120); // Сброс таймера
-      
-      // Небольшая задержка для стабилизации
-      await new Promise(resolve => setTimeout(resolve, 500));
-      
-      const video = await cameraRef.current.recordAsync({
-        maxDuration: 120,
-      });
-      
-      console.log('Video recorded:', video);
-      
-      // Видео записано, можно загрузить на сервер
-      Alert.alert(
-        'Видео записано!',
-        'Видео успешно записано. Хотите загрузить его?',
-        [
-          { text: 'Записать еще', style: 'cancel' },
-          { 
-            text: 'Загрузить', 
-            onPress: () => {
-              // TODO: Загрузить видео на сервер
-              router.back();
-            }
-          }
-        ]
-      );
-      
-    } catch (error) {
-      console.error('Recording error:', error);
-      Alert.alert('Ошибка', 'Не удалось записать видео');
-    } finally {
-      setRecording(false);
-    }
-  };
-  
-  const stopRecording = () => {
-    if (cameraRef.current) {
-      cameraRef.current.stopRecording();
-      setRecording(false);
-    }
-  };
+  }, [isRecording, countdown, stopRecording]);
   
   const toggleCameraType = () => {
     setCameraType(current => 
@@ -136,7 +77,7 @@ export default function CameraScreen() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
   
-  if (!permission) {
+  if (!cameraPermission || !microphonePermission) {
     return (
       <View style={styles.container}>
         <Text style={styles.message}>Запрос разрешений...</Text>
@@ -144,12 +85,28 @@ export default function CameraScreen() {
     );
   }
   
-  if (!permission.granted) {
+  if (!cameraPermission.granted || !microphonePermission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={styles.message}>Нет доступа к камере</Text>
+        <Text style={styles.message}>
+          {!cameraPermission.granted && 'Нет доступа к камере\n'}
+          {!microphonePermission.granted && 'Нет доступа к микрофону'}
+        </Text>
         <TouchableOpacity 
           style={styles.button}
+          onPress={async () => {
+            if (!cameraPermission.granted) {
+              await requestCameraPermission();
+            }
+            if (!microphonePermission.granted) {
+              await requestMicrophonePermission();
+            }
+          }}
+        >
+          <Text style={styles.buttonText}>Разрешить доступ</Text>
+        </TouchableOpacity>
+        <TouchableOpacity 
+          style={[styles.button, { marginTop: 10, backgroundColor: '#666' }]}
           onPress={() => router.back()}
         >
           <Text style={styles.buttonText}>Назад</Text>
@@ -167,8 +124,8 @@ export default function CameraScreen() {
         style={styles.camera}
         facing={cameraType}
         onCameraReady={() => {
-          console.log('✅ Camera ready!');
-          setCameraReady(true);
+          console.log('КАМЕРА ГОТОВА — МОЖНО ПИСАТЬ!');
+          setIsCameraReady(true);
         }}
       >
         {/* Overlay */}
@@ -228,18 +185,87 @@ export default function CameraScreen() {
             
             {/* Record Button */}
             <TouchableOpacity 
-              style={styles.recordButton}
-              onPress={recording ? stopRecording : startRecording}
+              style={[
+                styles.recordButton,
+                (!isCameraReady || isRecording) && { opacity: 0.5 }
+              ]}
+              disabled={!isCameraReady || isRecording}
+              onPress={async () => {
+                if (isRecording) {
+                  stopRecording();
+                } else {
+                  // Проверяем разрешения перед записью
+                  if (!cameraPermission?.granted || !microphonePermission?.granted) {
+                    Alert.alert(
+                      'Нужны разрешения',
+                      'Для записи видео нужен доступ к камере и микрофону',
+                      [
+                        { text: 'Отмена', style: 'cancel' },
+                        { 
+                          text: 'Разрешить', 
+                          onPress: async () => {
+                            if (!cameraPermission?.granted) {
+                              await requestCameraPermission();
+                            }
+                            if (!microphonePermission?.granted) {
+                              await requestMicrophonePermission();
+                            }
+                          }
+                        }
+                      ]
+                    );
+                    return;
+                  }
+
+                  if (!cameraRef.current || !isCameraReady) {
+                    Alert.alert('Ошибка', 'Камера не готова. Подождите немного.');
+                    return;
+                  }
+
+                  try {
+                    setIsRecording(true);
+                    setCountdown(120); // Сброс таймера
+                    
+                    // Используем recordAsync (правильный API для expo-camera)
+                    const video = await cameraRef.current.recordAsync({
+                      maxDuration: 120,
+                    });
+                    
+                    if (video && video.uri) {
+                      console.log('Видео готово:', video.uri);
+                      setIsRecording(false);
+                      
+                      // Видео записано, можно загрузить на сервер
+                      Alert.alert(
+                        'Видео записано!',
+                        'Видео успешно записано. Хотите загрузить его?',
+                        [
+                          { text: 'Записать еще', style: 'cancel', onPress: () => setCountdown(120) },
+                          { 
+                            text: 'Загрузить', 
+                            onPress: () => {
+                              // TODO: Загрузить видео на сервер через delegated upload
+                              router.back();
+                            }
+                          }
+                        ]
+                      );
+                    } else {
+                      setIsRecording(false);
+                      Alert.alert('Ошибка', 'Видео не было записано');
+                    }
+                  } catch (error: any) {
+                    console.error('Ошибка записи:', error);
+                    Alert.alert('Ошибка', error?.message || 'Не удалось записать видео');
+                    setIsRecording(false);
+                  }
+                }
+              }}
             >
-              <LinearGradient
-                colors={recording ? ['#FF3B30', '#FF453A'] : ['#FFFFFF', '#F2F2F7']}
-                style={styles.recordButtonGradient}
-              >
-                <View style={[
-                  styles.recordButtonInner,
-                  recording && styles.recordButtonInnerRecording
-                ]} />
-              </LinearGradient>
+              <View style={[
+                styles.recordDot,
+                isRecording && styles.recordingDot
+              ]} />
             </TouchableOpacity>
             
             {/* Flash Button */}
@@ -370,26 +396,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   recordButton: {
+    position: 'absolute',
+    bottom: 50,
+    alignSelf: 'center',
     width: 80,
     height: 80,
     borderRadius: 40,
-  },
-  recordButtonGradient: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 40,
-    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.3)',
     justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 4,
+    borderColor: '#fff',
   },
-  recordButtonInner: {
+  recordDot: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#E63946',
+    backgroundColor: '#fff',
   },
-  recordButtonInnerRecording: {
+  recordingDot: {
+    width: 40,
+    height: 40,
     borderRadius: 8,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#f00',
   },
   flashButton: {
     width: 50,

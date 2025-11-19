@@ -1,0 +1,17 @@
+node_modules
+.expo
+dist
+backend/dist
+*.log
+.env
+.env.local
+coverage
+.nyc_output
+*.min.js
+*.min.css
+build
+.expo-shared
+android
+ios
+web-build
+

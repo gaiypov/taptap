@@ -5,11 +5,17 @@
 
 import { NextFunction, Request, Response } from 'express';
 import { z } from 'zod';
+import type { AuthenticatedRequest } from './auth';
 
 export function validateBody(schema: z.ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
-      req.body = schema.parse(req.body);
+      const validated = schema.parse(req.body);
+      req.body = validated;
+      // Сохраняем также в validatedData для совместимости
+      if ('validatedData' in req) {
+        (req as AuthenticatedRequest).validatedData = validated;
+      }
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -27,7 +33,12 @@ export function validateBody(schema: z.ZodSchema) {
 export function validateQuery(schema: z.ZodSchema) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
-      req.query = schema.parse(req.query);
+      const validated = schema.parse(req.query);
+      req.query = validated;
+      // Сохраняем также в validatedQuery для совместимости
+      if ('validatedQuery' in req) {
+        (req as AuthenticatedRequest).validatedQuery = validated;
+      }
       next();
     } catch (error) {
       if (error instanceof z.ZodError) {
@@ -166,7 +177,8 @@ export const createChatThreadSchema = z.object({
 });
 
 export const sendMessageSchema = z.object({
-  body: z.string().min(1).max(2000)
+  message: z.string().min(1).max(2000),
+  attachment_url: z.string().url().optional().nullable()
 });
 
 // Promotion schemas
@@ -181,10 +193,16 @@ export const searchListingsSchema = z.object({
   searchQuery: z.string().optional(),
   minPrice: z.number().positive().optional(),
   maxPrice: z.number().positive().optional(),
+  price_min: z.number().positive().optional(),
+  price_max: z.number().positive().optional(),
   location: z.string().optional(),
+  city: z.string().optional(),
+  brand: z.string().optional(),
+  model: z.string().optional(),
   sortBy: z.enum(['newest', 'price_asc', 'price_desc', 'popular']).optional(),
-  page: z.number().min(1).default(1),
-  limit: z.number().min(1).max(100).default(20),
+  sort_by: z.enum(['newest', 'price_asc', 'price_desc', 'popular', 'created_at']).optional(),
+  page: z.number().min(1).default(1).optional(),
+  limit: z.number().min(1).max(100).default(20).optional(),
   
   // Car-specific filters
   carMake: z.string().optional(),

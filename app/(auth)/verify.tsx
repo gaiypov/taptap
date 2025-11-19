@@ -18,6 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { auth } from '@/services/auth';
+import { ultra } from '@/lib/theme/ultra';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const CODE_LENGTH = 4;
 
@@ -169,7 +171,7 @@ export default function VerifyCodeScreen() {
               onPress={() => router.back()}
               style={styles.backButton}
             >
-              <Ionicons name="arrow-back" size={24} color="#FFF" />
+              <Ionicons name="arrow-back" size={24} color={ultra.textPrimary} />
             </TouchableOpacity>
             <Text style={styles.headerTitle}>Подтверждение</Text>
             <View style={styles.backButtonPlaceholder} />
@@ -204,7 +206,7 @@ export default function VerifyCodeScreen() {
             ))}
           </View>
 
-          {/* Verify button */}
+          {/* Verify button — градиент металлик Revolut Ultra */}
           <TouchableOpacity
             style={[
               styles.button,
@@ -214,6 +216,12 @@ export default function VerifyCodeScreen() {
             disabled={code.join('').length !== CODE_LENGTH || loading}
             activeOpacity={0.8}
           >
+            <LinearGradient
+              colors={[ultra.gradientStart, ultra.gradientEnd]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
             {loading ? (
               <Text style={styles.buttonText}>Проверка...</Text>
             ) : (
@@ -248,7 +256,7 @@ export default function VerifyCodeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000000',
+    backgroundColor: ultra.background,
   },
   keyboardView: {
     flex: 1,
@@ -271,20 +279,23 @@ const styles = StyleSheet.create({
     width: 40,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: Platform.select({ ios: 20, android: 19, default: 20 }),
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: ultra.textPrimary,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-bold', default: 'System' }),
   },
   instruction: {
-    fontSize: 16,
-    color: '#8E8E93',
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
+    color: ultra.textSecondary,
     textAlign: 'center',
-    marginBottom: 48,
-    lineHeight: 22,
+    marginBottom: Platform.select({ ios: 48, android: 40, default: 48 }),
+    lineHeight: Platform.select({ ios: 22, android: 21, default: 22 }),
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'System' }),
   },
   phoneNumber: {
-    color: '#FFFFFF',
+    color: ultra.textPrimary,
     fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
   },
   codeContainer: {
     flexDirection: 'row',
@@ -294,55 +305,80 @@ const styles = StyleSheet.create({
   },
   codeInput: {
     flex: 1,
-    height: 64,
-    backgroundColor: '#1C1C1E',
-    borderRadius: 12,
+    height: Platform.select({ ios: 64, android: 60, default: 64 }),
+    backgroundColor: ultra.card,
+    borderRadius: Platform.select({ ios: 12, android: 10, default: 12 }),
     borderWidth: 2,
-    borderColor: '#3A3A3C',
+    borderColor: ultra.border,
     textAlign: 'center',
-    fontSize: 24,
+    fontSize: Platform.select({ ios: 24, android: 22, default: 24 }),
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: ultra.textPrimary,
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-bold', default: 'System' }),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.05,
+        shadowRadius: 2,
+      },
+      android: {
+        elevation: 1,
+      },
+    }),
   },
   codeInputFilled: {
-    borderColor: '#FF3B30',
-    backgroundColor: '#2A1C1C',
+    borderColor: ultra.accent,
+    backgroundColor: ultra.card,
   },
   button: {
-    height: 56,
-    backgroundColor: '#FF3B30',
-    borderRadius: 12,
+    height: Platform.select({ ios: 56, android: 52, default: 56 }),
+    borderRadius: Platform.select({ ios: 12, android: 10, default: 12 }),
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
+    marginBottom: Platform.select({ ios: 24, android: 20, default: 24 }),
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
   },
   buttonDisabled: {
-    backgroundColor: '#3A3A3C',
     opacity: 0.5,
   },
   buttonText: {
-    color: '#FFFFFF',
-    fontSize: 18,
+    color: ultra.textPrimary,
+    fontSize: Platform.select({ ios: 18, android: 17, default: 18 }),
     fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
   },
   resendContainer: {
     alignItems: 'center',
   },
   resendText: {
-    fontSize: 14,
-    color: '#8E8E93',
-    marginBottom: 8,
+    fontSize: Platform.select({ ios: 14, android: 13, default: 14 }),
+    color: ultra.textSecondary,
+    marginBottom: Platform.select({ ios: 8, android: 6, default: 8 }),
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif', default: 'System' }),
   },
   resendButton: {
     padding: 8,
   },
   resendButtonText: {
-    fontSize: 16,
-    color: '#FF3B30',
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
+    color: ultra.accent,
     fontWeight: '600',
+    fontFamily: Platform.select({ ios: 'System', android: 'sans-serif-medium', default: 'System' }),
   },
   resendButtonTextDisabled: {
-    color: '#8E8E93',
+    color: ultra.textMuted,
   },
 });
 

@@ -3,52 +3,52 @@
  * Основные цвета для UI/UX стандартов проекта
  */
 export const Colors = {
-  // Primary colors (согласно промпту)
-  primary: '#FF3B30',      // Красный (из промпта)
-  primaryDark: '#0056CC',   // Сохраняем для совместимости
-  primaryLight: '#4DA6FF',  // Сохраняем для совместимости
-  primaryAlt: '#007AFF',    // Альтернативный синий (было primary)
+  // Primary colors - Revolut Ultra Platinum 2025-2026
+  primary: '#C0C0C0',      // Серебро (акцент)
+  primaryDark: '#707070',   // Темное серебро
+  primaryLight: '#E0E0E0',  // Светлое серебро
+  primaryAlt: '#C0C0C0',    // Альтернативный серебро
   
   // Secondary colors
-  secondary: '#007AFF',     // Синий (из промпта)
-  secondaryDark: '#495057',
-  secondaryLight: '#ADB5BD',
+  secondary: '#B0B0B0',     // Второстепенное серебро
+  secondaryDark: '#707070',
+  secondaryLight: '#E0E0E0',
   
   // Success colors
-  success: '#34C759',        // Зеленый (из промпта)
+  success: '#34C759',        // Зеленый (оставляем для статусов)
   successDark: '#388E3C',
   successLight: '#81C784',
   
   // Warning colors
-  warning: '#FF9500',       // Оранжевый (из промпта)
+  warning: '#FF9500',       // Оранжевый (оставляем для статусов)
   warningDark: '#F57C00',
   warningLight: '#FFB74D',
   
-  // Background colors
-  background: '#000000',    // Черный (из промпта)
-  backgroundSecondary: '#111111',
+  // Background colors - Revolut Ultra Platinum
+  background: '#0D0D0D',    // Глубокий черный
+  backgroundSecondary: '#171717',  // Карточки
   backgroundTertiary: '#1A1A1A',
   
   // Surface colors
-  surface: '#1C1C1E',       // Темно-серый (из промпта)
-  surfaceSecondary: '#2A2A2A',
-  surfaceTertiary: '#3A3A3A',
+  surface: '#171717',       // Карточки/панели
+  surfaceSecondary: '#1A1A1A',
+  surfaceTertiary: '#2C2C2C',
   
   // Text colors
-  text: '#FFFFFF',          // Белый (из промпта)
-  textSecondary: '#8E8E93', // Серый (из промпта)
-  textTertiary: '#999999',
-  textDisabled: '#666666',
+  text: '#FFFFFF',          // Основной текст
+  textSecondary: '#B8B8B8', // Второстепенный текст
+  textTertiary: '#707070',  // Третичный текст
+  textDisabled: '#707070',
   
   // Border colors
-  border: '#333333',
-  borderSecondary: '#444444',
-  borderLight: '#555555',
+  border: '#2A2A2A',
+  borderSecondary: '#333333',
+  borderLight: '#2A2A2A',
   
-  // Status colors
-  error: '#F44336',
-  errorDark: '#D32F2F',
-  errorLight: '#EF5350',
+  // Status colors (НИКАКОГО КРАСНОГО - используем серебро)
+  error: '#C0C0C0',         // Серебро вместо красного
+  errorDark: '#A0A0A0',
+  errorLight: '#E0E0E0',
   
   info: '#2196F3',
   infoDark: '#1976D2',
@@ -75,14 +75,14 @@ export const Colors = {
   overlayLight: 'rgba(0, 0, 0, 0.3)',
   overlayDark: 'rgba(0, 0, 0, 0.7)',
   
-  // Gradient colors
+  // Gradient colors - Revolut Ultra Platinum
   gradients: {
-    primary: ['#007AFF', '#0056CC'],
-    secondary: ['#6C757D', '#495057'],
-    sunset: ['#FF6B6B', '#4ECDC4'],
-    ocean: ['#667eea', '#764ba2'],
-    fire: ['#f093fb', '#f5576c'],
-    forest: ['#4facfe', '#00f2fe'],
+    primary: ['#2C2C2C', '#1A1A1A'],  // Градиент для кнопок
+    secondary: ['#2C2C2C', '#1A1A1A'],
+    sunset: ['#2C2C2C', '#1A1A1A'],
+    ocean: ['#2C2C2C', '#1A1A1A'],
+    fire: ['#2C2C2C', '#1A1A1A'],
+    forest: ['#2C2C2C', '#1A1A1A'],
   },
 };
 

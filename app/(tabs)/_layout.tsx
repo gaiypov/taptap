@@ -1,11 +1,15 @@
+import { useAppDispatch } from '@/lib/store/hooks';
+import { setCurrentIndex } from '@/lib/store/slices/feedSlice';
+import { ultra } from '@/lib/theme/ultra';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Tabs } from 'expo-router';
+import { Tabs, useRouter, useSegments } from 'expo-router';
 import { useEffect, useRef } from 'react';
-import { Animated, Platform, StyleSheet, View } from 'react-native';
+import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
 
-// Elevated Create Button Component
+// Elevated Create Button Component - Revolut Ultra Platinum
 function ElevatedCreateButton({ focused }: { focused: boolean }) {
+  const router = useRouter();
   const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -24,45 +28,77 @@ function ElevatedCreateButton({ focused }: { focused: boolean }) {
     }
   }, [focused, scaleAnim]);
 
+  const handlePress = () => {
+    router.push('/(tabs)/upload');
+  };
+
   return (
     <View style={styles.createButtonContainer}>
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <LinearGradient
-          colors={['#667eea', '#764ba2']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.createButton}
+        <Pressable 
+          style={styles.fab} 
+          onPress={handlePress}
         >
-          <Ionicons name="add" size={32} color="white" />
-        </LinearGradient>
+          <LinearGradient
+            colors={[ultra.gradientStart, ultra.gradientEnd]} // #2C2C2C → #1A1A1A
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.fabGradient}
+          >
+            <Ionicons 
+              name="add" 
+              size={Platform.select({ ios: 28, android: 30, default: 28 })} 
+              color={ultra.textPrimary} 
+            />
+          </LinearGradient>
+        </Pressable>
       </Animated.View>
     </View>
   );
 }
 
 export default function TabLayout() {
+  const dispatch = useAppDispatch();
+  const segments = useSegments();
+  
+  // Останавливаем видео при переключении на другие вкладки
+  useEffect(() => {
+    // Проверяем, находимся ли мы на главном экране (index)
+    // В табах последний сегмент будет именем вкладки
+    const lastSegment = segments[segments.length - 1] as string;
+    const isOnHomeTab = lastSegment === 'index' || 
+                       (segments.length >= 2 && segments[0] === '(tabs)' && (segments[1] as string) === 'index');
+    
+    if (!isOnHomeTab) {
+      // Если мы не на главном экране, останавливаем все видео
+      dispatch(setCurrentIndex(-1));
+    }
+  }, [segments, dispatch]);
+
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: '#667eea',
-        tabBarInactiveTintColor: '#8E8E93',
+        tabBarActiveTintColor: ultra.accent,
+        tabBarInactiveTintColor: ultra.textMuted,
         headerShown: false,
         tabBarStyle: {
-          height: 66,
-          paddingBottom: 8,
-          paddingTop: 8,
-          borderTopWidth: 1,
-          borderTopColor: '#1C1C1E',
-          backgroundColor: '#000',
+          height: Platform.select({ ios: 90, android: 80, default: 90 }),
+          paddingBottom: Platform.select({ ios: 20, android: 12, default: 20 }),
+          paddingTop: Platform.select({ ios: 8, android: 8, default: 8 }),
+          borderTopWidth: 0,
+          backgroundColor: ultra.background, // Матовый фон #0D0D0D
           ...Platform.select({
             web: {
-              boxShadow: '0px -2px 3px rgba(0, 0, 0, 0.1)',
+              boxShadow: '0px -2px 3px rgba(0, 0, 0, 0.3)',
             },
-            default: {
+            ios: {
               shadowColor: '#000',
               shadowOffset: { width: 0, height: -2 },
-              shadowOpacity: 0.1,
+              shadowOpacity: 0.3,
               shadowRadius: 3,
+            },
+            android: {
+              elevation: 4,
             },
           }),
         },
@@ -135,27 +171,21 @@ const styles = StyleSheet.create({
   createButtonContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: Platform.select({ ios: 20, android: 16, default: 20 }),
   },
-  createButton: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+  fab: {
+    width: 68, // Размер 68px
+    height: 68,
+    borderRadius: 34,
+    // Никаких теней (TikTok стиль)
+  },
+  fabGradient: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 34,
     justifyContent: 'center',
     alignItems: 'center',
-    ...Platform.select({
-      web: {
-        boxShadow: '0px 4px 8px rgba(102, 126, 234, 0.4)',
-      },
-      default: {
-        shadowColor: '#667eea',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
-        elevation: 8,
-      },
-    }),
-    borderWidth: 4,
-    borderColor: '#000',
+    borderWidth: 1,
+    borderColor: ultra.border, // #2A2A2A
   },
 });

@@ -8,7 +8,7 @@ import { db } from '@/services/supabase';
 import { Car, Damage } from '@/types';
 import { formatPriceWithUSD } from '@/constants/currency';
 import { Ionicons } from '@expo/vector-icons';
-import { VideoView, useVideoPlayer } from 'expo-video';
+import { VideoView, useVideoPlayer } from '@expo/video';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';

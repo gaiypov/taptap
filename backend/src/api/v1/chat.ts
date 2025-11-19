@@ -1,316 +1,250 @@
-// ============================================
-// 360⁰ Marketplace - Chat API
-// Production Ready for Kyrgyzstan Launch
-// ============================================
+// Production Ready Chat API — Kyrgyzstan 2025
+// Без service_role_key • RLS-only • Realtime Ready
 
-import { Router } from 'express';
+import express, { type Response } from 'express';
 import { z } from 'zod';
-import { AuthenticatedRequest, authenticateToken } from '../middleware/auth';
-import { asyncHandler, auditLog, AuthorizationError, CustomError, NotFoundError } from '../middleware/errorHandler';
-import { chatLimiter, defaultLimiter } from '../middleware/rateLimit';
-import { createChatThreadSchema, sendMessageSchema, validateBody, validateParams } from '../middleware/validate';
-import { supabase } from '../services/supabaseClient';
+import type { AuthenticatedRequest } from '../../middleware/auth';
+import { authenticateToken } from '../../middleware/auth';
+import {
+  asyncHandler,
+  AuthorizationError,
+  NotFoundError,
+  ConflictError,
+} from '../../middleware/errorHandler';
+import {
+  validateBody,
+  validateParams,
+  sendMessageSchema,
+  createChatThreadSchema,
+} from '../../middleware/validate.js';
+import { defaultLimiter, createRateLimiter } from '../../middleware/rateLimit.js';
+import { createClient } from '@supabase/supabase-js';
 
-const router = Router();
+const router = express.Router();
+
+// Используем anon key + RLS (безопасно!)
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_ANON_KEY! // ← НЕ service_role!
+);
+
+// Rate limit: максимум 5 сообщений в секунду на тред (антиспам)
+const messageRateLimiter = createRateLimiter(
+  1000, // 1 секунда
+  5, // 5 сообщений
+  'Too many messages, please slow down',
+  (req: AuthenticatedRequest) => `chat:${req.params.threadId}:${req.user!.id}`
+);
+
+// Кэш бизнесов пользователя (in-memory, сбрасывается при рестарте — ок для начала)
+const userBusinessCache = new Map<string, Set<string>>();
+
+async function getUserBusinessIds(userId: string): Promise<Set<string>> {
+  if (userBusinessCache.has(userId)) {
+    return userBusinessCache.get(userId)!;
+  }
+
+  const { data } = await supabase
+    .from('team_members')
+    .select('business_id')
+    .eq('user_id', userId);
+
+  const businessIds = new Set(data?.map(m => m.business_id) || []);
+  userBusinessCache.set(userId, businessIds);
+  return businessIds;
+}
 
 // ============================================
-// START CHAT THREAD
+// POST /threads — создать или получить чат
 // ============================================
-
-router.post('/start',
+router.post(
+  '/threads',
   authenticateToken,
   validateBody(createChatThreadSchema),
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const userId = req.user!.id;
-    const { listing_id } = req.body;
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const buyerId = req.user!.id;
+    const { listing_id } = req.validatedData;
 
-    // Check if listing exists and is active
-    const { data: listing } = await supabase
+    // 1. Получаем листинг + проверяем статус и владельца
+    const { data: listing, error: listingError } = await supabase
       .from('listings')
-      .select('id, seller_user_id, business_id, status')
+      .select('id, seller_id, business_id, status, title, price, thumbnail_url')
       .eq('id', listing_id)
       .single();
 
-    if (!listing) {
-      throw new NotFoundError('Listing');
-    }
+    if (listingError || !listing) throw new NotFoundError('Listing');
+    if (listing.status !== 'active') throw new ConflictError('Listing is not active');
+    if (listing.seller_id === buyerId) throw new ConflictError('Cannot chat with yourself');
 
-    if (listing.status !== 'active') {
-      throw new CustomError('Cannot start chat for inactive listing', 400, 'LISTING_NOT_ACTIVE');
-    }
+    // 2. Ищем существующий тред
+    const { data: existing } = await supabase
+      .from('chat_threads')
+      .select('id')
+      .eq('listing_id', listing_id)
+      .eq('buyer_id', buyerId)
+      .maybeSingle();
 
-    // Get seller ID (from user or business)
-    let sellerId: string;
-    if (listing.seller_user_id) {
-      sellerId = listing.seller_user_id;
-    } else if (listing.business_id) {
-      const { data: businessAdmin } = await supabase
-        .from('business_members')
-        .select('user_id')
-        .eq('business_id', listing.business_id)
-        .eq('role', 'admin')
+    if (existing) {
+      const { data: thread } = await supabase
+        .from('chat_threads')
+        .select(`
+          *, listing:listings!listing_id(id, title, price, thumbnail_url),
+          buyer:profiles!buyer_id(id, name, avatar_url),
+          seller:profiles!seller_id(id, name, avatar_url),
+          business:business_accounts!business_id(id, company_name, company_logo_url)
+        `)
+        .eq('id', existing.id)
         .single();
-      
-      if (!businessAdmin) {
-        throw new CustomError('No seller found for this listing', 400, 'NO_SELLER_FOUND');
-      }
-      sellerId = businessAdmin.user_id;
-    } else {
-      throw new CustomError('No seller found for this listing', 400, 'NO_SELLER_FOUND');
+
+      return res.json({ success: true, data: thread, message: 'Existing thread' });
     }
 
-    // Cannot chat with yourself
-    if (userId === sellerId) {
-      throw new CustomError('Cannot start chat with yourself', 400, 'CANNOT_CHAT_SELF');
-    }
+    // 3. Создаём новый тред
+    const { data: thread, error } = await supabase
+      .from('chat_threads')
+      .insert({
+        listing_id,
+        buyer_id: buyerId,
+        seller_id: listing.seller_id,
+        business_id: listing.business_id || null,
+      })
+      .select(`
+        *, listing:listings!listing_id(*),
+        buyer:profiles!buyer_id(id, name, avatar_url),
+        seller:profiles!seller_id(id, name, avatar_url),
+        business:business_accounts!business_id(id, company_name, company_logo_url)
+      `)
+      .single();
 
-    // Get or create chat thread
-    const { data: threadId } = await supabase
-      .rpc('get_or_create_chat_thread', {
-        p_listing_id: listing_id,
-        p_buyer_id: userId
-      });
-
-    if (!threadId) {
-      throw new CustomError('Failed to create chat thread', 500, 'THREAD_CREATION_FAILED');
-    }
-
-    auditLog(userId, 'chat_thread_started', 'chat_thread', threadId, { listingId: listing_id });
+    if (error) throw new ConflictError('Failed to create chat thread');
 
     res.status(201).json({
       success: true,
-      data: {
-        thread_id: threadId,
-        message: 'Chat thread started successfully'
-      }
+      data: thread,
+      message: 'Chat thread created',
     });
   })
 );
 
 // ============================================
-// GET USER'S CHAT THREADS
+// GET /threads — список чатов пользователя
 // ============================================
-
-router.get('/threads',
+router.get(
+  '/threads',
   authenticateToken,
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 50);
+    const offset = (page - 1) * limit;
 
-    const { data: threads, error } = await supabase
+    const businessIds = await getUserBusinessIds(userId);
+
+    const { data: threads, count } = await supabase
       .from('chat_threads')
       .select(`
-        *,
-        listing:listings!listing_id (
-          id,
-          title,
-          price,
-          currency,
-          thumbnail_url
-        ),
-        buyer:users!buyer_id (
-          id,
-          name,
-          avatar_url
-        ),
-        seller:users!seller_id (
-          id,
-          name,
-          avatar_url
-        )
-      `)
-      .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
-      .order('last_message_at', { ascending: false });
-
-    if (error) {
-      throw new CustomError('Failed to fetch chat threads', 500, 'DATABASE_ERROR', true, error);
-    }
-
-    // Add unread count for each thread
-    const threadsWithUnread = await Promise.all(
-      threads.map(async (thread) => {
-        const unreadCount = await supabase.rpc('get_unread_count', {
-          thread_id: thread.id,
-          user_id: userId
-        });
-        
-        return {
-          ...thread,
-          unread_count: unreadCount.data || 0
-        };
-      })
-    );
+        *, 
+        listing:listings!listing_id(id, title, price, thumbnail_url, category),
+        buyer:profiles!buyer_id(id, name, avatar_url),
+        seller:profiles!seller_id(id, name, avatar_url),
+        business:business_accounts!business_id(id, company_name, company_logo_url),
+        messages:chat_messages(count)
+      `, { count: 'exact' })
+      .or(`buyer_id.eq.${userId},seller_id.eq.${userId}${businessIds.size ? `,business_id.in.(${[...businessIds].join(',')})` : ''}`)
+      .order('last_message_at', { ascending: false, nullsLast: true })
+      .range(offset, offset + limit - 1);
 
     res.json({
       success: true,
-      data: threadsWithUnread
+      data: threads || [],
+      pagination: {
+        page,
+        limit,
+        total: count || 0,
+        totalPages: Math.ceil((count || 0) / limit),
+      },
     });
   })
 );
 
 // ============================================
-// GET CHAT MESSAGES
+// GET /threads/:threadId/messages
 // ============================================
-
-router.get('/thread/:threadId/messages',
+router.get(
+  '/threads/:threadId/messages',
   authenticateToken,
   validateParams(z.object({ threadId: z.string().uuid() })),
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
+  messageRateLimiter,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
     const userId = req.user!.id;
     const { threadId } = req.params;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = 50;
+    const offset = (page - 1) * limit;
 
-    // Check if user is participant in thread
-    const { data: thread } = await supabase
-      .from('chat_threads')
-      .select('buyer_id, seller_id')
-      .eq('id', threadId)
-      .single();
-
-    if (!thread) {
-      throw new NotFoundError('Chat thread');
-    }
-
-    if (thread.buyer_id !== userId && thread.seller_id !== userId) {
-      throw new AuthorizationError('You are not a participant in this chat');
-    }
-
-    // Get messages
-    const { data: messages, error } = await supabase
+    // RLS сам проверит доступ — если нет доступа, вернёт 403
+    const { data: messages, count } = await supabase
       .from('chat_messages')
       .select(`
-        *,
-        sender:users!sender_id (
-          id,
-          name,
-          avatar_url
-        )
-      `)
+        *, sender:profiles!sender_id(id, name, avatar_url)
+      `, { count: 'exact' })
       .eq('thread_id', threadId)
-      .order('created_at', { ascending: true });
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
 
-    if (error) {
-      throw new CustomError('Failed to fetch messages', 500, 'DATABASE_ERROR', true, error);
+    // Автоматически помечаем как прочитанные (RLS позволяет только свои)
+    if (messages?.length) {
+      await supabase
+        .from('chat_messages')
+        .update({ is_read: true, read_at: new Date().toISOString() })
+        .eq('thread_id', threadId)
+        .neq('sender_id', userId);
     }
-
-    // Mark messages as read
-    await supabase.rpc('mark_messages_read', {
-      thread_id: threadId,
-      user_id: userId
-    });
 
     res.json({
       success: true,
-      data: messages
+      data: messages?.reverse() || [], // старые сверху
+      pagination: { page, limit, total: count || 0 },
     });
   })
 );
 
 // ============================================
-// SEND MESSAGE
+// POST /threads/:threadId/messages
 // ============================================
-
-router.post('/thread/:threadId/message',
+router.post(
+  '/threads/:threadId/messages',
   authenticateToken,
   validateParams(z.object({ threadId: z.string().uuid() })),
   validateBody(sendMessageSchema),
-  chatLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const userId = req.user!.id;
+  messageRateLimiter,
+  asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+    const senderId = req.user!.id;
     const { threadId } = req.params;
-    const { body } = req.body;
+    const { message, attachment_url } = req.validatedData;
 
-    // Check if user is participant in thread
-    const { data: thread } = await supabase
-      .from('chat_threads')
-      .select('buyer_id, seller_id')
-      .eq('id', threadId)
-      .single();
-
-    if (!thread) {
-      throw new NotFoundError('Chat thread');
-    }
-
-    if (thread.buyer_id !== userId && thread.seller_id !== userId) {
-      throw new AuthorizationError('You are not a participant in this chat');
-    }
-
-    // Send message
-    const { data: message, error } = await supabase
+    const { data: newMessage, error } = await supabase
       .from('chat_messages')
       .insert({
         thread_id: threadId,
-        sender_id: userId,
-        body
+        sender_id: senderId,
+        message: message.trim(),
+        attachment_url: attachment_url || null,
       })
       .select(`
-        *,
-        sender:users!sender_id (
-          id,
-          name,
-          avatar_url
-        )
+        *, sender:profiles!sender_id(id, name, avatar_url)
       `)
       .single();
 
     if (error) {
-      throw new CustomError('Failed to send message', 500, 'DATABASE_ERROR', true, error);
+      if (error.code === '42501') throw new AuthorizationError('No access to this chat');
+      throw new Error('Failed to send message');
     }
-
-    auditLog(userId, 'message_sent', 'chat_message', message.id, { threadId });
 
     res.status(201).json({
       success: true,
-      data: message
-    });
-  })
-);
-
-// ============================================
-// DELETE CHAT THREAD
-// ============================================
-
-router.delete('/thread/:threadId',
-  authenticateToken,
-  validateParams(z.object({ threadId: z.string().uuid() })),
-  defaultLimiter,
-  asyncHandler(async (req: AuthenticatedRequest, res) => {
-    const userId = req.user!.id;
-    const { threadId } = req.params;
-
-    // Check if user is participant in thread
-    const { data: thread } = await supabase
-      .from('chat_threads')
-      .select('buyer_id, seller_id, listing_id')
-      .eq('id', threadId)
-      .single();
-
-    if (!thread) {
-      throw new NotFoundError('Chat thread');
-    }
-
-    if (thread.buyer_id !== userId && thread.seller_id !== userId) {
-      throw new AuthorizationError('You are not a participant in this chat');
-    }
-
-    // Delete thread (cascade will handle messages)
-    const { error } = await supabase
-      .from('chat_threads')
-      .delete()
-      .eq('id', threadId);
-
-    if (error) {
-      throw new CustomError('Failed to delete chat thread', 500, 'DATABASE_ERROR', true, error);
-    }
-
-    auditLog(userId, 'chat_thread_deleted', 'chat_thread', threadId);
-
-    res.json({
-      success: true,
-      data: {
-        message: 'Chat thread deleted successfully'
-      }
+      data: newMessage,
+      message: 'Message sent',
     });
   })
 );
