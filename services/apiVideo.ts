@@ -1,5 +1,5 @@
 // services/apiVideo.ts — API.VIDEO 2025 (БЕЗОПАСНО, БЫСТРО, КРАСИВО)
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
 
 // ВАЖНО: API_KEY НЕ ДОЛЖЕН БЫТЬ В КЛИЕНТЕ!
@@ -23,17 +23,18 @@ export interface VideoAssets {
 }
 
 /**
- * Создать видео и получить upload token (на бэкенде!)
+ * Получить upload token (на бэкенде!)
  * Клиент НЕ знает API ключ
+ * videoId создаётся автоматически при загрузке
  */
 export async function createVideoOnBackend(metadata?: {
   title?: string;
   description?: string;
   tags?: string[];
-}): Promise<{ videoId: string; uploadToken: string }> {
+}): Promise<{ uploadToken: string }> {
   const response = await fetch(`${API_BASE_URL}/video/create`, {
     method: 'POST',
-    headers: { 
+    headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(metadata || { title: '360Auto Video' }),
@@ -57,6 +58,9 @@ export async function uploadVideo(
 ): Promise<VideoAssets> {
   const uploadUrl = `${API_VIDEO_BASE}/upload?token=${uploadToken}`;
 
+  console.log('[apiVideo] Starting upload to:', uploadUrl);
+  console.log('[apiVideo] File URI:', fileUri);
+
   const result = await FileSystem.uploadAsync(uploadUrl, fileUri, {
     httpMethod: 'POST',
     uploadType: FileSystem.FileSystemUploadType.MULTIPART,
@@ -64,12 +68,17 @@ export async function uploadVideo(
     headers: { 'Content-Type': 'video/mp4' },
   });
 
+  console.log('[apiVideo] Upload result status:', result.status);
+  console.log('[apiVideo] Upload result body:', result.body?.substring(0, 500));
+
   if (result.status !== 200 && result.status !== 201) {
     throw new Error(`Upload failed: ${result.status} ${result.body}`);
   }
 
   const data = JSON.parse(result.body);
   const videoId = data.videoId;
+
+  console.log('[apiVideo] Video created with ID:', videoId);
 
   return {
     videoId,
@@ -87,13 +96,13 @@ export async function uploadVideoToApiVideo(
   localUri: string,
   metadata?: { title?: string; description?: string; tags?: string[] }
 ): Promise<VideoAssets> {
-  // 1. Создаём видео на бэкенде (безопасно)
-  const { videoId, uploadToken } = await createVideoOnBackend(metadata);
+  // 1. Получаем upload token с бэкенда (безопасно)
+  const { uploadToken } = await createVideoOnBackend(metadata);
 
-  // 2. Загружаем напрямую на api.video
+  // 2. Загружаем напрямую на api.video (videoId создаётся автоматически)
   const assets = await uploadVideo(localUri, uploadToken);
 
-  return { ...assets, videoId };
+  return assets;
 }
 
 // ============================================
@@ -101,13 +110,14 @@ export async function uploadVideoToApiVideo(
 // ============================================
 
 /**
- * Создать видео (через бэкенд)
+ * Получить upload token (через бэкенд)
+ * videoId создаётся при загрузке
  */
 export async function createVideo(metadata?: {
   title?: string;
   description?: string;
   tags?: string[];
-}): Promise<{ videoId: string; uploadToken: string }> {
+}): Promise<{ uploadToken: string }> {
   return createVideoOnBackend(metadata);
 }
 

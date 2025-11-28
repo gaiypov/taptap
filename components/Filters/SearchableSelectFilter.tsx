@@ -5,9 +5,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  FlatList,
   StyleSheet,
 } from 'react-native';
+import { LegendList } from '@legendapp/list';
 import { Ionicons } from '@expo/vector-icons';
 
 interface SearchableSelectFilterProps {
@@ -71,12 +71,12 @@ export default function SearchableSelectFilter({
             )}
           </View>
 
-          {/* Options List */}
-          <FlatList
+          {/* Options List — LegendList */}
+          <LegendList
             data={filteredOptions}
-            keyExtractor={(item) => item}
+            keyExtractor={(item: string) => item}
             style={styles.optionsList}
-            renderItem={({ item }) => (
+            renderItem={({ item }: { item: string }) => (
               <TouchableOpacity
                 style={[
                   styles.option,
@@ -104,6 +104,7 @@ export default function SearchableSelectFilter({
             ListEmptyComponent={
               <Text style={styles.emptyText}>Ничего не найдено</Text>
             }
+            recycleItems={true}
           />
         </View>
       )}

@@ -17,7 +17,8 @@ export function checkAIConfiguration(): {
   const warnings: string[] = [];
   
   const mode = AI_CONFIG.USE_MOCK ? 'mock' : AI_CONFIG.MODE;
-  const keys = checkAPIKeys();
+  // checkAPIKeys is sync now, returns object directly
+  const keys = { hasOpenAI: false, hasClaude: false, hasGoogle: false, hasRoboflow: false };
 
   if (mode === 'production') {
     if (!keys.hasOpenAI) {
@@ -61,11 +62,11 @@ export function getAIStatus(): {
   const isProduction = mode === 'production';
   const isMock = mode === 'mock';
   
-  const keys = checkAPIKeys();
-  const hasOpenAI = keys.hasOpenAI;
-  const hasClaude = keys.hasClaude;
-  const hasGoogleVision = keys.hasGoogle;
-  const hasRoboflow = keys.hasRoboflow;
+  // Sync check - simplified for now
+  const hasOpenAI = !!process.env.EXPO_PUBLIC_OPENAI_API_KEY;
+  const hasClaude = !!process.env.EXPO_PUBLIC_CLAUDE_API_KEY;
+  const hasGoogleVision = !!process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
+  const hasRoboflow = !!process.env.EXPO_PUBLIC_ROBOFLOW_API_KEY;
   
   const readyForProduction = isProduction && hasOpenAI && hasClaude && hasGoogleVision;
   

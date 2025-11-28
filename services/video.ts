@@ -1,7 +1,7 @@
 // services/video.ts — VIDEO-СЕРВИС УРОВНЯ TIKTOK + INSTAGRAM 2025
 // ФИНАЛЬНАЯ ВЕРСИЯ — ГОТОВА К МИЛЛИАРДУ ВИДЕО
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as VideoThumbnails from 'expo-video-thumbnails';
 import { appLogger } from '@/utils/logger';
 import { AI_CONFIG } from './ai/config';
@@ -30,7 +30,7 @@ export async function extractKeyFrames(
   videoUri: string,
   options: { maxFrames?: number; quality?: number } = {}
 ): Promise<VideoFrame[]> {
-  const { maxFrames = AI_CONFIG.MAX_IMAGES_PER_ANALYSIS, quality = AI_CONFIG.IMAGE_QUALITY } = options;
+  const { maxFrames = AI_CONFIG.MAX_FRAMES_PER_ANALYSIS, quality = AI_CONFIG.IMAGE_QUALITY } = options;
 
   try {
     appLogger.info('[Video] Extracting frames', { videoUri, maxFrames });

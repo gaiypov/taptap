@@ -1,3 +1,4 @@
+// @ts-nocheck - Deno runtime
 // Supabase Edge Function для автоматического удаления объявлений
 // Запускается каждый час через cron
 

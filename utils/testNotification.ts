@@ -1,36 +1,31 @@
 // Test notification utility for Development Build
-import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
+import { Platform } from 'react-native';
+import { requestNotificationsPermissionsSafe, setupNotificationHandlerSafe } from '@/lib/notifications/request-notifications-safe';
 
-// Configure notification handler
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// Configure notification handler (только если не Expo Go)
+// Используем безопасную функцию с динамическим импортом
+const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
+if (!isExpoGo) {
+  setupNotificationHandlerSafe().catch(() => {
+    // Ignore errors in test utility
+  });
+}
 
 /**
  * Request notification permissions
  */
 export async function requestNotificationPermissions(): Promise<boolean> {
   try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
+    // Используем безопасную обёртку для запроса разрешений
+    const result = await requestNotificationsPermissionsSafe();
     
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-    
-    if (finalStatus !== 'granted') {
-      console.warn('Failed to get notification permissions!');
+    if (result.expoGoWorkaround) {
+      console.warn('Notifications не поддерживаются в Expo Go на Android. Используйте development build.');
       return false;
     }
     
-    return true;
+    return result.canReceivePush && result.status === 'granted';
   } catch (error) {
     console.error('Error requesting notification permissions:', error);
     return false;
@@ -48,6 +43,9 @@ export async function sendTestNotification(): Promise<void> {
       console.error('Cannot send notification: no permission');
       return;
     }
+
+    // Динамический импорт для безопасности
+    const Notifications = await import('expo-notifications');
 
     // Schedule notification
     await Notifications.scheduleNotificationAsync({
@@ -72,18 +70,18 @@ export async function sendTestNotification(): Promise<void> {
  */
 export async function getDevicePushToken(): Promise<string | null> {
   try {
-    const hasPermission = await requestNotificationPermissions();
-    if (!hasPermission) {
+    // Используем безопасную обёртку, которая уже получает токен
+    const result = await requestNotificationsPermissionsSafe();
+    
+    if (!result.canReceivePush || !result.token) {
+      if (result.expoGoWorkaround) {
+        console.warn('Push token недоступен в Expo Go на Android');
+      }
       return null;
     }
 
-    // Get project ID from app.json extra.eas.projectId or use default
-    const token = await Notifications.getExpoPushTokenAsync({
-      // Project ID will be resolved from app.json or environment
-    });
-
-    console.log('Device Push Token:', token.data);
-    return token.data;
+    console.log('Device Push Token:', result.token);
+    return result.token;
   } catch (error) {
     console.error('Error getting push token:', error);
     return null;
@@ -92,30 +90,45 @@ export async function getDevicePushToken(): Promise<string | null> {
 
 /**
  * Setup notification listeners
+ * Использует динамический импорт для безопасности
  */
-export function setupNotificationListeners() {
-  // Listener for notifications received while app is in foreground
-  const foregroundSubscription = Notifications.addNotificationReceivedListener(
-    (notification) => {
-      console.log('Notification received (foreground):', notification);
-    }
-  );
+export async function setupNotificationListeners(): Promise<() => void> {
+  const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
+  
+  if (isExpoGo) {
+    // В Expo Go возвращаем no-op cleanup
+    return () => {};
+  }
 
-  // Listener for user tapping on notification
-  const responseSubscription = Notifications.addNotificationResponseReceivedListener(
-    (response) => {
-      console.log('Notification tapped:', response);
-      const data = response.notification.request.content.data;
-      if (data?.test) {
-        console.log('Test notification was tapped!');
+  try {
+    const Notifications = await import('expo-notifications');
+    
+    // Listener for notifications received while app is in foreground
+    const foregroundSubscription = Notifications.addNotificationReceivedListener(
+      (notification) => {
+        console.log('Notification received (foreground):', notification);
       }
-    }
-  );
+    );
 
-  // Return cleanup function
-  return () => {
-    foregroundSubscription.remove();
-    responseSubscription.remove();
-  };
+    // Listener for user tapping on notification
+    const responseSubscription = Notifications.addNotificationResponseReceivedListener(
+      (response) => {
+        console.log('Notification tapped:', response);
+        const data = response.notification.request.content.data;
+        if (data?.test) {
+          console.log('Test notification was tapped!');
+        }
+      }
+    );
+
+    // Return cleanup function
+    return () => {
+      foregroundSubscription.remove();
+      responseSubscription.remove();
+    };
+  } catch (error) {
+    console.error('Error setting up notification listeners:', error);
+    return () => {}; // Return no-op cleanup on error
+  }
 }
 

@@ -46,12 +46,15 @@ export const updateTeamMemberSchema = z.object({
   role: z.enum(['admin', 'manager']),
 });
 
+// Phone validation regex - supports +996xxx and 0xxx formats
+const phoneRegex = /^(\+996|996|0)?[0-9]{9,12}$/;
+
 // Listing schemas
 export const createListingSchema = z.object({
   category: z.enum(['car', 'horse', 'real_estate']),
   business_id: z.string().uuid().optional(),
-  video_id: z.string().min(1),
-  video_url: z.string().url(),
+  video_id: z.string().min(1).optional(), // Optional - will be set after video upload
+  video_url: z.string().url().optional(), // Optional - will be set after video upload
   thumbnail_url: z.string().url().optional(),
   additional_images: z.array(z.string().url()).optional(),
   title: z.string().min(1).max(255),
@@ -60,7 +63,8 @@ export const createListingSchema = z.object({
   currency: z.string().length(3).default('KGS'),
   city: z.string().max(100).optional(),
   location: z.string().max(255).optional(),
-  details: z.record(z.any()), // Category-specific details
+  phone_for_listing: z.string().regex(phoneRegex, 'Invalid phone format. Use +996xxx or 0xxx').optional(),
+  details: z.record(z.any()).optional(), // Category-specific details - optional for simpler listings
 });
 
 export const updateListingSchema = createListingSchema.partial().omit({ category: true });

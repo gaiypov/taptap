@@ -48,23 +48,17 @@ export default function CostLoggerTest() {
     addLog('🔧 AI Configuration:');
     addLog(`Mode: ${AI_CONFIG.MODE}`);
     addLog(`Use Mock: ${AI_CONFIG.USE_MOCK}`);
-    addLog(`Max Images: ${AI_CONFIG.MAX_IMAGES_PER_ANALYSIS}`);
+    addLog(`Primary Provider: ${AI_CONFIG.PRIMARY_PROVIDER}`);
+    addLog(`Max Frames: ${AI_CONFIG.MAX_FRAMES_PER_ANALYSIS}`);
     addLog(`Image Quality: ${AI_CONFIG.IMAGE_QUALITY}`);
-    addLog(`Enable Caching: ${AI_CONFIG.ENABLE_CACHING}`);
     
     addLog('🧪 Test Mode Configuration:');
-    addLog(`Use Single Image: ${TEST_CONFIG.USE_SINGLE_IMAGE}`);
-    addLog(`Cache Results: ${TEST_CONFIG.CACHE_RESULTS}`);
-    addLog(`Max Requests Per Day: ${TEST_CONFIG.MAX_REQUESTS_PER_DAY}`);
-    addLog(`Enable Claude: ${TEST_CONFIG.ENABLE_CLAUDE}`);
-    addLog(`Enable OpenAI: ${TEST_CONFIG.ENABLE_OPENAI}`);
-    addLog(`Enable Google: ${TEST_CONFIG.ENABLE_GOOGLE}`);
-    addLog(`Enable YOLO: ${TEST_CONFIG.ENABLE_YOLO}`);
+    addLog(`Use Single Image: ${TEST_CONFIG.useSingleImage}`);
   };
 
-  const handleCheckAPIKeys = () => {
+  const handleCheckAPIKeys = async () => {
     addLog('🔑 API Keys Status:');
-    const keys = checkAPIKeys();
+    const keys = await checkAPIKeys();
     addLog(`OpenAI: ${keys.hasOpenAI ? '✅' : '❌'}`);
     addLog(`Claude: ${keys.hasClaude ? '✅' : '❌'}`);
     addLog(`Google: ${keys.hasGoogle ? '✅' : '❌'}`);

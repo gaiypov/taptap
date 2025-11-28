@@ -1,12 +1,15 @@
-import CommentActions from '@/components/Comments/CommentActions';
+// components/Comments/CommentItem.tsx
+// Карточка комментария — Ultra Platinum Design
+
 import CommentReplies from '@/components/Comments/CommentReplies';
 import EditCommentModal from '@/components/Comments/EditCommentModal';
 import EmojiReactions from '@/components/Comments/EmojiReactions';
 import MentionText from '@/components/Comments/MentionText';
-import { db } from '@/services/supabase';
+import { commentsService } from '@/services/comments';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ultra, typography, spacing } from '@/lib/theme/ultra';
 
 interface Comment {
   id: string;
@@ -33,10 +36,10 @@ interface CommentItemProps {
   isReply?: boolean;
 }
 
-function CommentItem({ 
-  comment, 
-  currentUserId, 
-  onLike, 
+function CommentItem({
+  comment,
+  currentUserId,
+  onLike,
   onReply,
   onUpdate,
   isReply = false,
@@ -48,7 +51,7 @@ function CommentItem({
   const userName = comment.user?.name || 'Пользователь';
   const avatarUrl =
     comment.user?.avatar_url ||
-    `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=007AFF&color=fff`;
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(userName)}&background=E5E4E2&color=000`;
 
   useEffect(() => {
     checkPermissions();
@@ -64,8 +67,8 @@ function CommentItem({
 
     try {
       const [editPermission, deletePermission] = await Promise.all([
-        db.canEditComment(comment.id, currentUserId),
-        db.canDeleteComment(comment.id, currentUserId),
+        commentsService.canEditComment(comment.id),
+        commentsService.canDeleteComment(comment.id),
       ]);
 
       setCanEdit(editPermission);
@@ -81,7 +84,7 @@ function CommentItem({
 
   const handleSaveEdit = async (newText: string) => {
     try {
-      await db.updateComment(comment.id, newText);
+      await commentsService.updateComment(comment.id, newText);
       setCommentText(newText);
       onUpdate?.();
     } catch (error) {
@@ -91,7 +94,7 @@ function CommentItem({
 
   const handleDelete = async () => {
     try {
-      await db.deleteComment(comment.id);
+      await commentsService.deleteComment(comment.id);
       onUpdate?.();
     } catch (error) {
       console.error('Delete comment error:', error);
@@ -107,63 +110,82 @@ function CommentItem({
     const now = new Date();
     const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
-    if (seconds < 60) return 'только что';
-    if (seconds < 3600) return `${Math.floor(seconds / 60)} мин назад`;
-    if (seconds < 86400) return `${Math.floor(seconds / 3600)} ч назад`;
-    if (seconds < 604800) return `${Math.floor(seconds / 86400)} д назад`;
-    return date.toLocaleDateString('ru-RU');
+    if (seconds < 60) return 'сейчас';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}м`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}ч`;
+    if (seconds < 604800) return `${Math.floor(seconds / 86400)}д`;
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, isReply && styles.replyContainer]}>
       {/* Avatar */}
       <Image source={{ uri: avatarUrl }} style={styles.avatar} />
 
       {/* Content */}
       <View style={styles.content}>
-        {/* User Name & Time */}
+        {/* User Name & Time — Premium Typography */}
         <View style={styles.header}>
           <Text style={styles.userName}>{userName}</Text>
+          <View style={styles.dot} />
           <Text style={styles.time}>{getTimeAgo(comment.created_at)}</Text>
+          {comment.edited_at && <Text style={styles.edited}>• изм</Text>}
         </View>
 
         {/* Comment Text with Mentions */}
         <MentionText text={commentText} style={styles.text} />
-        {comment.edited_at && (
-          <Text style={styles.edited}>(изменено)</Text>
-        )}
 
-        {/* Actions */}
-        <View style={styles.actions}>
-          <TouchableOpacity style={styles.likeButton} onPress={onLike}>
+        {/* Actions Row — Redesigned */}
+        <View style={styles.actionsRow}>
+          {/* Like Button */}
+          <TouchableOpacity style={styles.actionButton} onPress={onLike}>
             <Ionicons
               name={comment.isLiked ? 'heart' : 'heart-outline'}
-              size={18}
-              color={comment.isLiked ? '#FF3B30' : '#666'}
+              size={16}
+              color={comment.isLiked ? '#FF453A' : ultra.textMuted}
             />
             {comment.likes > 0 && (
               <Text
-                style={[styles.likeCount, comment.isLiked && styles.likeCountActive]}
+                style={[
+                  styles.actionText,
+                  comment.isLiked && styles.actionTextActive,
+                ]}
               >
                 {comment.likes}
               </Text>
             )}
           </TouchableOpacity>
+
+          {/* Reply Button */}
+          {onReply && !isReply && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleReply}>
+              <Ionicons name="chatbubble-outline" size={16} color={ultra.textMuted} />
+              <Text style={styles.actionText}>Ответить</Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Edit/Delete for owner */}
+          {canEdit && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleEdit}>
+              <Ionicons name="create-outline" size={16} color={ultra.textMuted} />
+              <Text style={styles.actionText}>Изменить</Text>
+            </TouchableOpacity>
+          )}
+
+          {canDelete && (
+            <TouchableOpacity style={styles.actionButton} onPress={handleDelete}>
+              <Ionicons name="trash-outline" size={16} color={ultra.error} />
+              <Text style={[styles.actionText, { color: ultra.error }]}>
+                Удалить
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Emoji Reactions */}
         <EmojiReactions commentId={comment.id} onReact={onUpdate} />
 
-        {/* Comment Actions */}
-        <CommentActions
-          canEdit={canEdit}
-          canDelete={canDelete}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onReply={handleReply}
-        />
-
-        {/* Threads (Replies) - Only show on parent comments */}
+        {/* Threads (Replies) */}
         {!isReply && !comment.parent_id && onReply && (
           <CommentReplies
             parentId={comment.id}
@@ -187,67 +209,83 @@ function CommentItem({
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F5F5F5',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    backgroundColor: ultra.card,
+  },
+  replyContainer: {
+    marginLeft: spacing.xxl,
+    paddingLeft: spacing.md,
+    borderLeftWidth: 1.5,
+    borderLeftColor: ultra.borderLight,
   },
   avatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    marginRight: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    marginRight: spacing.md,
+    backgroundColor: ultra.surface,
   },
   content: {
     flex: 1,
   },
+
+  // Header — Tight & Modern
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   userName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#000',
+    ...typography.bodySemibold, // fontSize 16, fontWeight 600
+    color: ultra.textPrimary,
+  },
+  dot: {
+    width: 3,
+    height: 3,
+    borderRadius: 1.5,
+    backgroundColor: ultra.textMuted,
+    marginHorizontal: spacing.xs,
   },
   time: {
-    fontSize: 12,
-    color: '#999',
-  },
-  text: {
-    fontSize: 14,
-    color: '#333',
-    lineHeight: 20,
-    marginBottom: 4,
+    ...typography.caption, // fontSize 12, fontWeight 500
+    color: ultra.textMuted,
   },
   edited: {
-    fontSize: 11,
-    color: '#999',
+    ...typography.caption,
+    color: ultra.textMuted,
     fontStyle: 'italic',
-    marginBottom: 8,
+    marginLeft: spacing.xs,
   },
-  actions: {
+
+  // Text
+  text: {
+    ...typography.body, // fontSize 16, fontWeight 400
+    color: ultra.textSecondary, // Platinum color
+    lineHeight: 22,
+    marginBottom: spacing.sm,
+  },
+
+  // Actions — Horizontal Layout
+  actionsRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.lg,
+    marginTop: spacing.xs,
   },
-  likeButton: {
+  actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 4,
-    paddingRight: 12,
+    gap: spacing.xs,
   },
-  likeCount: {
-    fontSize: 13,
-    color: '#666',
-    marginLeft: 4,
-    fontWeight: '500',
+  actionText: {
+    ...typography.caption,
+    color: ultra.textMuted,
   },
-  likeCountActive: {
-    color: '#FF3B30',
+  actionTextActive: {
+    color: '#FF453A',
+    fontWeight: '600',
   },
 });
 
 export default CommentItem;
-

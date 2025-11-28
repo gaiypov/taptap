@@ -2,11 +2,11 @@ import { ultra } from '@/lib/theme/ultra';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useTransition, useDeferredValue } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Image,
+  Keyboard,
   Platform,
   ScrollView,
   StyleSheet,
@@ -15,14 +15,27 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { LegendList } from '@legendapp/list';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 // Импорты для универсальных фильтров
 import AdvancedFiltersModal from '@/components/Filters/AdvancedFiltersModal';
 import { CategoryType, CITIES, formatPrice, getCategoryConfig } from '@/config/filterConfig';
-import { SearchParams, SearchResult, searchService } from '@/services/searchService';
+import { LazyLoad } from '@/components/common/LazyLoad';
+import {
+  SearchParams,
+  SearchResult,
+  SearchSuggestion,
+  SearchHistoryItem,
+  searchService
+} from '@/services/searchService';
 import { Listing } from '@/types';
 import { appLogger } from '@/utils/logger';
+
+type SearchListing = Listing & {
+  buyer_highlights?: string[];
+  buyer_score?: number;
+};
 
 interface Filters {
   category: CategoryType;
@@ -58,25 +71,87 @@ interface Filters {
   clean_documents?: boolean;
   with_furniture?: boolean;
   with_parking?: boolean;
+  sortBy?: SearchParams['sortBy'];
   // Index signature for dynamic access
   [key: string]: any;
 }
 
 export default function SearchScreen() {
   const requestIdRef = useRef(0);
-  
+  const searchInputRef = useRef<TextInput>(null);
+
+  // === useTransition для не-блокирующих обновлений ===
+  const [isPending, startTransition] = useTransition();
+
   const [filters, setFilters] = useState<Filters>({
     category: 'car',
     searchQuery: '',
     city: 'Весь Кыргызстан',  // 👈 По умолчанию
+    sortBy: 'relevance',
   });
-  
-  const [listings, setListings] = useState<Listing[]>([]);
+
+  // useDeferredValue для отложенного обновления тяжёлых вычислений
+  const deferredSearchQuery = useDeferredValue(filters.searchQuery);
+
+  const [listings, setListings] = useState<SearchListing[]>([]);
   const [loading, setLoading] = useState(false);
   const [showFilters, setShowFilters] = useState(false);
   const [totalResults, setTotalResults] = useState(0);
 
+  // Новые состояния для улучшенного поиска
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
+  const [trendingSearches, setTrendingSearches] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [relevanceScores, setRelevanceScores] = useState<number[]>([]);
+  const [isInputFocused, setIsInputFocused] = useState(false);
+
   const config = useMemo(() => getCategoryConfig(filters.category), [filters.category]);
+
+  const sortOptions = useMemo(
+    () => [
+      { value: 'relevance' as SearchParams['sortBy'], label: 'Лучшие' },
+      { value: 'date' as SearchParams['sortBy'], label: 'Новые' },
+      { value: 'price_asc' as SearchParams['sortBy'], label: 'Дешевле' },
+      { value: 'price_desc' as SearchParams['sortBy'], label: 'Дороже' },
+      { value: 'views' as SearchParams['sortBy'], label: 'Популярные' },
+      { value: 'ai_score' as SearchParams['sortBy'], label: 'AI 90+' },
+    ],
+    []
+  );
+
+  const buyerTrustToggles = useMemo(
+    () => [
+      { key: 'verified_only' as const, label: 'Проверенные', icon: 'shield-checkmark' as const },
+      { key: 'has_documents' as const, label: 'С документами', icon: 'document-text-outline' as const },
+      { key: 'with_ai_analysis' as const, label: 'AI отчёт', icon: 'sparkles' as const },
+    ],
+    []
+  );
+
+  // Загружаем историю и трендовые при монтировании и смене категории
+  useEffect(() => {
+    const loadInitialData = async () => {
+      const [history, trending] = await Promise.all([
+        searchService.getSearchHistory(),
+        Promise.resolve(searchService.getTrendingSearches(filters.category)),
+      ]);
+      setSearchHistory(history.filter(h => h.category === filters.category).slice(0, 5));
+      setTrendingSearches(trending);
+    };
+    loadInitialData();
+  }, [filters.category]);
+
+  // Загружаем саджесты при вводе
+  useEffect(() => {
+    if (filters.searchQuery.length >= 2) {
+      searchService.getSuggestions(filters.searchQuery, filters.category)
+        .then(setSuggestions)
+        .catch(() => setSuggestions([]));
+    } else {
+      setSuggestions([]);
+    }
+  }, [filters.searchQuery, filters.category]);
 
   // === Универсальные активные фильтры ===
   const activeFilterEntries = useMemo(() => {
@@ -120,8 +195,27 @@ export default function SearchScreen() {
       entries.push({ key: 'property_type', label: `🏠 ${filters.property_type}`, value: filters.property_type });
     }
 
+    if (filters.verified_only) {
+      entries.push({ key: 'verified_only', label: '🛡 Проверенные', value: true });
+    }
+
+    if (filters.has_documents) {
+      entries.push({ key: 'has_documents', label: '📄 Документы', value: true });
+    }
+
+    if (filters.with_ai_analysis) {
+      entries.push({ key: 'with_ai_analysis', label: '🤖 AI отчёт', value: true });
+    }
+
+    if (filters.sortBy && filters.sortBy !== 'relevance') {
+      const activeSort = sortOptions.find(option => option.value === filters.sortBy);
+      if (activeSort) {
+        entries.push({ key: 'sortBy', label: `↕️ ${activeSort.label}`, value: filters.sortBy });
+      }
+    }
+
     return entries;
-  }, [filters]);
+  }, [filters, sortOptions]);
 
   // === Поиск с отменой старых запросов ===
   const searchListings = useCallback(async () => {
@@ -133,6 +227,7 @@ export default function SearchScreen() {
       const searchParams: SearchParams = {
         category: filters.category,
         query: filters.searchQuery || undefined,
+        sortBy: filters.sortBy,
         filters: {
           // Основные фильтры
           city: filters.city === 'Весь Кыргызстан' ? undefined : filters.city,
@@ -182,18 +277,31 @@ export default function SearchScreen() {
       const result: SearchResult = await searchService.search(searchParams);
       
       if (requestIdRef.current === requestId) {
-        setListings(result.data || []);
-        setTotalResults(result.total || 0);
+        // Используем startTransition для не-блокирующего обновления списка
+        startTransition(() => {
+          const enriched = (result.data || []) as SearchListing[];
+          setListings(enriched);
+          setTotalResults(result.total || 0);
+          setRelevanceScores(result.scores || []);
+        });
+        // Обновляем историю после поиска (фоновая операция)
+        if (filters.searchQuery.length >= 2) {
+          searchService.getSearchHistory().then(h => {
+            setSearchHistory(h.filter(item => item.category === filters.category).slice(0, 5));
+          });
+        }
       }
     } catch (error) {
       appLogger.error('Search error:', { error });
       if (requestIdRef.current === requestId) {
         setListings([]);
         setTotalResults(0);
+        setRelevanceScores([]);
       }
     } finally {
       if (requestIdRef.current === requestId) {
         setLoading(false);
+        setShowSuggestions(false);
       }
     }
   }, [filters]);
@@ -204,15 +312,16 @@ export default function SearchScreen() {
     return rest;
   }, [filters]);
 
-  // === Оптимизированный debounce для поиска ===
+  // === Оптимизированный debounce для поиска с useDeferredValue ===
   useEffect(() => {
-    // Debounce только для текстового поиска (300ms для instant search)
+    // Используем deferredSearchQuery - React автоматически откладывает обновления
+    // при высокой нагрузке, сохраняя отзывчивость UI
     const timer = setTimeout(() => {
       searchListings();
-    }, filters.searchQuery ? 300 : 0);
+    }, deferredSearchQuery ? 150 : 0); // Уменьшили debounce т.к. useDeferredValue уже оптимизирует
 
     return () => clearTimeout(timer);
-  }, [filters.searchQuery, searchListings]);
+  }, [deferredSearchQuery, searchListings]);
 
   // Немедленный поиск при изменении других фильтров
   useEffect(() => {
@@ -228,6 +337,10 @@ export default function SearchScreen() {
       const newFilters = { ...prev };
       if (key === 'city') {
         newFilters[key] = 'Весь Кыргызстан';
+      } else if (key === 'sortBy') {
+        newFilters.sortBy = 'relevance';
+      } else if (typeof newFilters[key] === 'boolean') {
+        newFilters[key] = false;
       } else {
         delete newFilters[key];
       }
@@ -243,6 +356,7 @@ export default function SearchScreen() {
       category: 'car',
       searchQuery: '',
       city: 'Весь Кыргызстан',
+      sortBy: 'relevance',
     });
   }, []);
 
@@ -282,12 +396,79 @@ export default function SearchScreen() {
   }, []);
 
   const handleApplyFilters = useCallback((newFilters: Filters) => {
-    setFilters(newFilters);
+    setFilters(prev => ({
+      ...prev,
+      ...newFilters,
+      sortBy: newFilters.sortBy || prev.sortBy || 'relevance',
+    }));
     setShowFilters(false);
   }, []);
 
   const handleCloseFilters = useCallback(() => {
     setShowFilters(false);
+  }, []);
+
+  const handleSortChange = useCallback(
+    (value: SearchParams['sortBy']) => {
+      if (filters.sortBy === value) return;
+      if (Platform.OS === 'ios') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      setFilters(prev => ({ ...prev, sortBy: value }));
+    },
+    [filters.sortBy]
+  );
+
+  const handleBuyerToggle = useCallback(
+    (key: 'verified_only' | 'has_documents' | 'with_ai_analysis') => {
+      if (Platform.OS === 'ios') {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      }
+      setFilters(prev => ({
+        ...prev,
+        [key]: !prev[key],
+      }));
+    },
+    []
+  );
+
+  // === Обработчики для улучшенного поиска ===
+  const handleSuggestionPress = useCallback((suggestion: SearchSuggestion | string) => {
+    const text = typeof suggestion === 'string' ? suggestion : suggestion.text;
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    setFilters(prev => ({ ...prev, searchQuery: text }));
+    setShowSuggestions(false);
+    Keyboard.dismiss();
+  }, []);
+
+  const handleClearHistory = useCallback(async () => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    await searchService.clearSearchHistory();
+    setSearchHistory([]);
+  }, []);
+
+  const handleRemoveHistoryItem = useCallback(async (query: string) => {
+    if (Platform.OS === 'ios') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    await searchService.removeFromHistory(query, filters.category);
+    const updated = await searchService.getSearchHistory();
+    setSearchHistory(updated.filter(h => h.category === filters.category).slice(0, 5));
+  }, [filters.category]);
+
+  const handleInputFocus = useCallback(() => {
+    setIsInputFocused(true);
+    setShowSuggestions(true);
+  }, []);
+
+  const handleInputBlur = useCallback(() => {
+    setIsInputFocused(false);
+    // Delay hiding suggestions to allow tap
+    setTimeout(() => setShowSuggestions(false), 200);
   }, []);
 
   return (
@@ -340,6 +521,7 @@ export default function SearchScreen() {
       <View style={styles.searchContainer}>
         <Ionicons name="search" size={Platform.select({ ios: 20, android: 19, default: 20 })} color={ultra.textMuted} style={styles.searchIcon} />
         <TextInput
+          ref={searchInputRef}
           value={filters.searchQuery}
           onChangeText={handleSearchQueryChange}
           placeholder="Найти авто, лошадь или дом..."
@@ -347,9 +529,11 @@ export default function SearchScreen() {
           style={styles.searchInput}
           returnKeyType="search"
           onSubmitEditing={searchListings}
+          onFocus={handleInputFocus}
+          onBlur={handleInputBlur}
         />
         {filters.searchQuery.length > 0 && (
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={handleClearSearch}
             style={styles.clearButton}
             activeOpacity={0.7}
@@ -358,6 +542,113 @@ export default function SearchScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* Sort options */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.sortOptions}
+        contentContainerStyle={styles.sortOptionsContent}
+      >
+        {sortOptions.map(option => {
+          const active = filters.sortBy === option.value;
+          return (
+            <TouchableOpacity
+              key={option.value}
+              style={[styles.sortChip, active && styles.sortChipActive]}
+              onPress={() => handleSortChange(option.value)}
+              activeOpacity={0.7}
+            >
+              <Text style={[styles.sortChipText, active && styles.sortChipTextActive]}>
+                {option.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </ScrollView>
+
+      {/* Suggestions Dropdown */}
+      {showSuggestions && isInputFocused && (
+        <View style={styles.suggestionsContainer}>
+          {/* Suggestions from typing */}
+          {suggestions.length > 0 && (
+            <View style={styles.suggestionsSection}>
+              <Text style={styles.suggestionsSectionTitle}>Подсказки</Text>
+              {suggestions.map((suggestion, index) => (
+                <TouchableOpacity
+                  key={`suggestion-${index}`}
+                  style={styles.suggestionItem}
+                  onPress={() => handleSuggestionPress(suggestion)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons
+                    name={
+                      suggestion.type === 'history' ? 'time-outline' :
+                      suggestion.type === 'brand' ? 'car-outline' :
+                      suggestion.type === 'city' ? 'location-outline' :
+                      'search-outline'
+                    }
+                    size={16}
+                    color={ultra.textMuted}
+                  />
+                  <Text style={styles.suggestionText}>{suggestion.text}</Text>
+                  {suggestion.type === 'history' && (
+                    <Text style={styles.suggestionBadge}>История</Text>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Search History when no query */}
+          {!filters.searchQuery && searchHistory.length > 0 && (
+            <View style={styles.suggestionsSection}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.suggestionsSectionTitle}>Недавние поиски</Text>
+                <TouchableOpacity onPress={handleClearHistory} activeOpacity={0.7}>
+                  <Text style={styles.clearHistoryText}>Очистить</Text>
+                </TouchableOpacity>
+              </View>
+              {searchHistory.map((item, index) => (
+                <TouchableOpacity
+                  key={`history-${index}`}
+                  style={styles.suggestionItem}
+                  onPress={() => handleSuggestionPress(item.query)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="time-outline" size={16} color={ultra.textMuted} />
+                  <Text style={styles.suggestionText}>{item.query}</Text>
+                  <Text style={styles.historyCount}>{item.resultsCount} результатов</Text>
+                  <TouchableOpacity
+                    onPress={() => handleRemoveHistoryItem(item.query)}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={14} color={ultra.textMuted} />
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Trending Searches when no query and no history */}
+          {!filters.searchQuery && searchHistory.length === 0 && trendingSearches.length > 0 && (
+            <View style={styles.suggestionsSection}>
+              <Text style={styles.suggestionsSectionTitle}>🔥 Популярные запросы</Text>
+              {trendingSearches.map((trending, index) => (
+                <TouchableOpacity
+                  key={`trending-${index}`}
+                  style={styles.suggestionItem}
+                  onPress={() => handleSuggestionPress(trending)}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="trending-up" size={16} color={ultra.accent} />
+                  <Text style={styles.suggestionText}>{trending}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
+      )}
       
       {/* More Filters Button */}
       <TouchableOpacity
@@ -410,6 +701,36 @@ export default function SearchScreen() {
         </ScrollView>
       </View>
 
+      {/* Buyer-friendly toggles */}
+      <View style={styles.buyerTogglesContainer}>
+        {buyerTrustToggles.map(toggle => {
+          const active = Boolean(filters[toggle.key]);
+          return (
+            <TouchableOpacity
+              key={toggle.key}
+              style={[styles.buyerToggle, active && styles.buyerToggleActive]}
+              onPress={() => handleBuyerToggle(toggle.key)}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={toggle.icon}
+                size={16}
+                color={active ? ultra.background : ultra.textSecondary}
+              />
+              <Text style={[styles.buyerToggleText, active && styles.buyerToggleTextActive]}>
+                {toggle.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {totalResults > 0 && !loading && (
+        <Text style={styles.resultsBadge}>
+          Найдено {totalResults.toLocaleString('ru-RU')} предложений
+        </Text>
+      )}
+
       {/* Active Filters Chips */}
       {activeFilterEntries.length > 0 && (
         <View style={styles.chipsContainer}>
@@ -447,6 +768,12 @@ export default function SearchScreen() {
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={ultra.accent} />
         </View>
+      ) : isPending ? (
+        // Показываем мягкий индикатор при transition (не блокирует UI)
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="small" color={ultra.textMuted} />
+          <Text style={styles.pendingText}>Обновление...</Text>
+        </View>
       ) : listings.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Text style={styles.emptyIcon}>{config.icon}</Text>
@@ -476,41 +803,53 @@ export default function SearchScreen() {
           )}
         </View>
       ) : (
-        <FlatList
+        <LegendList
           data={listings}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <SearchResultCard listing={item} />}
+          keyboardDismissMode="on-drag"
+          renderItem={({ item, index }: { item: SearchListing; index: number }) => (
+            <SearchResultCard
+              listing={item}
+              relevanceScore={relevanceScores[index]}
+              showRelevance={deferredSearchQuery.length >= 2 && relevanceScores.length > 0}
+            />
+          )}
           contentContainerStyle={styles.resultsList}
           showsVerticalScrollIndicator={false}
-          removeClippedSubviews={Platform.OS !== 'web'}
-          initialNumToRender={10}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          updateCellsBatchingPeriod={50}
-          getItemLayout={(data, index) => ({
-            length: Platform.select({ ios: 120, android: 115, web: 120 }) || 120,
-            offset: (Platform.select({ ios: 120, android: 115, web: 120 }) || 120) * index,
-            index,
-          })}
+          // LegendList оптимизации
+          recycleItems={true}
+          drawDistance={500}
         />
       )}
 
-      {/* Advanced Filters Modal */}
-      <AdvancedFiltersModal
-        visible={showFilters}
-        category={filters.category}
-        filters={filters}
-        onClose={handleCloseFilters}
-        onApply={handleApplyFilters}
-        onReset={resetFilters}
-        resultsCount={totalResults}
-      />
+      {/* Advanced Filters Modal — ♻️ LazyLoad: рендерится только когда открыта */}
+      <LazyLoad visible={showFilters}>
+        <AdvancedFiltersModal
+          visible={showFilters}
+          category={filters.category}
+          filters={filters}
+          onClose={handleCloseFilters}
+          onApply={handleApplyFilters}
+          onReset={resetFilters}
+          resultsCount={totalResults}
+        />
+      </LazyLoad>
     </SafeAreaView>
   );
 }
 
 // Карточка результата поиска - мемоизирована для оптимизации
-const SearchResultCard = React.memo(function SearchResultCard({ listing }: { listing: Listing }) {
+interface SearchResultCardProps {
+  listing: SearchListing;
+  relevanceScore?: number;
+  showRelevance?: boolean;
+}
+
+const SearchResultCard = React.memo(function SearchResultCard({
+  listing,
+  relevanceScore,
+  showRelevance = false,
+}: SearchResultCardProps) {
   const router = useRouter();
 
   const getListingTitle = () => {
@@ -571,10 +910,28 @@ const SearchResultCard = React.memo(function SearchResultCard({ listing }: { lis
         }
       }}
     >
-      <Image
-        source={{ uri: listing.thumbnail_url || listing.video_url }}
-        style={styles.resultImage}
-      />
+      <View>
+        {listing.thumbnail_url || listing.video_url ? (
+          <Image
+            source={{ uri: listing.thumbnail_url || listing.video_url }}
+            style={styles.resultImage}
+          />
+        ) : (
+          <View style={styles.resultImagePlaceholder}>
+            <Text style={styles.resultPlaceholderText}>360°</Text>
+          </View>
+        )}
+        {typeof listing.buyer_score === 'number' && listing.buyer_score >= 50 && (
+          <View style={styles.buyerScoreBadge}>
+            <Text style={styles.buyerScoreText}>Топ {listing.buyer_score}%</Text>
+          </View>
+        )}
+        {showRelevance && relevanceScore !== undefined && relevanceScore > 0 && (
+          <View style={styles.relevanceScoreBadge}>
+            <Text style={styles.relevanceScoreText}>{relevanceScore}%</Text>
+          </View>
+        )}
+      </View>
       
       <View style={styles.resultInfo}>
         <Text style={styles.resultTitle} numberOfLines={2} ellipsizeMode="tail">
@@ -583,6 +940,16 @@ const SearchResultCard = React.memo(function SearchResultCard({ listing }: { lis
         <Text style={styles.resultDetails} numberOfLines={1} ellipsizeMode="tail">
           {getListingDetails()}
         </Text>
+
+        {listing.buyer_highlights?.length ? (
+          <View style={styles.buyerHighlightsRow}>
+            {listing.buyer_highlights.slice(0, 2).map((highlight, idx) => (
+              <View key={`${listing.id}-highlight-${idx}`} style={styles.buyerHighlightChip}>
+                <Text style={styles.buyerHighlightText}>{highlight}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
         
         {listing.ai_score && (
           <View style={styles.conditionChip}>
@@ -606,7 +973,12 @@ const SearchResultCard = React.memo(function SearchResultCard({ listing }: { lis
   // Оптимизация: ререндер только при изменении данных
   return prevProps.listing.id === nextProps.listing.id &&
     prevProps.listing.price === nextProps.listing.price &&
-    prevProps.listing.ai_score === nextProps.listing.ai_score;
+    prevProps.listing.ai_score === nextProps.listing.ai_score &&
+    prevProps.listing.buyer_score === nextProps.listing.buyer_score &&
+    (prevProps.listing.buyer_highlights || []).join('|') ===
+      (nextProps.listing.buyer_highlights || []).join('|') &&
+    prevProps.relevanceScore === nextProps.relevanceScore &&
+    prevProps.showRelevance === nextProps.showRelevance;
 });
 
 
@@ -739,6 +1111,34 @@ const styles = StyleSheet.create({
     padding: 4,
     marginLeft: 8,
   },
+  sortOptions: {
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  sortOptionsContent: {
+    paddingHorizontal: 16,
+    gap: 8,
+  },
+  sortChip: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: ultra.border,
+    backgroundColor: ultra.card,
+  },
+  sortChipActive: {
+    backgroundColor: ultra.accent,
+    borderColor: ultra.accent,
+  },
+  sortChipText: {
+    color: ultra.textSecondary,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  sortChipTextActive: {
+    color: ultra.background,
+  },
   filterBadge: {
     backgroundColor: ultra.accent, // #C0C0C0 серебро
     borderRadius: Platform.select({ ios: 12, android: 11, default: 12 }),
@@ -851,6 +1251,42 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
   },
+  buyerTogglesContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    flexWrap: 'wrap',
+  },
+  buyerToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: ultra.border,
+    backgroundColor: ultra.card,
+  },
+  buyerToggleActive: {
+    backgroundColor: ultra.accent,
+    borderColor: ultra.accent,
+  },
+  buyerToggleText: {
+    fontSize: 13,
+    color: ultra.textSecondary,
+    fontWeight: '600',
+  },
+  buyerToggleTextActive: {
+    color: ultra.background,
+  },
+  resultsBadge: {
+    fontSize: 13,
+    color: ultra.textSecondary,
+    paddingHorizontal: 16,
+    marginBottom: 8,
+  },
   loadingContainer: {
     flex: 1,
     alignItems: 'center',
@@ -859,6 +1295,12 @@ const styles = StyleSheet.create({
       ios: 40,
       android: 30,
     }),
+  },
+  pendingText: {
+    marginTop: 8,
+    fontSize: 13,
+    color: ultra.textMuted,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
   emptyContainer: {
     flex: 1,
@@ -1026,6 +1468,35 @@ const styles = StyleSheet.create({
     backgroundColor: ultra.surface,
     resizeMode: 'cover',
   },
+  resultImagePlaceholder: {
+    width: Platform.select({
+      ios: 80,
+      android: 75,
+      web: 80,
+    }),
+    height: Platform.select({
+      ios: 80,
+      android: 75,
+      web: 80,
+    }),
+    borderRadius: Platform.select({
+      ios: 8,
+      android: 6,
+      web: 8,
+    }),
+    marginRight: Platform.select({
+      ios: 12,
+      android: 10,
+      web: 12,
+    }),
+    backgroundColor: ultra.surface,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  resultPlaceholderText: {
+    color: ultra.textSecondary,
+    fontWeight: '700',
+  },
   resultInfo: {
     flex: 1,
     justifyContent: 'flex-start',
@@ -1177,6 +1648,131 @@ const styles = StyleSheet.create({
   moreFiltersText: {
     fontSize: 16,
     color: ultra.accent,
+    fontWeight: '600',
+  },
+  // Suggestions styles
+  suggestionsContainer: {
+    position: 'absolute',
+    top: Platform.select({ ios: 200, android: 185, default: 200 }),
+    left: 16,
+    right: 16,
+    backgroundColor: ultra.card,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: ultra.border,
+    maxHeight: 350,
+    zIndex: 1000,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
+  },
+  suggestionsSection: {
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: ultra.border,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  suggestionsSectionTitle: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: ultra.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 12,
+  },
+  suggestionText: {
+    flex: 1,
+    fontSize: 15,
+    color: ultra.textPrimary,
+    fontWeight: '500',
+  },
+  suggestionBadge: {
+    fontSize: 10,
+    color: ultra.accent,
+    backgroundColor: ultra.surface,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  historyCount: {
+    fontSize: 12,
+    color: ultra.textMuted,
+    marginRight: 8,
+  },
+  clearHistoryText: {
+    fontSize: 13,
+    color: ultra.accent,
+    fontWeight: '500',
+  },
+  // Relevance score badge
+  relevanceScoreBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(192, 192, 192, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  relevanceScoreText: {
+    fontSize: 10,
+    color: ultra.background,
+    fontWeight: '700',
+  },
+  buyerScoreBadge: {
+    position: 'absolute',
+    top: 8,
+    left: 8,
+    backgroundColor: 'rgba(16, 178, 128, 0.9)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  buyerScoreText: {
+    fontSize: 10,
+    color: ultra.background,
+    fontWeight: '700',
+  },
+  buyerHighlightsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginBottom: 6,
+  },
+  buyerHighlightChip: {
+    backgroundColor: ultra.surface,
+    borderColor: ultra.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  buyerHighlightText: {
+    fontSize: 11,
+    color: ultra.textSecondary,
     fontWeight: '600',
   },
 });

@@ -4,6 +4,9 @@
 import { Listing } from '@/types';
 import { api } from './api';
 
+// Реэкспорт типа для удобства
+export type { Listing };
+
 // Кэш на 1 минуту (для деталки объявления)
 const CACHE_TTL = 60_000;
 const cache = new Map<string, { data: Listing; timestamp: number }>();

@@ -41,3 +41,28 @@ export const colors = {
   textTertiary: 'rgba(255,255,255,0.35)',
 };
 
+// Revolut Ultra Color Palette - Ultra Neutral Edition
+// Only dark graphite, platinum, ice-gray, liquid-glass gradients
+// NO yellow, NO blue, NO red, NO mixed colors
+export const RevolutUltra = {
+  bg: '#0F0F0F', // dark graphite
+  card: '#1A1A1A', // deep gray
+  card2: '#131313', // darker gray
+  border: 'rgba(255,255,255,0.08)', // liquid-glass border
+  textPrimary: '#FFFFFF', // platinum white
+  textSecondary: 'rgba(255,255,255,0.55)', // ice-gray
+  textTertiary: 'rgba(255,255,255,0.35)', // muted gray
+  accentPrimary: 'rgba(255,255,255,0.14)', // platinum glow (subtle)
+  accentGradient: ['#0F0F0F', '#1A1A1A'], // liquid-glass gradient
+  gradient: ['#0F0F0F', '#1A1A1A'], // Ultra gradient
+  // Profile gradient - Ultra Neutral
+  gradientProfile: ['#131313', '#1A1A1A', '#0F0F0F'], // Profile hero gradient
+  // Neutral palette only - no colors
+  neutral: {
+    light: 'rgba(255,255,255,0.14)',
+    medium: 'rgba(255,255,255,0.08)',
+    dark: 'rgba(255,255,255,0.04)',
+    accent: 'rgba(255,255,255,0.14)', // For active tab indicator
+  },
+} as const;
+

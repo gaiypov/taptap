@@ -4,6 +4,8 @@
 // ФИНАЛЬНАЯ ВЕРСИЯ — НОЯБРЬ 2025
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useAppDispatch } from '@/lib/store/hooks';
+import { hydrateAuth, setHasSeenOnboarding } from '@/lib/store/slices/authSlice';
 import { useRouter } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useRef } from 'react';
@@ -85,8 +87,9 @@ const BackgroundElement = ({ config }: { config: typeof BACKGROUND_ELEMENTS[0] }
 
 export default function SplashScreen() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const hasNavigatedRef = useRef(false);
-  
+
   // Анимация главного логотипа
   const mainLogoScale = useSharedValue(0.8);
   const mainLogoOpacity = useSharedValue(0);
@@ -96,7 +99,7 @@ export default function SplashScreen() {
     // Появление логотипа
     mainLogoOpacity.value = withTiming(1, { duration: 800 });
     mainLogoScale.value = withTiming(1, { duration: 1000, easing: Easing.out(Easing.exp) });
-    
+
     // Пульсация свечения через секунду
     mainLogoGlow.value = withDelay(
       800,
@@ -110,6 +113,9 @@ export default function SplashScreen() {
       )
     );
 
+    let navigationTimer: ReturnType<typeof setTimeout> | null = null;
+    let exitAnimationTimer: ReturnType<typeof setTimeout> | null = null;
+
     const timer = setTimeout(async () => {
       if (hasNavigatedRef.current) return;
       hasNavigatedRef.current = true;
@@ -119,26 +125,65 @@ export default function SplashScreen() {
         mainLogoScale.value = withTiming(10, { duration: 500 }); // Улетает в экран
         mainLogoOpacity.value = withTiming(0, { duration: 300 });
 
-        // Проверка онбординга
-        const onboardingCompleted = await AsyncStorage.getItem('onboarding_completed');
-        
+        // Проверка авторизации и онбординга
+        const { default: storageService } = await import('@/services/storage');
+        const token = await storageService.getAuthToken();
+        const user = await storageService.getUserData();
+        const hasSeenOnboarding = await AsyncStorage.getItem('onboarding_completed');
+        const onboardingSeen = hasSeenOnboarding === 'true';
+
+        console.log('[Splash] Navigation check:', {
+          hasToken: !!token,
+          hasUser: !!user,
+          hasSeenOnboarding: onboardingSeen,
+        });
+
+        // Hydrate Redux state with auth data and onboarding flag
+        if (token && user) {
+          dispatch(hydrateAuth({ user, token, hasSeenOnboarding: onboardingSeen }));
+        } else if (onboardingSeen) {
+          // Guest mode - just set the onboarding flag
+          dispatch(setHasSeenOnboarding(true));
+        }
+
         // Небольшая задержка для анимации выхода
-        setTimeout(() => {
-          if (onboardingCompleted === 'true') {
-            router.replace('/(tabs)');
-          } else {
-            router.replace('/(onboarding)/welcome');
+        exitAnimationTimer = setTimeout(() => {
+          if (hasNavigatedRef.current) {
+            // Если авторизован - идем в приложение
+            if (token && user) {
+              console.log('[Splash] ✅ User authenticated, going to tabs');
+              router.replace('/(tabs)');
+            }
+            // Если онбординг пройден, но не авторизован - в приложение как гость
+            else if (onboardingSeen) {
+              console.log('[Splash] 👤 Onboarding completed, going to tabs (guest mode)');
+              router.replace('/(tabs)');
+            }
+            // Иначе - онбординг (first launch)
+            else {
+              console.log('[Splash] ℹ️ First launch, going to onboarding');
+              router.replace('/(onboarding)/welcome');
+            }
           }
         }, 300);
-        
+
       } catch (error) {
-        console.error('Splash navigation error:', error);
-        router.replace('/(onboarding)/IntroCarousel');
+        console.error('[Splash] ❌ Navigation error:', error);
+        if (hasNavigatedRef.current) {
+          // Fallback на онбординг при ошибке
+          router.replace('/(onboarding)/IntroCarousel');
+        }
       }
     }, SPLASH_DURATION);
 
-    return () => clearTimeout(timer);
-  }, [mainLogoGlow, mainLogoOpacity, mainLogoScale, router]);
+    navigationTimer = timer;
+
+    return () => {
+      if (navigationTimer) clearTimeout(navigationTimer);
+      if (exitAnimationTimer) clearTimeout(exitAnimationTimer);
+      hasNavigatedRef.current = false; // Сброс при размонтировании
+    };
+  }, [mainLogoGlow, mainLogoOpacity, mainLogoScale, router, dispatch]);
 
   const logoStyle = useAnimatedStyle(() => ({
     transform: [{ scale: mainLogoScale.value }],

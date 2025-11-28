@@ -1,7 +1,7 @@
 // components/Comments/CommentReplies.tsx
-import { supabase } from '@/services/supabase';
+import { commentsService, Comment } from '@/services/comments';
 import React, { useEffect, useState } from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 
 interface CommentRepliesProps {
   parentId: string;
@@ -9,55 +9,29 @@ interface CommentRepliesProps {
   onReply: (commentId: string) => void;
 }
 
-interface Reply {
-  id: string;
-  content: string;
-  user_id: string;
-  created_at: string;
-  user: {
-    name: string;
-    avatar_url?: string;
-  };
-}
-
 export default function CommentReplies({ parentId, currentUserId, onReply }: CommentRepliesProps) {
-  const [replies, setReplies] = useState<Reply[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [replies, setReplies] = useState<Comment[]>([]);
+  const [loading, setLoading] = useState(false);
   const [repliesCount, setRepliesCount] = useState(0);
+  const [expanded, setExpanded] = useState(false);
 
   const loadRepliesCount = async () => {
     try {
-      const { count } = await supabase
-        .from('comments')
-        .select('*', { count: 'exact', head: true })
-        .eq('parent_id', parentId);
-      
-      setRepliesCount(count || 0);
+      const response = await commentsService.getReplies(parentId, { limit: 1 });
+      setRepliesCount(response.count || 0);
     } catch (error) {
       console.error('Error loading replies count:', error);
     }
   };
 
   const loadReplies = async () => {
+    if (loading) return;
+    
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('comments')
-        .select(`
-          id,
-          content,
-          user_id,
-          created_at,
-          user:users!user_id (
-            name,
-            avatar_url
-          )
-        `)
-        .eq('parent_id', parentId)
-        .order('created_at', { ascending: true });
-
-      if (error) throw error;
-      setReplies((data || []) as unknown as Reply[]);
+      const response = await commentsService.getReplies(parentId);
+      setReplies(response.data);
+      setExpanded(true);
     } catch (error) {
       console.error('Error loading replies:', error);
     } finally {
@@ -76,24 +50,36 @@ export default function CommentReplies({ parentId, currentUserId, onReply }: Com
 
   return (
     <View style={styles.container}>
+      {!expanded ? (
       <TouchableOpacity 
         style={styles.repliesButton}
         onPress={loadReplies}
       >
+          {loading ? (
+            <ActivityIndicator size="small" color="#007AFF" />
+          ) : (
         <Text style={styles.repliesText}>
-          {loading ? 'Загрузка...' : `Показать ${repliesCount} ответов`}
+              Показать {repliesCount} ответов
         </Text>
+          )}
       </TouchableOpacity>
-
-      {replies.length > 0 && (
+      ) : (
+        <>
         <View style={styles.repliesList}>
           {replies.map((reply) => (
             <View key={reply.id} style={styles.replyItem}>
-              <Text style={styles.replyContent}>{reply.content}</Text>
-              <Text style={styles.replyAuthor}>— {reply.user.name}</Text>
+                <Text style={styles.replyContent}>{reply.text}</Text>
+                <Text style={styles.replyAuthor}>— {reply.user?.name || 'Пользователь'}</Text>
             </View>
           ))}
         </View>
+          <TouchableOpacity 
+            style={styles.repliesButton}
+            onPress={() => setExpanded(false)}
+          >
+            <Text style={styles.repliesText}>Скрыть ответы</Text>
+          </TouchableOpacity>
+        </>
       )}
     </View>
   );

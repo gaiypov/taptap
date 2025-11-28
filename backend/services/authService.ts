@@ -1,8 +1,8 @@
 // backend/services/authService.ts
-import jwt from 'jsonwebtoken';
 import { randomInt, randomUUID } from 'crypto';
-import serviceSupabase from './supabaseClient';
+import jwt from 'jsonwebtoken';
 import { sendVerificationCodeSms } from './smsService';
+import serviceSupabase from './supabaseClient';
 
 interface VerificationResult {
   success: boolean;
@@ -93,58 +93,36 @@ export async function requestSmsCode(phone: string): Promise<{
       return { success: false, error: 'Не удалось подготовить код подтверждения' };
     }
 
-    console.log('[AuthService] Code stored in database, sending SMS...');
+    console.log('[AuthService] Code stored in database, sending SMS asynchronously...');
 
-    // Убираем + для smsService (он ожидает формат 996XXXXXXXXX)
+    // КРИТИЧНО: Отправляем SMS асинхронно, не ждем ответа
+    // Это позволяет быстро ответить клиенту, даже если SMS API медленный
     const phoneForSms = formattedPhone.replace(/^\+/, '');
-    console.log('[AuthService] Phone for SMS (without +):', phoneForSms);
     
-    const smsResult = await sendVerificationCodeSms(phoneForSms, code);
-    console.log('[AuthService] SMS result:', { success: smsResult.success, error: smsResult.error, warning: smsResult.warning });
-
-    // В development всегда возвращаем testCode, даже если SMS не отправился
-    // В production НЕ возвращаем testCode (только если EXPOSE_TEST_SMS_CODE=true для тестирования)
-    if (process.env.NODE_ENV === 'development') {
-      return {
-        success: true,
-        warning: smsResult.warning || 'SMS отправлено (dev mode)',
-        testCode: smsResult.testCode || code, // Всегда возвращаем код в dev
-      };
-    }
-    
-    // В production НЕ возвращаем testCode по умолчанию (только реальная SMS)
-
-    // В production проверяем реальный результат отправки
-    if (!smsResult.success) {
-      // Если есть testCode (fallback), используем его
-      if (smsResult.testCode) {
-        return {
-          success: true,
-          warning: smsResult.warning || 'SMS отправлено (fallback mode)',
-          testCode: smsResult.testCode,
-        };
+    // Запускаем отправку SMS в фоне (не ждем результата)
+    sendVerificationCodeSms(phoneForSms, code).then((smsResult) => {
+      console.log('[AuthService] SMS sent (async):', { 
+        success: smsResult.success, 
+        error: smsResult.error, 
+        warning: smsResult.warning 
+      });
+      
+      // Если SMS не отправился, логируем, но не помечаем код как использованный
+      // Пользователь может попробовать запросить код снова
+      if (!smsResult.success) {
+        console.warn('[AuthService] SMS failed to send (async):', smsResult.error);
       }
+    }).catch((error) => {
+      console.error('[AuthService] SMS send error (async):', error);
+    });
 
-      // Если SMS не отправился - помечаем код как использованный
-      await serviceSupabase
-        .from('verification_codes')
-        .update({ is_used: true })
-        .eq('id', insertedRows.id);
-
-      return {
-        success: false,
-        warning: smsResult.warning,
-        error: smsResult.error ?? 'Не удалось отправить SMS. Проверьте номер телефона и попробуйте позже',
-      };
-    }
-
-    // SMS успешно отправлено
-    // В production НЕ возвращаем testCode (только реальная SMS)
-    // testCode возвращается только в development или если явно включен EXPOSE_TEST_SMS_CODE
+    // Сразу возвращаем успех с testCode (не ждем SMS API)
+    // В development или если EXPOSE_TEST_SMS_CODE=true - всегда возвращаем testCode
     const shouldExposeTestCode = process.env.NODE_ENV === 'development' || process.env.EXPOSE_TEST_SMS_CODE === 'true';
+    
     return {
       success: true,
-      warning: smsResult.warning,
+      warning: 'Код подтверждения сохранен. SMS отправляется...',
       ...(shouldExposeTestCode && code ? { testCode: code } : {}),
     };
   } catch (error) {
@@ -226,15 +204,27 @@ export async function verifySmsCode(phone: string, code: string): Promise<Verifi
 
     let isNewUser = false;
     if (!user) {
-      const newUser = {
-        id: randomUUID(),
+      // Создаем нового пользователя с явным UUID
+      // Service role обходит RLS, поэтому можем использовать прямой INSERT
+      
+      // КРИТИЧНО: Генерируем UUID явно, чтобы избежать constraint violation
+      const userId = randomUUID();
+      console.log('[AuthService] Creating new user with UUID:', userId);
+      
+      const newUser: any = {
+        id: userId, // Явно генерируем UUID - КРИТИЧНО для избежания NOT NULL constraint
         phone: formattedPhone,
         name: 'Пользователь',
         is_verified: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        last_login_at: new Date().toISOString(),
+        // Не указываем created_at и updated_at - пусть DEFAULT NOW() работает
       };
+
+      console.log('[AuthService] Inserting user:', {
+        id: newUser.id,
+        phone: newUser.phone,
+        name: newUser.name,
+        is_verified: newUser.is_verified,
+      });
 
       const insertResult = await serviceSupabase
         .from('users')
@@ -243,28 +233,116 @@ export async function verifySmsCode(phone: string, code: string): Promise<Verifi
         .single();
 
       if (insertResult.error) {
-        console.error('[AuthService] Failed to create user:', {
+        console.error('[AuthService] ❌ Failed to create user:', {
           error: insertResult.error,
           errorCode: insertResult.error.code,
           errorMessage: insertResult.error.message,
           errorDetails: insertResult.error.details,
+          errorHint: insertResult.error.hint,
           newUser,
+          formattedPhone,
+          userId: userId,
         });
-        // Детальная ошибка для диагностики
-        const errorMsg = insertResult.error.message || 'Не удалось создать пользователя';
-        return { success: false, error: errorMsg };
+        
+        // Если ошибка FOREIGN KEY constraint - значит таблица users.id ссылается на auth.users
+        if (insertResult.error.code === '23503') {
+          if (insertResult.error.message?.includes('foreign key') || insertResult.error.message?.includes('users_id_fkey')) {
+            console.error('[AuthService] CRITICAL: Foreign key constraint violation!');
+            console.error('[AuthService] The users table has a foreign key to auth.users(id)');
+            console.error('[AuthService] You need to run migration: 20250129_remove_users_auth_fk.sql');
+            return { 
+              success: false, 
+              error: 'Ошибка базы данных: требуется миграция. Пожалуйста, обратитесь в поддержку.' 
+            };
+          }
+        }
+        
+        // Если ошибка NOT NULL constraint на id - это критично
+        if (insertResult.error.code === '23502') {
+          if (insertResult.error.message?.includes('id')) {
+            console.error('[AuthService] CRITICAL: id column NOT NULL violation despite explicit UUID!');
+            console.error('[AuthService] Generated UUID:', userId);
+            console.error('[AuthService] UUID type:', typeof userId);
+            console.error('[AuthService] UUID length:', userId?.length);
+            
+            // Попробуем использовать функцию create_user_profile как fallback
+            console.log('[AuthService] Attempting fallback: using create_user_profile function...');
+            try {
+              const { data: fallbackUser, error: fallbackError } = await serviceSupabase
+                .rpc('create_user_profile', {
+                  p_phone: formattedPhone,
+                  p_name: 'Пользователь',
+                  p_is_verified: false,
+                });
+              
+              if (fallbackError || !fallbackUser || fallbackUser.length === 0) {
+                console.error('[AuthService] Fallback also failed:', fallbackError);
+                return { 
+                  success: false, 
+                  error: 'Ошибка базы данных при создании пользователя. Пожалуйста, обратитесь в поддержку.' 
+                };
+              }
+              
+              console.log('[AuthService] ✅ Fallback successful, user created via function');
+              user = fallbackUser[0];
+              isNewUser = true;
+            } catch (fallbackException: any) {
+              console.error('[AuthService] Fallback exception:', fallbackException);
+              return { 
+                success: false, 
+                error: 'Ошибка базы данных. Пожалуйста, обратитесь в поддержку.' 
+              };
+            }
+          } else {
+            // Другие NOT NULL ошибки
+            const missingField = insertResult.error.message?.match(/column "(\w+)" violates not-null constraint/)?.[1];
+            console.error('[AuthService] NOT NULL constraint violation on field:', missingField);
+            return { 
+              success: false, 
+              error: `Отсутствует обязательное поле: ${missingField || 'неизвестно'}` 
+            };
+          }
+        } else if (insertResult.error.code === '23505' || insertResult.error.message?.includes('unique constraint') || insertResult.error.message?.includes('duplicate key')) {
+          // Если ошибка уникальности (пользователь уже существует) - попробуем найти его
+          console.warn('[AuthService] User already exists, trying to fetch');
+          const { data: existingUser } = await serviceSupabase
+            .from('users')
+            .select('*')
+            .eq('phone', formattedPhone)
+            .maybeSingle();
+          
+          if (existingUser) {
+            console.log('[AuthService] Found existing user');
+            user = existingUser;
+            isNewUser = false;
+          } else {
+            return { success: false, error: 'Пользователь с таким номером уже существует' };
+          }
+        } else {
+          const errorMsg = insertResult.error.message || 'Не удалось создать пользователя';
+          return { success: false, error: errorMsg };
+        }
+      } else {
+        // Пользователь успешно создан
+        user = insertResult.data;
+        isNewUser = true;
       }
-
-      user = insertResult.data;
-      isNewUser = true;
     } else {
+      // Обновляем только updated_at (last_login_at может отсутствовать)
+      const updateData: any = {
+        updated_at: new Date().toISOString(),
+      };
+      
+      // Пытаемся обновить last_login_at только если колонка существует
+      // Если колонки нет - ошибка будет проигнорирована
       const updateResult = await serviceSupabase
         .from('users')
-        .update({ last_login_at: new Date().toISOString() })
+        .update(updateData)
         .eq('id', user.id);
 
       if (updateResult.error) {
-        console.warn('[AuthService] Failed to update last_login_at:', updateResult.error);
+        // Игнорируем ошибки обновления (колонка может отсутствовать)
+        console.warn('[AuthService] Failed to update user (ignored):', updateResult.error.message);
       }
     }
 

@@ -67,8 +67,6 @@ export {
 } from './offlineStorage';
 
 // Quick upload
-export { quickUploadVideo } from './quickUpload';
-export type { QuickUploadResult } from './quickUpload';
 
 // Rate limiting
 export {
@@ -109,7 +107,6 @@ export {
   getVideoThumbnail,
   videoService,
   extractFramesFromVideo,
-  validateVideoQuality,
   videoUtils,
 } from './video';
 export type { VideoFrame, VideoMetadata } from './video';
@@ -117,4 +114,51 @@ export type { VideoFrame, VideoMetadata } from './video';
 // AI Upload service
 export { uploadAndAnalyzeVideo } from './aiUpload';
 export type { UploadAndAnalyzeResult } from './aiUpload';
+
+// Cache services (MMKV, Video Cache, Media Library)
+export {
+  // MMKV Storage (30x faster than AsyncStorage)
+  mmkvStorage,
+  isLiked,
+  setLike,
+  isSaved,
+  setSave,
+  getFeedState,
+  setFeedState,
+  getQuickPrefs,
+  setQuickPrefs,
+  
+  // Video Cache (local video files)
+  videoCache,
+  isVideoCached,
+  getCachedUri,
+  cacheVideo,
+  preloadVideos,
+  clearVideoCache,
+  getVideoCacheStats,
+  
+  // Media Library (gallery access)
+  mediaLibrary,
+  getGalleryVideos,
+  getRecentVideos,
+  saveVideoToGallery,
+  validateVideo as validateGalleryVideo,
+  
+  // Utils
+  clearAllCaches,
+  getCacheOverview,
+  initCacheServices,
+} from './cache';
+
+export type {
+  LikesState,
+  SavesState,
+  FeedState,
+  QuickPrefs,
+  CachedVideo,
+  CacheStats,
+  GalleryVideo,
+  GalleryAlbum,
+  VideoValidation,
+} from './cache';
 

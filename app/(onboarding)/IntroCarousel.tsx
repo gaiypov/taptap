@@ -11,12 +11,12 @@ import {
   StyleSheet,
   ScrollView,
   Dimensions,
-  TouchableOpacity,
   Platform,
   Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { PremiumButton } from '@/components/ui/PremiumButton';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -101,9 +101,11 @@ export default function IntroCarousel() {
       <StatusBar style="light" />
       
       {/* Skip button */}
-      <TouchableOpacity style={styles.skipButton} onPress={handleSkip}>
-        <Text style={styles.skipText}>Пропустить</Text>
-      </TouchableOpacity>
+      <View style={styles.skipButton}>
+        <PremiumButton variant="ghost" onPress={handleSkip} haptic="light">
+          <Text style={styles.skipText}>Пропустить</Text>
+        </PremiumButton>
+      </View>
 
       {/* Carousel */}
       <ScrollView
@@ -149,18 +151,23 @@ export default function IntroCarousel() {
         </View>
 
         {/* Button */}
-        <TouchableOpacity
-          style={styles.button}
+        <PremiumButton
+          variant="primary"
+          size="xl"
+          fullWidth
           onPress={currentSlide === slides.length - 1 ? handleStart : handleNext}
-          activeOpacity={0.8}
+          haptic="medium"
+          style={styles.button}
         >
-          <Text style={styles.buttonText}>
-            {currentSlide === slides.length - 1 ? 'Начать просмотр' : 'Далее'}
-          </Text>
-          {currentSlide < slides.length - 1 && (
-            <Ionicons name="arrow-forward" size={20} color="#FFF" style={styles.buttonIcon} />
-          )}
-        </TouchableOpacity>
+          <View style={styles.buttonContent}>
+            <Text style={styles.buttonText}>
+              {currentSlide === slides.length - 1 ? 'Начать просмотр' : 'Далее'}
+            </Text>
+            {currentSlide < slides.length - 1 && (
+              <Ionicons name="arrow-forward" size={20} color="#000" style={styles.buttonIcon} />
+            )}
+          </View>
+        </PremiumButton>
       </View>
     </View>
   );
@@ -242,17 +249,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#FF3B30',
   },
   button: {
-    height: 56,
-    backgroundColor: '#FF3B30',
-    borderRadius: 12,
+    // PremiumButton handles styling
+  },
+  buttonContent: {
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    flexDirection: 'row',
   },
   buttonText: {
-    color: '#FFFFFF',
+    color: '#000000',
     fontSize: 18,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   buttonIcon: {
     marginLeft: 8,

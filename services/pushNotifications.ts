@@ -4,20 +4,23 @@
 import { appLogger } from '@/utils/logger';
 import Constants from 'expo-constants';
 import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
+import { requestNotificationsPermissionsSafe, setupNotificationHandlerSafe } from '@/lib/notifications/request-notifications-safe';
 
 // Глобальная настройка (в корне приложения!)
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true,
-  }),
-});
+// КРИТИЧНО: expo-notifications не поддерживается в Expo Go на Android (SDK 53+)
+// Используем безопасную функцию для настройки handler
+const isExpoGo = Constants.appOwnership === 'expo' || Constants.executionEnvironment === 'storeClient';
+
+// Настраиваем handler асинхронно, не блокируя инициализацию
+if (!isExpoGo) {
+  setupNotificationHandlerSafe().catch((error) => {
+    if (__DEV__) {
+      appLogger.warn('[Push] Failed to setup notification handler', { error });
+    }
+  });
+}
 
 class PushNotificationService {
   private token: string | null = null;
@@ -27,45 +30,33 @@ class PushNotificationService {
     if (Platform.OS === 'web') return null;
     if (!Device.isDevice) return null;
 
-    const { status } = await Notifications.getPermissionsAsync();
-    let finalStatus = status;
+    // Используем безопасную обёртку для запроса разрешений
+    const result = await requestNotificationsPermissionsSafe();
 
-    if (status !== 'granted') {
-      const { status: newStatus } = await Notifications.requestPermissionsAsync();
-      finalStatus = newStatus;
-    }
-
-    if (finalStatus !== 'granted') return null;
-
-    const projectId = Constants.expoConfig?.extra?.eas?.projectId;
-    if (!projectId) {
-      appLogger.warn('[Push] EAS projectId not found');
-      return null;
-    }
-
-    try {
-      const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
-      this.token = data;
-
-      // Сохраняем в профиль (используем users, так как profiles может не существовать)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (user) {
-        try {
-          await supabase.from('users').update({ expo_push_token: data }).eq('id', user.id);
-        } catch (updateError) {
-          // Fallback: если поле не существует, просто логируем
-          appLogger.warn('[Push] Failed to save token to users table', { error: updateError });
-        }
+    if (!result.canReceivePush || !result.token) {
+      if (result.expoGoWorkaround) {
+        appLogger.warn('[Push] Notifications не поддерживаются в Expo Go на Android. Используйте development build.');
       }
-
-      appLogger.info('[Push] Token registered', { token: data });
-      return data;
-    } catch (error) {
-      appLogger.error('[Push] Registration failed', { error });
       return null;
     }
+
+    this.token = result.token;
+
+    // Сохраняем в профиль (используем users, так как profiles может не существовать)
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user && result.token) {
+      try {
+        await supabase.from('users').update({ expo_push_token: result.token }).eq('id', user.id);
+      } catch (updateError) {
+        // Fallback: если поле не существует, просто логируем
+        appLogger.warn('[Push] Failed to save token to users table', { error: updateError });
+      }
+    }
+
+    appLogger.info('[Push] Token registered', { token: result.token });
+    return result.token;
   }
 
   /** Универсальная отправка (база + push) */

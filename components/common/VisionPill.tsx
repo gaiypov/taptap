@@ -24,7 +24,7 @@ export const VisionPill: React.FC<VisionPillProps> = ({
   onPress,
   style,
 }) => {
-  const theme = useAppTheme();
+  const theme = useAppTheme() as any;
   const colorScheme = useColorScheme();
   const isDark = colorScheme === 'dark';
 

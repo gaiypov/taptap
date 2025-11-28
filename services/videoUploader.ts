@@ -3,7 +3,7 @@
  * Handles video uploads to api.video with retry logic, progress tracking, and offline support
  */
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import NetInfo from '@react-native-community/netinfo';
 import { appLogger } from '@/utils/logger';
 import { savePendingAction, removePendingAction, getPendingActions } from '@/services/offlineStorage';
@@ -139,48 +139,43 @@ export async function uploadVideoWithOfflineSupport(
       onProgress(5);
     }
 
-    // Try Supabase endpoint first (if available), otherwise use direct api.video
-    let videoId: string;
+    // Get upload token from backend
     let uploadToken: string;
 
     const endpoint = await getUploadEndpoint(category);
-    
-    if (endpoint.method === 'supabase' && endpoint.videoId && endpoint.uploadToken) {
+
+    if (endpoint.method === 'supabase' && endpoint.uploadToken) {
       // Use Supabase endpoint if available
-      videoId = endpoint.videoId;
       uploadToken = endpoint.uploadToken;
-      appLogger.debug('Using Supabase upload token', { videoId });
+      appLogger.debug('Using Supabase upload token');
       if (onProgress) {
         onProgress(15);
       }
     } else {
       // Direct api.video upload через бэкенд
       const createResult = await createVideoOnBackend(videoMetadata);
-      videoId = createResult.videoId;
       uploadToken = createResult.uploadToken;
-      appLogger.debug('Created video on api.video', { videoId });
+      appLogger.debug('Got upload token from backend');
       if (onProgress) {
         onProgress(15);
       }
     }
 
-    // Upload file using apiVideo service (reuses existing uploadWithToken)
-    // This avoids code duplication and uses the existing, tested upload logic
+    // Upload file using apiVideo service
     if (onProgress) {
       onProgress(20); // Start upload
     }
 
     // Загружаем видео напрямую на api.video
-    // NOTE: FileSystem.uploadAsync doesn't support real-time progress callbacks,
-    // so we simulate progress updates before and after upload
+    // videoId создаётся автоматически при загрузке
     const uploadResult = await uploadVideo(uri, uploadToken);
-    
-    // Simulate progress during upload (FileSystem doesn't report real progress)
+
+    // Simulate progress during upload
     if (onProgress) {
       onProgress(90); // Near completion
     }
 
-    const finalVideoId = uploadResult.videoId || videoId;
+    const finalVideoId = uploadResult.videoId;
 
     // Report completion
     if (onProgress) {

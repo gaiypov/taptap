@@ -1,18 +1,18 @@
 import NotificationItem from '@/components/Notifications/NotificationItem';
 import { auth } from '@/services/auth';
-import { db } from '@/services/supabase';
+import { notifications as notificationsService, supabase } from '@/services/supabase';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    FlatList,
     RefreshControl,
     StyleSheet,
     Text,
     TouchableOpacity,
     View,
 } from 'react-native';
+import { LegendList } from '@legendapp/list';
 
 interface Notification {
   id: string;
@@ -69,7 +69,7 @@ export default function NotificationsScreen() {
 
       if (!currentUser) return;
 
-      const { data, error } = await db.getNotifications(currentUser.id);
+      const { data, error } = await notificationsService.get(currentUser.id);
 
       if (error) throw error;
 
@@ -88,7 +88,7 @@ export default function NotificationsScreen() {
     try {
       // Отметить как прочитанное
       if (!notification.is_read) {
-        await db.markNotificationAsRead(notification.id);
+        await notificationsService.markAsRead(notification.id);
         
         // Обновить UI
         setNotifications(prev =>
@@ -124,8 +124,13 @@ export default function NotificationsScreen() {
     try {
       if (!currentUser) return;
 
-      await db.markAllNotificationsAsRead(currentUser.id);
-      
+      // Mark all notifications as read directly via supabase
+      await supabase
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('user_id', currentUser.id)
+        .eq('is_read', false);
+
       // Обновить UI
       setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     } catch (error) {
@@ -169,11 +174,11 @@ export default function NotificationsScreen() {
         )}
       </View>
 
-      {/* Notifications List */}
-      <FlatList
+      {/* Notifications List — LegendList */}
+      <LegendList
         data={notifications}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
+        keyExtractor={(item: Notification) => item.id}
+        renderItem={({ item }: { item: Notification }) => (
           <NotificationItem notification={item} onPress={handleNotificationPress} />
         )}
         refreshControl={
@@ -189,6 +194,8 @@ export default function NotificationsScreen() {
           </View>
         }
         contentContainerStyle={notifications.length === 0 ? styles.emptyList : undefined}
+        recycleItems={true}
+        drawDistance={500}
       />
     </View>
   );

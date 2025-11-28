@@ -40,37 +40,37 @@ export interface VideoActions {
 }
 
 /**
- * Props for OptimizedVideoPlayer component
+ * @deprecated OptimizedVideoPlayer has been removed. Use EngineVideoPlayer for feed videos or SimpleVideoPlayer for standalone screens.
  */
-export interface OptimizedVideoPlayerProps {
-  uri: string;
-  isActive: boolean;
-  muted: boolean;
-  loop?: boolean;
-  onPlay?: () => void;
-  onPause?: () => void;
-  onError?: (error: Error) => void;
-  thumbnailUrl?: string;
-  category?: string; // For Supabase placeholder fallback
-}
 
 /**
  * Props for EnhancedVideoCard component
+ * Must match the actual EnhancedVideoCardProps interface in EnhancedVideoCard.tsx
  */
 export interface EnhancedVideoCardProps {
-  listing: FeedListing;
+  listing: Listing & {
+    category?: string;
+    is_favorited?: boolean;
+    is_saved?: boolean;
+    is_liked?: boolean;
+    likes_count?: number;
+    comments_count?: number;
+    video_id?: string;
+    video_url?: string;
+    thumbnail_url?: string;
+    additional_images?: string[];
+    media?: { url: string }[];
+    details?: Record<string, unknown>;
+    location?: string;
+    city?: string;
+    seller?: { id: string; name?: string; avatar_url?: string };
+  };
   isActive: boolean;
   isPreloaded: boolean;
   onLike: () => void;
   onFavorite: () => void;
   onComment: () => void;
   onShare: () => void;
-  onOpenDetails?: () => void;
-  fps?: number;
-  stall?: number;
-  scrollVelocity?: number;
-  gyroX?: number;
-  gyroY?: number;
 }
 
 /**
@@ -95,10 +95,8 @@ export interface RightActionPanelProps {
 
 /**
  * Props for TikTokStyleFeed component
+ * Must match the actual VideoFeedProps interface in TikTokStyleFeed.tsx
  */
 export interface TikTokStyleFeedProps {
-  initialListingId?: string;
-  category?: string;
-  onListingPress?: (listingId: string) => void;
+  initialCarId?: string;
 }
-

@@ -1,5 +1,5 @@
 // Утилита для валидации объявлений
-import type { FeedListing } from '@/types';
+import type { Listing } from '@/types';
 import { appLogger } from './logger';
 
 export interface ListingValidationResult {
@@ -12,7 +12,7 @@ export interface ListingValidationResult {
 /**
  * Валидирует объявление и возвращает результат
  */
-export function validateListing(listing: FeedListing): ListingValidationResult {
+export function validateListing(listing: Listing): ListingValidationResult {
   const errors: string[] = [];
   const warnings: string[] = [];
   const missingFields: string[] = [];

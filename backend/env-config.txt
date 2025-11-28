@@ -33,3 +33,28 @@ API_VIDEO_KEY=your-apivideo-api-key-here
 # Получите ключ на https://console.cloud.google.com/
 # Включите Cloud Vision API в проекте
 GOOGLE_VISION_API_KEY=your-google-vision-api-key-here
+
+# OpenAI API (для анализа изображений)
+# Получите ключ на https://platform.openai.com/api-keys
+OPENAI_API_KEY=sk-your-openai-api-key-here
+
+# Anthropic Claude API (для анализа и генерации текста)
+# Получите ключ на https://console.anthropic.com/
+ANTHROPIC_API_KEY=sk-ant-your-anthropic-api-key-here
+
+# Roboflow YOLO (для детекции объектов)
+# Получите ключ на https://roboflow.com/
+ROBOFLOW_API_KEY=your-roboflow-api-key-here
+
+# Yandex Cloud (для YandexGPT и Yandex Vision OCR)
+# Получите Folder ID в консоли Yandex Cloud: https://console.cloud.yandex.ru/
+YANDEX_CLOUD_FOLDER_ID=b1g-your-folder-id-here
+
+# Yandex OAuth Token (рекомендуется, автоматически обновляется)
+# Получите на https://oauth.yandex.ru/
+# Или используйте IAM токен напрямую (нужно обновлять каждый час)
+YANDEX_OAUTH_TOKEN=y0_AgAAAA-your-oauth-token-here
+
+# Yandex IAM Token (альтернатива OAuth, нужно обновлять каждый час)
+# Если указан OAuth токен, IAM токен будет получен автоматически
+# YANDEX_IAM_TOKEN=t1.9euel-your-iam-token-here

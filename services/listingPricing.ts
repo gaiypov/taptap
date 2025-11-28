@@ -36,6 +36,11 @@ export function isInFreePeriod(): boolean {
  */
 export async function getActiveListingsCount(userId: string): Promise<number> {
   try {
+    if (!userId) {
+      console.warn('[listingPricing] No userId provided');
+      return 0;
+    }
+
     const { supabase } = await import('./supabase');
     const { count, error } = await supabase
       .from('listings')
@@ -44,13 +49,27 @@ export async function getActiveListingsCount(userId: string): Promise<number> {
       .eq('status', 'active');
     
     if (error) {
-      console.error('Error getting listings count:', error);
+      // Properly serialize error for logging
+      const errorMessage = error.message || 'Unknown error';
+      const errorDetails = error.details || error.hint || '';
+      console.error('[listingPricing] Error getting listings count:', {
+        message: errorMessage,
+        details: errorDetails,
+        code: error.code,
+        userId,
+      });
       return 0;
     }
     
     return count || 0;
-  } catch (error) {
-    console.error('Error getting listings count:', error);
+  } catch (error: any) {
+    // Handle non-Supabase errors
+    const errorMessage = error?.message || String(error) || 'Unknown error';
+    console.error('[listingPricing] Exception getting listings count:', {
+      message: errorMessage,
+      stack: error?.stack,
+      userId,
+    });
     return 0;
   }
 }
@@ -60,21 +79,41 @@ export async function getActiveListingsCount(userId: string): Promise<number> {
  */
 export async function getUserAccountType(userId: string): Promise<'regular' | 'business'> {
   try {
+    if (!userId) {
+      return 'regular';
+    }
+
     const { supabase } = await import('./supabase');
     
     // Check if user has active business membership
-    const { data: business } = await supabase
+    const { data: business, error } = await supabase
       .from('business_members')
       .select('business_id')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
+    
+    if (error) {
+      // Log error but don't throw - default to regular
+      const errorMessage = error.message || 'Unknown error';
+      console.warn('[listingPricing] Error checking business membership:', {
+        message: errorMessage,
+        code: error.code,
+        userId,
+      });
+      return 'regular';
+    }
     
     if (business) {
       return 'business';
     }
     
     return 'regular';
-  } catch (error) {
+  } catch (error: any) {
+    const errorMessage = error?.message || String(error) || 'Unknown error';
+    console.warn('[listingPricing] Exception checking account type:', {
+      message: errorMessage,
+      userId,
+    });
     return 'regular';
   }
 }

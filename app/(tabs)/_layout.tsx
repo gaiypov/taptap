@@ -1,191 +1,324 @@
+// app/(tabs)/_layout.tsx
+// TikTok-style нижняя навигация — Premium Animations
+// Revolut Ultra стиль (Fallback to View for stability)
+
+import React, { useEffect, useCallback } from 'react';
+import { StyleSheet, View, Text, Pressable, Platform } from 'react-native';
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
+  withSequence,
+} from 'react-native-reanimated';
+// BlurView removed temporarily for Android stability
+// import { BlurView } from 'expo-blur';
+import { Tabs, useRouter, useSegments, usePathname } from 'expo-router';
+import * as Haptics from 'expo-haptics';
+
 import { useAppDispatch } from '@/lib/store/hooks';
 import { setCurrentIndex } from '@/lib/store/slices/feedSlice';
+import { getVideoEngine } from '@/lib/video/videoEngine';
+import { SIZES } from '@/lib/constants/sizes';
 import { ultra } from '@/lib/theme/ultra';
-import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { Tabs, useRouter, useSegments } from 'expo-router';
-import { useEffect, useRef } from 'react';
-import { Animated, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { Icons } from '@/components/icons/CustomIcons';
+import { SPRING_CONFIGS } from '@/components/animations/PremiumAnimations';
 
-// Elevated Create Button Component - Revolut Ultra Platinum
-function ElevatedCreateButton({ focused }: { focused: boolean }) {
-  const router = useRouter();
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+// ==============================================
+// TAB ICON COMPONENT
+// ==============================================
+
+interface TabIconProps {
+  icon: React.FC<{ size: number; color: string; filled?: boolean }>;
+  label: string;
+  focused: boolean;
+}
+
+const TabIcon: React.FC<TabIconProps> = React.memo(({ icon: Icon, label, focused }) => {
+  // Renamed variables to force cache invalidation
+  const iconScale = useSharedValue(1);
+  const iconTranslateY = useSharedValue(0);
 
   useEffect(() => {
     if (focused) {
-      Animated.spring(scaleAnim, {
-        toValue: 1.1,
-        friction: 3,
-        useNativeDriver: true,
-      }).start();
+      // Минималистичная анимация
+      iconScale.value = withSpring(1.05, SPRING_CONFIGS.snappy);
+      iconTranslateY.value = withSpring(-2, SPRING_CONFIGS.gentle);
     } else {
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        friction: 3,
-        useNativeDriver: true,
-      }).start();
+      iconScale.value = withSpring(1, SPRING_CONFIGS.snappy);
+      iconTranslateY.value = withSpring(0, SPRING_CONFIGS.snappy);
     }
-  }, [focused, scaleAnim]);
+  }, [focused]); // Verified: No 'rotation' dependency here
 
-  const handlePress = () => {
-    router.push('/(tabs)/upload');
-  };
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [
+      { scale: iconScale.value },
+      { translateY: iconTranslateY.value },
+    ],
+  }));
+
+  const color = focused ? ultra.textPrimary : ultra.textMuted;
 
   return (
-    <View style={styles.createButtonContainer}>
-      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-        <Pressable 
-          style={styles.fab} 
-          onPress={handlePress}
-        >
-          <LinearGradient
-            colors={[ultra.gradientStart, ultra.gradientEnd]} // #2C2C2C → #1A1A1A
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.fabGradient}
-          >
-            <Ionicons 
-              name="add" 
-              size={Platform.select({ ios: 28, android: 30, default: 28 })} 
-              color={ultra.textPrimary} 
-            />
-          </LinearGradient>
-        </Pressable>
-      </Animated.View>
+    <Animated.View style={[styles.tabIconContainer, animatedStyle]}>
+      <Icon size={SIZES.tabBar.iconSize - 2} color={color} filled={focused} />
+      <Text style={[
+        styles.tabLabel,
+        { color },
+        focused && styles.tabLabelActive,
+      ]}>
+        {label}
+      </Text>
+    </Animated.View>
+  );
+});
+
+// ==============================================
+// CREATE BUTTON COMPONENT (CENTER)
+// ==============================================
+
+interface CreateButtonProps {
+  focused: boolean;
+}
+
+const CreateButton: React.FC<CreateButtonProps> = React.memo(({ focused }) => {
+  const router = useRouter();
+  const buttonScale = useSharedValue(1);
+
+  const handlePress = useCallback(() => {
+    // Premium haptic
+    if (Platform.OS !== 'web') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
+    
+    // Минималистичная анимация
+    buttonScale.value = withSequence(
+      withSpring(0.9, SPRING_CONFIGS.snappy),
+      withSpring(1, SPRING_CONFIGS.snappy)
+    );
+    
+    router.push('/(tabs)/upload');
+  }, [router, buttonScale]); // Verified: No 'rotation' dependency here
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: buttonScale.value }],
+  }));
+
+  return (
+    <View style={styles.createButtonWrapper}>
+      <Pressable onPress={handlePress}>
+        <Animated.View style={animatedStyle}>
+          {/* Replaced BlurView with View for stability */}
+          <View style={[styles.createButton, { backgroundColor: 'rgba(30, 30, 30, 0.9)' }]}>
+            <View style={styles.createButtonInner}>
+              <Icons.Create 
+                size={SIZES.tabBar.createIconSize} 
+                color={ultra.textPrimary} 
+              />
+            </View>
+          </View>
+        </Animated.View>
+      </Pressable>
+      <Text style={styles.createLabel}>Подать</Text>
     </View>
   );
-}
+});
+
+// ==============================================
+// TAB LAYOUT
+// ==============================================
 
 export default function TabLayout() {
   const dispatch = useAppDispatch();
   const segments = useSegments();
-  
-  // Останавливаем видео при переключении на другие вкладки
+  const pathname = usePathname();
+
+  // Pause videos when leaving feed
   useEffect(() => {
-    // Проверяем, находимся ли мы на главном экране (index)
-    // В табах последний сегмент будет именем вкладки
-    const lastSegment = segments[segments.length - 1] as string;
-    const isOnHomeTab = lastSegment === 'index' || 
-                       (segments.length >= 2 && segments[0] === '(tabs)' && (segments[1] as string) === 'index');
+    const isOnFeed = pathname === '/' || pathname === '/index' || (Array.isArray(segments) && segments.length > 0 && (segments as string[]).includes('index'));
+    const engine = getVideoEngine();
     
-    if (!isOnHomeTab) {
-      // Если мы не на главном экране, останавливаем все видео
-      dispatch(setCurrentIndex(-1));
+    if (!isOnFeed) {
+      try {
+        engine.pauseAll();
+        dispatch(setCurrentIndex(-1));
+      } catch (e) {
+        console.warn('[Tabs] pauseAll error', e);
+      }
     }
-  }, [segments, dispatch]);
+  }, [pathname, segments, dispatch]);
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: ultra.accent,
-        tabBarInactiveTintColor: ultra.textMuted,
         headerShown: false,
-        tabBarStyle: {
-          height: Platform.select({ ios: 90, android: 80, default: 90 }),
-          paddingBottom: Platform.select({ ios: 20, android: 12, default: 20 }),
-          paddingTop: Platform.select({ ios: 8, android: 8, default: 8 }),
-          borderTopWidth: 0,
-          backgroundColor: ultra.background, // Матовый фон #0D0D0D
-          ...Platform.select({
-            web: {
-              boxShadow: '0px -2px 3px rgba(0, 0, 0, 0.3)',
-            },
-            ios: {
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: -2 },
-              shadowOpacity: 0.3,
-              shadowRadius: 3,
-            },
-            android: {
-              elevation: 4,
-            },
-          }),
-        },
-        tabBarLabelStyle: {
-          fontSize: 10,
-          fontWeight: '500',
-        },
+        tabBarShowLabel: false,
+        tabBarStyle: styles.tabBar,
+        tabBarBackground: () => (
+          // Replaced BlurView with simple View for Android stability
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0, 0, 0, 0.85)' }]}>
+            <View style={styles.tabBarBorder} />
+          </View>
+        ),
       }}
     >
-      {/* 1. Home */}
+      {/* 1. Главная */}
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Главная',
-          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
-            <Ionicons name={focused ? 'home' : 'home-outline'} size={24} color={color} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon 
+              icon={Icons.Home} 
+              label="Главная" 
+              focused={focused} 
+            />
           ),
         }}
+        listeners={{
+          tabPress: () => {
+            if (Platform.OS === 'ios') {
+              Haptics.selectionAsync();
+            }
+          },
+        }}
       />
-      
-      {/* 2. Search */}
+
+      {/* 2. Поиск */}
       <Tabs.Screen
         name="search"
         options={{
-          title: 'Поиск',
-          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
-            <Ionicons name={focused ? 'search' : 'search-outline'} size={24} color={color} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon 
+              icon={Icons.Search} 
+              label="Поиск" 
+              focused={focused} 
+            />
           ),
         }}
+        listeners={{
+          tabPress: () => {
+            if (Platform.OS === 'ios') {
+              Haptics.selectionAsync();
+            }
+          },
+        }}
       />
-      
-      {/* 3. Create (CENTER, ELEVATED) */}
+
+      {/* 3. Подать (CENTER) */}
       <Tabs.Screen
         name="upload"
         options={{
-          title: 'Создать',
-          tabBarIcon: ({ focused }: { focused: boolean }) => (
-            <ElevatedCreateButton focused={focused} />
+          tabBarIcon: ({ focused }) => (
+            <CreateButton focused={focused} />
           ),
-          tabBarLabel: () => null,
         }}
       />
-      
-      {/* 4. Favorites */}
+
+      {/* 4. Избранное */}
       <Tabs.Screen
         name="favorites"
         options={{
-          title: 'Избранное',
-          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
-            <Ionicons name={focused ? 'heart' : 'heart-outline'} size={24} color={color} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon
+              icon={Icons.Bookmark}
+              label="Избранное"
+              focused={focused}
+            />
           ),
         }}
+        listeners={{
+          tabPress: () => {
+            if (Platform.OS === 'ios') {
+              Haptics.selectionAsync();
+            }
+          },
+        }}
       />
-      
-      {/* 5. Profile */}
+
+      {/* 5. Моё */}
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Профиль',
-          tabBarIcon: ({ color, focused }: { color: string; focused: boolean }) => (
-            <Ionicons name={focused ? 'person' : 'person-outline'} size={24} color={color} />
+          tabBarIcon: ({ focused }) => (
+            <TabIcon 
+              icon={Icons.Profile} 
+              label="Моё" 
+              focused={focused} 
+            />
           ),
+        }}
+        listeners={{
+          tabPress: () => {
+            if (Platform.OS === 'ios') {
+              Haptics.selectionAsync();
+            }
+          },
         }}
       />
     </Tabs>
   );
 }
 
+// ==============================================
+// STYLES
+// ==============================================
+
 const styles = StyleSheet.create({
-  createButtonContainer: {
+  tabBar: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    height: SIZES.tabBar.height,
+    paddingBottom: SIZES.tabBar.paddingBottom,
+    backgroundColor: 'transparent',
+    borderTopWidth: 0,
+    elevation: 0,
+  },
+  tabBarBorder: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 0.5,
+    backgroundColor: 'rgba(255, 255, 255, 0.1)', // Тонкая граница
+  },
+  tabIconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: Platform.select({ ios: 20, android: 16, default: 20 }),
+    paddingTop: 8,
+    position: 'relative',
   },
-  fab: {
-    width: 68, // Размер 68px
-    height: 68,
-    borderRadius: 34,
-    // Никаких теней (TikTok стиль)
+  tabLabel: {
+    fontSize: SIZES.tabBar.labelSize - 1, // Тонкие иконки
+    fontWeight: '400', // Легче
+    marginTop: 4,
+    letterSpacing: 0.2,
   },
-  fabGradient: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 34,
+  tabLabelActive: {
+    fontWeight: '500', // Немного жирнее для активных
+  },
+  createButtonWrapper: {
+    alignItems: 'center',
+    marginTop: -20, // Elevate above tab bar
+  },
+  createButton: {
+    width: SIZES.tabBar.createButtonSize,
+    height: SIZES.tabBar.createButtonSize,
+    borderRadius: SIZES.tabBar.createButtonSize / 2,
+    overflow: 'hidden',
+    borderWidth: 0.5,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+  },
+  createButtonInner: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: ultra.border, // #2A2A2A
+    backgroundColor: 'transparent',
+  },
+  createLabel: {
+    fontSize: SIZES.tabBar.labelSize,
+    fontWeight: '500',
+    color: ultra.textMuted,
+    marginTop: 4,
   },
 });

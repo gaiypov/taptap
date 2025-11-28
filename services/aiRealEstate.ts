@@ -5,7 +5,7 @@ import { RealEstateAIAnalysis } from '@/types';
 import { analyzeWithClaude } from './ai/claude';
 import { analyzeWithOpenAI } from './ai/openai';
 import { AI_CONFIG, logAPICost, selectAvailableAI } from './ai/config';
-import { TEST_CONFIG, canMakeRequest, getCachedAnalysis, incrementRequestCount, setCachedAnalysis } from './ai/testMode';
+import { TEST_CONFIG, ENABLE_CLAUDE, ENABLE_OPENAI, canMakeRequest, getCachedAnalysis, incrementRequestCount, setCachedAnalysis } from './ai/testMode';
 import { extractKeyFrames } from './video';
 import { appLogger } from '@/utils/logger';
 
@@ -63,16 +63,14 @@ export async function analyzeRealEstateVideo(
     onProgress?.('AI анализ недвижимости...', 60);
     let result: RealEstateAIAnalysis;
 
-    if (selectedAI === 'claude' && TEST_CONFIG.ENABLE_CLAUDE) {
+    if (selectedAI === 'claude' && ENABLE_CLAUDE) {
       // Передаем промпт через options (бэкенд должен поддерживать)
-      const aiResult = await analyzeWithClaude(frames.map(f => f.base64), {
-        model: 'claude-3-5-sonnet-20241022',
-        maxTokens: 4096,
+      const aiResult = await analyzeWithClaude(frames.map(f => f.base64), REAL_ESTATE_PROMPT, {
         temperature: 0.3,
       });
       result = parseRealEstateAIResponse(aiResult);
       logAPICost('claude', frames.length);
-    } else if (selectedAI === 'openai' && TEST_CONFIG.ENABLE_OPENAI) {
+    } else if (selectedAI === 'openai' && ENABLE_OPENAI) {
       const aiResult = await analyzeWithOpenAI(frames.map(f => f.base64), 'full_analysis', {
         model: 'gpt-4o',
         maxTokens: 4096,

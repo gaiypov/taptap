@@ -2,9 +2,17 @@
 // REVOLUT ULTRA STYLE — UPLOAD SCREEN
 // Optimized for conversion & aesthetics
 
+import ListingSlotPaymentSheet, { priceForSlot } from '@/components/Payments/ListingSlotPaymentSheet';
 import { CategoryModal } from '@/components/Upload/CategoryModal';
 import { TipsModal } from '@/components/Upload/TipsModal';
 import { CategoryType, UPLOAD_TEXTS } from '@/config/uploadTexts';
+import { LazyLoad } from '@/components/common/LazyLoad';
+import { useAppSelector } from '@/lib/store/hooks';
+import { ultra } from '@/lib/theme/ultra';
+import { auth } from '@/services/auth';
+import { db } from '@/services/supabase';
+import { appLogger } from '@/utils/logger';
+import { requireAuth } from '@/utils/permissionManager';
 import { Ionicons } from '@expo/vector-icons';
 import { Camera } from 'expo-camera';
 import * as Haptics from 'expo-haptics';
@@ -26,9 +34,13 @@ import {
 
 export default function UploadScreen() {
   const router = useRouter();
+  const { user } = useAppSelector((state) => state.auth);
   const [category, setCategory] = useState<CategoryType>('auto');
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showTips, setShowTips] = useState(false);
+  const [showPaymentSheet, setShowPaymentSheet] = useState(false);
+  const [paymentSlot, setPaymentSlot] = useState(0);
+  const [paymentPrice, setPaymentPrice] = useState(0);
   
   // Animations
   const scaleAnim = useRef(new Animated.Value(1)).current;
@@ -88,9 +100,42 @@ export default function UploadScreen() {
   });
 
   const requestPermissionsAndNavigate = async () => {
+    if (!requireAuth('create')) return;
+    
     if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     try {
+      // Check slot limits
+      const currentUser = user || await auth.getCurrentUser();
+      if (!currentUser?.id) {
+        Alert.alert('Ошибка', 'Необходима авторизация');
+        return;
+      }
+
+      // Get user's slot limits
+      const freeLimit = currentUser.free_limit ?? 1;
+      const paidSlots = currentUser.paid_slots ?? 0;
+      const allowed = freeLimit + paidSlots;
+
+      // Count active listings
+      const { data: activeCount, error: countError } = await db.countUserListings(currentUser.id);
+      if (countError) {
+        appLogger.error('[Upload] Error counting listings', { error: countError });
+      }
+
+      const count = activeCount ?? 0;
+
+      // Check if user needs to pay
+      if (count >= allowed) {
+        const nextSlot = count + 1;
+        const price = priceForSlot(nextSlot);
+        setPaymentSlot(nextSlot);
+        setPaymentPrice(price);
+        setShowPaymentSheet(true);
+        return;
+      }
+
+      // Request permissions
       const { status: cameraStatus } = await Camera.requestCameraPermissionsAsync();
       const { status: micStatus } = await Camera.requestMicrophonePermissionsAsync();
 
@@ -112,6 +157,21 @@ export default function UploadScreen() {
       console.error('Permission error:', error);
       Alert.alert('Ошибка', 'Не удалось получить разрешения');
     }
+  };
+
+  const handlePaymentSuccess = async () => {
+    // Refresh user data to get updated paid_slots
+    const currentUser = await auth.getCurrentUser();
+    if (currentUser) {
+      const { data: userData } = await db.getUserById(currentUser.id);
+      if (userData) {
+        // User data will be refreshed automatically on next fetch
+        // Redux store update is handled by auth service
+      }
+    }
+
+    // Proceed with upload
+    requestPermissionsAndNavigate();
   };
 
   return (
@@ -218,27 +278,30 @@ export default function UploadScreen() {
               </LinearGradient>
           </Pressable>
 
-          {/* 5. SECONDARY ACTIONS */}
-          <View style={styles.secondaryActions}>
-            <Pressable 
-              style={styles.actionButton} 
-              onPress={() => {
-                 if (Platform.OS === 'ios') Haptics.selectionAsync();
-                 setShowTips(true);
-              }}
+          {/* 5. GUIDE BUTTON — Revolut Ultra Style */}
+          <Pressable 
+            style={styles.guideButton} 
+            onPress={() => {
+               if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+               setShowTips(true);
+            }}
+          >
+            <LinearGradient
+              colors={['#2C2C2C', '#1A1A1A']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.guideButtonGradient}
             >
-              <Ionicons name="bulb-outline" size={22} color="#E0E0E0" />
-              <Text style={styles.actionButtonText}>Как снимать</Text>
-            </Pressable>
-            
-            <Pressable 
-              style={styles.actionButton}
-              onPress={() => alert('Скоро!')}
-            >
-              <Ionicons name="images-outline" size={22} color="#E0E0E0" />
-              <Text style={styles.actionButtonText}>Галерея</Text>
-            </Pressable>
-          </View>
+              <View style={styles.guideButtonIconContainer}>
+                <Ionicons name="bulb" size={24} color={ultra.accent} />
+              </View>
+              <View style={styles.guideButtonTextContainer}>
+                <Text style={styles.guideButtonTitle}>Как снимать</Text>
+                <Text style={styles.guideButtonSubtitle}>Подробная инструкция по съемке</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={20} color="#888" />
+            </LinearGradient>
+          </Pressable>
 
         </Animated.View>
       </ScrollView>
@@ -251,12 +314,28 @@ export default function UploadScreen() {
         }}
         onClose={() => setShowCategoryModal(false)}
       />
-      <TipsModal
-        visible={showTips}
-        category={category}
-        tips={[...config.tips]}
-        onClose={() => setShowTips(false)}
-      />
+
+      {/* ♻️ LazyLoad: TipsModal загружается только когда открыта */}
+      <LazyLoad visible={showTips}>
+        <TipsModal
+          visible={showTips}
+          category={category}
+          tips={[...config.tips]}
+          onClose={() => setShowTips(false)}
+        />
+      </LazyLoad>
+
+      {/* Payment Sheet */}
+      {user && (
+        <ListingSlotPaymentSheet
+          visible={showPaymentSheet}
+          slotNumber={paymentSlot}
+          price={paymentPrice}
+          userId={user.id}
+          onClose={() => setShowPaymentSheet(false)}
+          onPaymentSuccess={handlePaymentSuccess}
+        />
+      )}
     </View>
   );
 }
@@ -451,26 +530,68 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
 
-  // Secondary Actions
-  secondaryActions: {
-    flexDirection: 'row',
-    gap: 12,
+  // Guide Button — Revolut Ultra Style
+  guideButton: {
+    width: '100%',
+    height: 80,
+    borderRadius: 24,
+    overflow: 'hidden',
+    borderWidth: 1.5,
+    borderColor: ultra.border,
+    marginBottom: 0,
+    ...Platform.select({
+      ios: {
+        shadowColor: ultra.accent,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 6,
+      },
+    }),
   },
-  actionButton: {
+  guideButtonGradient: {
     flex: 1,
-    height: 56,
-    backgroundColor: '#171717',
-    borderRadius: 28,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+    gap: 18,
+  },
+  guideButtonIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: ultra.card,
     justifyContent: 'center',
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#2A2A2A',
+    borderWidth: 1.5,
+    borderColor: ultra.accent,
+    ...Platform.select({
+      ios: {
+        shadowColor: ultra.accent,
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+      },
+    }),
   },
-  actionButtonText: {
-    color: '#E0E0E0',
-    fontSize: 15,
-    fontWeight: '600',
+  guideButtonTextContainer: {
+    flex: 1,
+  },
+  guideButtonTitle: {
+    color: ultra.textPrimary,
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 4,
+    letterSpacing: 0.3,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Black',
+  },
+  guideButtonSubtitle: {
+    color: ultra.textSecondary,
+    fontSize: 14,
+    fontWeight: '500',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
   },
 });

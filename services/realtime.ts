@@ -43,8 +43,9 @@ export const subscribeToRealtime = async (userId: string) => {
           .single();
         
         // Если тред существует и пользователь имеет доступ
-        if (thread && (thread.buyer_id === userId || thread.seller_id === userId)) {
-          store.dispatch(addMessage({ threadId: msg.thread_id, message: msg }));
+        const threadData = thread as { buyer_id: string; seller_id: string } | null;
+        if (threadData && (threadData.buyer_id === userId || threadData.seller_id === userId)) {
+          store.dispatch(addMessage({ threadId: msg.thread_id, message: msg as any }));
 
           // Авто-помечаем как прочитанное, если приложение открыто
           if (AppState.currentState === 'active') {
@@ -67,10 +68,10 @@ export const subscribeToRealtime = async (userId: string) => {
         table: 'chat_threads',
       },
       (payload) => {
-        const thread = payload.new;
+        const thread = payload.new as { id: string; buyer_id?: string; seller_id?: string } | null;
         // RLS уже проверил доступ, обновляем если это наш тред
-        if (thread.buyer_id === userId || thread.seller_id === userId) {
-          store.dispatch(updateThread(thread));
+        if (thread && (thread.buyer_id === userId || thread.seller_id === userId)) {
+          store.dispatch(updateThread(thread as any));
         }
       }
     )

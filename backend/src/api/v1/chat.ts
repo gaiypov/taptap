@@ -151,7 +151,7 @@ router.get(
         messages:chat_messages(count)
       `, { count: 'exact' })
       .or(`buyer_id.eq.${userId},seller_id.eq.${userId}${businessIds.size ? `,business_id.in.(${[...businessIds].join(',')})` : ''}`)
-      .order('last_message_at', { ascending: false, nullsLast: true })
+      .order('last_message_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
     res.json({

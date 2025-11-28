@@ -1,49 +1,36 @@
 import CommentItem from '@/components/Comments/CommentItem';
 import CommentSearch from '@/components/Comments/CommentSearch';
-import { auth } from '@/services/auth';
-import { db } from '@/services/supabase';
+import { commentsService, Comment } from '@/services/comments';
+import { supabase } from '@/services/supabase';
+import { requireAuth } from '@/utils/permissionManager';
+import { triggerHaptic } from '@/utils/listingActions';
 import { Ionicons } from '@expo/vector-icons';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
-    RefreshControl,
-    ScrollView,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View,
+    Dimensions,
 } from 'react-native';
-
-interface Comment {
-  id: string;
-  user_id: string;
-  car_id: string;
-  text: string;
-  likes: number;
-  created_at: string;
-  parent_id?: string | null;
-  user?: {
-    id: string;
-    name: string;
-    avatar_url?: string;
-  };
-  isLiked?: boolean;
-}
+import { LegendList } from '@legendapp/list';
+import { Shimmer, Pulse } from '@/components/animations/PremiumAnimations';
 
 interface CommentsListProps {
-  carId: string;
+  listingId: string;
   onClose?: () => void;
 }
 
-export default function CommentsList({ carId, onClose }: CommentsListProps) {
+export default function CommentsList({ listingId, onClose }: CommentsListProps) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [filteredComments, setFilteredComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
   const [replyToId, setReplyToId] = useState<string | null>(null);
 
@@ -51,11 +38,22 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
     loadUser();
     loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [carId]);
+  }, [listingId]);
 
   useEffect(() => {
     setFilteredComments(comments);
   }, [comments]);
+
+  const loadUser = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        setCurrentUserId(user.id);
+      }
+    } catch (error) {
+      console.error('Load user error:', error);
+    }
+  };
 
   const handleSearch = async (query: string) => {
     setSearchQuery(query);
@@ -66,13 +64,8 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
     }
 
     try {
-      const { data, error } = await db.searchComments(carId, query);
-      
-      if (error) throw error;
-      
-      if (data) {
-        setFilteredComments(data as Comment[]);
-      }
+      const results = await commentsService.searchComments(listingId, query);
+      setFilteredComments(results);
     } catch (error) {
       console.error('Search error:', error);
       // Fallback to local search
@@ -90,16 +83,6 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
 
   const handleReply = (commentId: string) => {
     setReplyToId(commentId);
-    // Focus on input (можно добавить ref если нужно)
-  };
-
-  const loadUser = async () => {
-    try {
-      const user = await auth.getCurrentUser();
-      setCurrentUser(user);
-    } catch (error) {
-      console.error('Load user error:', error);
-    }
   };
 
   const loadComments = async (isRefresh = false) => {
@@ -110,13 +93,8 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
         setLoading(true);
       }
 
-      const { data, error } = await db.getComments(carId);
-      
-      if (error) throw error;
-      
-      if (data) {
-        setComments(data as Comment[]);
-      }
+      const response = await commentsService.getComments(listingId);
+      setComments(response.data);
     } catch (error) {
       console.error('Load comments error:', error);
     } finally {
@@ -126,17 +104,18 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
   };
 
   const handleAddComment = async () => {
-    if (!newComment.trim() || !currentUser) return;
+    if (!newComment.trim()) return;
+    if (!requireAuth('comment')) return;
 
     try {
       setSubmitting(true);
+      triggerHaptic('medium');
       
-      // Если это ответ, используем parent_id
-      if (replyToId) {
-        await db.addComment(carId, currentUser.id, newComment.trim(), replyToId);
-      } else {
-        await db.addComment(carId, currentUser.id, newComment.trim());
-      }
+      await commentsService.addComment({
+        listing_id: listingId,
+        text: newComment.trim(),
+        parent_id: replyToId,
+      });
       
       setNewComment('');
       setReplyToId(null);
@@ -148,29 +127,29 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
     }
   };
 
-  const handleLikeComment = async (commentId: string) => {
-    if (!currentUser) return;
+  const handleLikeComment = async (comment: Comment) => {
+    if (!requireAuth('like')) return;
 
     try {
+      triggerHaptic('light');
+
       // Оптимистичное обновление UI
+      const previousLiked = comment.is_liked || false;
+      const previousLikes = comment.likes_count || 0;
+
       setComments(prev =>
         prev.map(c =>
-          c.id === commentId
+          c.id === comment.id
             ? {
                 ...c,
-                isLiked: !c.isLiked,
-                likes: c.isLiked ? c.likes - 1 : c.likes + 1,
+                is_liked: !previousLiked,
+                likes_count: previousLiked ? previousLikes - 1 : previousLikes + 1,
               }
             : c
         )
       );
 
-      const comment = comments.find(c => c.id === commentId);
-      if (comment?.isLiked) {
-        await db.unlikeComment(currentUser.id, commentId);
-      } else {
-        await db.likeComment(currentUser.id, commentId);
-      }
+      await commentsService.toggleLike(comment.id, previousLiked);
     } catch (error) {
       console.error('Like comment error:', error);
       // Откатываем изменения при ошибке
@@ -178,7 +157,47 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
     }
   };
 
+  // ♻️ LegendList renderItem — оптимизированный рендеринг
+  const renderComment = useCallback(({ item: comment }: { item: Comment }) => (
+    <CommentItem
+      comment={{
+        id: comment.id,
+        user_id: comment.user_id,
+        text: comment.text,
+        likes: comment.likes_count,
+        created_at: comment.created_at,
+        edited_at: comment.is_edited ? comment.updated_at : undefined,
+        parent_id: comment.parent_id,
+        user: comment.user,
+        isLiked: comment.is_liked,
+      }}
+      currentUserId={currentUserId}
+      onLike={() => handleLikeComment(comment)}
+      onReply={handleReply}
+      onUpdate={() => loadComments()}
+    />
+  ), [currentUserId, handleReply]);
+
+  // Empty state component
+  const renderEmpty = useCallback(() => (
+    <View style={styles.emptyContainer}>
+      <Ionicons name="chatbubbles-outline" size={64} color="#999" />
+      {searchQuery ? (
+        <>
+          <Text style={styles.emptyText}>Ничего не найдено</Text>
+          <Text style={styles.emptySubtext}>Попробуйте другой запрос</Text>
+        </>
+      ) : (
+        <>
+          <Text style={styles.emptyText}>Пока нет комментариев</Text>
+          <Text style={styles.emptySubtext}>Будьте первым!</Text>
+        </>
+      )}
+    </View>
+  ), [searchQuery]);
+
   if (loading) {
+    const SCREEN_WIDTH = Dimensions.get('window').width;
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -190,7 +209,18 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
           )}
         </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          {[0, 1, 2].map(i => (
+            <View key={i} style={styles.commentSkeleton}>
+              {/* Avatar */}
+              <Shimmer width={40} height={40} borderRadius={20} />
+              {/* Content */}
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Shimmer width={SCREEN_WIDTH * 0.3} height={14} borderRadius={4} />
+                <Shimmer width={SCREEN_WIDTH * 0.6} height={12} borderRadius={4} style={{ marginTop: 8 }} />
+                <Shimmer width={SCREEN_WIDTH * 0.4} height={12} borderRadius={4} style={{ marginTop: 4 }} />
+              </View>
+            </View>
+          ))}
         </View>
       </View>
     );
@@ -213,43 +243,18 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
       {/* Search */}
       <CommentSearch onSearch={handleSearch} onClear={handleClearSearch} />
 
-      {/* Comments List */}
-      <ScrollView
-        style={styles.commentsList}
-        refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={() => loadComments(true)} />
-        }
-      >
-        {filteredComments.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <Ionicons name="chatbubbles-outline" size={64} color="#999" />
-            {searchQuery ? (
-              <>
-                <Text style={styles.emptyText}>Ничего не найдено</Text>
-                <Text style={styles.emptySubtext}>Попробуйте другой запрос</Text>
-              </>
-            ) : (
-              <>
-                <Text style={styles.emptyText}>Пока нет комментариев</Text>
-                <Text style={styles.emptySubtext}>Будьте первым!</Text>
-              </>
-            )}
-          </View>
-        ) : (
-          filteredComments
-            .filter(c => !c.parent_id) // Показываем только родительские комментарии
-            .map(comment => (
-              <CommentItem
-                key={comment.id}
-                comment={comment}
-                currentUserId={currentUser?.id}
-                onLike={() => handleLikeComment(comment.id)}
-                onReply={handleReply}
-                onUpdate={() => loadComments()}
-              />
-            ))
-        )}
-      </ScrollView>
+      {/* Comments List — ♻️ Оптимизировано с LegendList */}
+      <LegendList
+        data={filteredComments.filter(c => !c.parent_id)} // Только родительские комментарии
+        renderItem={renderComment}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.commentsList}
+        onRefresh={() => loadComments(true)}
+        refreshing={refreshing}
+        ListEmptyComponent={renderEmpty}
+        recycleItems={true}  // ♻️ Переиспользование элементов
+        drawDistance={500}   // 🎯 Render window для экономии памяти
+      />
 
       {/* Add Comment Form */}
       <View style={styles.addCommentContainer}>
@@ -272,20 +277,22 @@ export default function CommentsList({ carId, onClose }: CommentsListProps) {
             maxLength={500}
             editable={!submitting}
           />
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              (!newComment.trim() || submitting) && styles.sendButtonDisabled,
-            ]}
-            onPress={handleAddComment}
-            disabled={!newComment.trim() || submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator size="small" color="#FFF" />
-            ) : (
-              <Ionicons name="send" size={20} color="#FFF" />
-            )}
-          </TouchableOpacity>
+          <Pulse active={!submitting && newComment.trim().length > 0}>
+            <TouchableOpacity
+              style={[
+                styles.sendButton,
+                (!newComment.trim() || submitting) && styles.sendButtonDisabled,
+              ]}
+              onPress={handleAddComment}
+              disabled={!newComment.trim() || submitting}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#FFF" />
+              ) : (
+                <Ionicons name="send" size={20} color="#FFF" />
+              )}
+            </TouchableOpacity>
+          </Pulse>
         </View>
       </View>
     </View>
@@ -318,6 +325,15 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  commentSkeleton: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: '#FFF',
   },
   commentsList: {
     flex: 1,
@@ -387,4 +403,3 @@ const styles = StyleSheet.create({
     backgroundColor: '#CCC',
   },
 });
-

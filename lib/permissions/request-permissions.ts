@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import * as Location from 'expo-location';
-import * as Notifications from 'expo-notifications';
+import { requestNotificationsPermissionsSafe, setupNotificationHandlerSafe } from '@/lib/notifications/request-notifications-safe';
 
 export async function requestLocationPermission(): Promise<boolean> {
   try {
@@ -35,27 +36,21 @@ export async function requestLocationPermission(): Promise<boolean> {
 
 export async function requestNotificationPermission(): Promise<boolean> {
   try {
-    const { status: existingStatus } = await Notifications.getPermissionsAsync();
-    let finalStatus = existingStatus;
+    // Используем безопасную обёртку для запроса разрешений
+    const result = await requestNotificationsPermissionsSafe();
 
-    if (existingStatus !== 'granted') {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
+    if (result.expoGoWorkaround) {
+      console.warn('[requestNotificationPermission] Notifications не поддерживаются в Expo Go на Android. Используйте development build.');
+      await AsyncStorage.setItem('notification_permission', 'denied');
+      return false;
     }
 
-    if (finalStatus === 'granted') {
+    if (result.status === 'granted' && result.canReceivePush) {
       await AsyncStorage.setItem('notification_permission', 'granted');
 
-      // Настройка обработчика уведомлений
-      Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldShowAlert: true,
-          shouldPlaySound: true,
-          shouldSetBadge: true,
-          shouldShowBanner: true,
-          shouldShowList: true,
-        }),
-      });
+      // Настройка обработчика уведомлений (только если не Expo Go)
+      // Используем безопасную функцию с динамическим импортом
+      await setupNotificationHandlerSafe();
 
       return true;
     }

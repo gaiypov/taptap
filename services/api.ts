@@ -10,8 +10,13 @@ const API_BASE_URL =
   Constants.expoConfig?.extra?.apiUrl ||
   Constants.manifest2?.extra?.expoClient?.extra?.apiUrl ||
   (__DEV__
-    ? 'http://192.168.1.16:3001/api' // Твой локальный сервер
+    ? 'http://192.168.1.16:3002/api' // Твой локальный сервер (порт 3002)
     : 'https://api.360auto.kg/api'); // Production
+
+// Логируем используемый URL для отладки
+if (__DEV__) {
+  console.log('[API] Base URL:', API_BASE_URL);
+}
 
 interface RequestConfig extends AxiosRequestConfig {
   retries?: number;
@@ -53,6 +58,8 @@ class ApiClient {
       baseURL,
       timeout: 15_000,
       headers: { 'Content-Type': 'application/json' },
+      // Важно для Expo/mobile
+      validateStatus: (status) => status < 500, // Не выбрасываем ошибку для 4xx
     });
 
     // Загружаем токен при инициализации
@@ -65,7 +72,7 @@ class ApiClient {
       }
       if (this.tokenCache) {
         config.headers.Authorization = `Bearer ${this.tokenCache}`;
-  }
+      }
       return config;
     });
 
@@ -136,9 +143,40 @@ class ApiClient {
       } catch (error: any) {
         lastError = error;
 
+        // Network errors (ECONNREFUSED, ETIMEDOUT, etc.) - retry
+        const isNetworkError = 
+          !error.response && 
+          (error.code === 'ECONNREFUSED' || 
+           error.code === 'ETIMEDOUT' || 
+           error.code === 'ENOTFOUND' ||
+           error.message === 'Network Error' ||
+           error.message?.includes('Network request failed'));
+
         const status = error.response?.status;
         const isClientError = status && status >= 400 && status < 500 && status !== 429;
-        if (isClientError || i === retries) throw error;
+        
+        // Не ретраим клиентские ошибки (4xx кроме 429)
+        if (isClientError || i === retries) {
+          // Для network errors добавляем более информативное сообщение
+          if (isNetworkError && i === retries) {
+            const enhancedError = new Error(
+              `Не удалось подключиться к серверу. Проверьте, что бекенд запущен на ${API_BASE_URL}`
+            );
+            (enhancedError as any).isNetworkError = true;
+            (enhancedError as any).originalError = error;
+            throw enhancedError;
+          }
+          throw error;
+        }
+
+        // Ретраим network errors
+        if (isNetworkError) {
+          console.warn(`[API] Network error, retry ${i + 1}/${retries + 1}...`, {
+            code: error.code,
+            message: error.message,
+            url: url,
+          });
+        }
 
         await delay(retryDelay * Math.pow(2, i));
       }
@@ -176,7 +214,7 @@ export const api = {
   // AI
   ai: {
     analyzeCar: async (videoUri: string, onProgress?: (step: string, progress: number) => void) => {
-      const response = await apiClientInstance.post('/analyze/car', { videoUri }, { onProgress });
+      const response = await apiClientInstance.post('/analyze/car', { videoUri });
       return response.data;
     },
     
@@ -260,6 +298,18 @@ export const api = {
     },
     send: async (threadId: string, text: string) => {
       const response = await apiClientInstance.post(`/chat/threads/${threadId}/messages`, { text });
+      return response.data;
+    },
+  },
+
+  // Consents
+  consents: {
+    getStatus: async () => {
+      const response = await apiClientInstance.get('/consents/status', { useCache: false });
+      return response.data;
+    },
+    accept: async (data: { marketing_accepted?: boolean; notifications_accepted?: boolean }) => {
+      const response = await apiClientInstance.post('/consents/accept', data);
       return response.data;
     },
   },

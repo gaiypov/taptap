@@ -101,7 +101,11 @@ Note: Legacy folders (`360-auto/`, `360auto-marketplace/`) have been moved to `l
 
 ## Performance Guidelines
 
-- Use FlashList instead of FlatList for large lists (install `@shopify/flash-list`)
+- Use LegendList instead of FlatList/FlashList for ALL lists (`@legendapp/list`)
+  - Signal-based recycling — 60 FPS даже на бюджетных Android
+  - Динамические размеры без estimatedItemSize
+  - Для чатов: `alignItemsAtEnd={true}`, `maintainScrollAtEnd={true}`
+  - 100% TypeScript, работает на Web, нет native зависимостей
 - Use expo-image for all images (automatic caching)
 - Implement skeleton loaders for loading states
 - Add haptic feedback for user interactions (already using expo-haptics)
@@ -116,7 +120,7 @@ Note: Legacy folders (`360-auto/`, `360auto-marketplace/`) have been moved to `l
 - Do: use `listing_likes` table, never `likes`.
 - Do Not: add new code under `360-auto/`.
 - Do Not: duplicate services between mobile and backend.
-- Do Not: use FlatList for video feeds - use FlashList or optimize FlatList with proper props.
+- Do Not: use FlatList/FlashList — always use LegendList from `@legendapp/list`.
 
 ## PR Guidance
 

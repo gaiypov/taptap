@@ -52,9 +52,9 @@ export const GlassField: React.FC<GlassFieldProps> = ({
 
 const styles = StyleSheet.create({
   label: {
-    ...(theme.typography?.label || {}),
+    ...(theme.typography?.label || {} as any),
     marginBottom: 6,
-  },
+  } as any,
   wrapper: {
     borderRadius: theme.radius.lg,
     borderWidth: 1,

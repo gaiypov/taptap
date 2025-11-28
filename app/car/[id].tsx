@@ -1,46 +1,75 @@
 import BoostBadge from '@/components/Boost/BoostBadge';
 import BoostModal from '@/components/Boost/BoostModal';
+import { SimilarListings } from '@/components/Feed/SimilarListings';
 import { ReportButton } from '@/components/ReportButton';
+import { CategoryType } from '@/config/filterConfig';
+import { formatPriceWithUSD } from '@/constants/currency';
+import { useUserBehavior } from '@/hooks/useUserBehavior';
+import { isRealVideo, normalizeVideoUrl, PLACEHOLDER_VIDEO_URL } from '@/lib/video/videoSource';
 import { auth } from '@/services/auth';
 import { errorTracking } from '@/services/errorTracking';
 import { boostService } from '@/services/payments/boost';
 import { db } from '@/services/supabase';
 import { Car, Damage } from '@/types';
-import { formatPriceWithUSD } from '@/constants/currency';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from '@expo/video';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    Dimensions,
-    Image,
-    Linking,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Image,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 import { SCREEN_WIDTH } from '@/utils/constants';
+import {
+  getCurrentUserSafe,
+  openCall,
+  openChat,
+  toggleLike,
+  toggleSave,
+  triggerHaptic,
+  validateOwner,
+} from '@/utils/listingActions';
+import { appLogger } from '@/utils/logger';
+import { isOwner, requireAuth } from '@/utils/permissionManager';
 
-// Helper component for price display
+// Helper component for price display with error handling
 function PriceDisplay({ price }: { price: number }) {
-  const priceInfo = formatPriceWithUSD(price);
-  return (
-    <View>
-      <Text style={styles.carPrice}>{priceInfo.kgs}</Text>
-      <Text style={styles.carPriceUSD}>{priceInfo.usd}</Text>
-    </View>
-  );
+  // Handle invalid price values
+  const safePrice = typeof price === 'number' && !isNaN(price) && price >= 0 ? price : 0;
+
+  try {
+    const priceInfo = formatPriceWithUSD(safePrice);
+    return (
+      <View>
+        <Text style={styles.carPrice}>{priceInfo.kgs}</Text>
+        <Text style={styles.carPriceUSD}>{priceInfo.usd}</Text>
+      </View>
+    );
+  } catch {
+    // Fallback if formatPriceWithUSD fails
+    return (
+      <View>
+        <Text style={styles.carPrice}>{safePrice.toLocaleString('ru-RU')} сом</Text>
+        <Text style={styles.carPriceUSD}>~${Math.round(safePrice * 0.0115).toLocaleString('en-US')}</Text>
+      </View>
+    );
+  }
 }
 
 export default function CarDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const behavior = useUserBehavior();
+  const viewTrackedRef = useRef(false);
+
   const [car, setCar] = useState<Car | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -49,15 +78,78 @@ export default function CarDetailsScreen() {
   const [showBoostModal, setShowBoostModal] = useState(false);
   const [activeBoost, setActiveBoost] = useState<any>(null);
 
-  // Video player setup - MUST be called unconditionally
-  const videoPlayer = useVideoPlayer(car?.video_url || '');
+  // Video player setup - КРИТИЧНО: нормализуем ПЕРЕД использованием
+  // Android requires properly formatted string URLs
+  const finalUrl = useMemo(() => {
+    try {
+      // Step 1: Get raw URL from car data
+      const rawUrl = car?.video_url;
+
+      // Step 2: Normalize the URL (handles Optional wrapping, invalid formats, etc.)
+      const normalized = normalizeVideoUrl(rawUrl);
+
+      // Step 3: Validate for Android - must be a clean string
+      if (Platform.OS === 'android') {
+        // Android native player requires clean string URL
+        if (typeof normalized !== 'string' || normalized.length === 0) {
+          appLogger.warn('[CarDetail] Invalid video URL for Android, using placeholder', {
+            carId: car?.id,
+            rawUrl: typeof rawUrl === 'string' ? rawUrl.substring(0, 50) : String(rawUrl),
+          });
+          return PLACEHOLDER_VIDEO_URL;
+        }
+        // Ensure no Optional() wrapper leaked through
+        if (normalized.includes('Optional(')) {
+          appLogger.error('[CarDetail] Optional wrapper detected in normalized URL!', {
+            normalized: normalized.substring(0, 100),
+          });
+          return PLACEHOLDER_VIDEO_URL;
+        }
+      }
+
+      // DEBUG log in development
+      if (__DEV__) {
+        appLogger.debug('[CarDetail] Video URL normalized', {
+          original: typeof rawUrl === 'string' ? rawUrl.substring(0, 50) : String(rawUrl).substring(0, 50),
+          normalized: normalized.substring(0, 50),
+          platform: Platform.OS,
+          carId: car?.id,
+        });
+      }
+
+      return normalized;
+    } catch (error) {
+      appLogger.error('[CarDetail] Error normalizing video URL', { error, carId: car?.id });
+      return PLACEHOLDER_VIDEO_URL;
+    }
+  }, [car?.video_url, car?.id]);
+
+  const hasRealVideo = useMemo(() => {
+    return isRealVideo(finalUrl);
+  }, [finalUrl]);
+
+  // Create player source - ALWAYS use { uri: string } format for both platforms
+  // This is the safest format that works consistently on iOS and Android
+  const playerSource = useMemo(() => {
+    // Don't create player source if no valid URL
+    if (!finalUrl || finalUrl.length === 0) {
+      return null;
+    }
+    // Always use object format - works on both iOS and Android
+    return { uri: finalUrl };
+  }, [finalUrl]);
+
+  // Initialize video player with object source format
+  // Pass null if no valid source to prevent crashes
+  // Note: expo-video 3.x accepts { uri: string } at runtime, but types may expect string
+  const videoPlayer = useVideoPlayer(playerSource as any);
 
   const loadUser = useCallback(async () => {
     try {
       const user = await auth.getCurrentUser();
       setCurrentUser(user);
     } catch (error) {
-      console.error('Error loading user:', error);
+      appLogger.error('Error loading user', { error });
     }
   }, []);
 
@@ -66,26 +158,26 @@ export default function CarDetailsScreen() {
       setLoading(true);
       errorTracking.addBreadcrumb('Loading car details', 'data', { carId: id });
 
-      const { data, error } = await db.getCarById(id as string);
+      const { data, error } = await db.getListing(id as string);
 
       if (error) throw error;
 
       if (data) {
-        setCar(data);
-        setIsLiked(data.isLiked || false);
-        setIsSaved(data.isSaved || false);
+        setCar(data as Car);
+        setIsLiked((data as any).isLiked || false);
+        setIsSaved((data as any).isSaved || false);
       }
     } catch (error) {
-      console.error('Error loading car:', error);
+      appLogger.error('Error loading car', { error });
       errorTracking.captureException(error as Error, {
         tags: { screen: 'carDetails', action: 'loadCar' },
         extra: { carId: id },
       });
-      Alert.alert('Ошибка', 'Не удалось загрузить информацию об автомобиле');
+      appLogger.error('Failed to load car details', { error, carId: id });
     } finally {
       setLoading(false);
     }
-  }, [id, videoPlayer]);
+  }, [id]);
 
   const loadBoostStatus = useCallback(async (carId: string) => {
     if (!carId) return;
@@ -93,7 +185,7 @@ export default function CarDetailsScreen() {
       const boost = await boostService.getActiveBoost(carId);
       setActiveBoost(boost);
     } catch (error) {
-      console.error('Error loading boost:', error);
+      appLogger.error('Error loading boost', { error });
     }
   }, []);
 
@@ -103,11 +195,27 @@ export default function CarDetailsScreen() {
   }, [loadCarDetails, loadUser]);
 
   // Update video player source when car changes
+  // CRITICAL: Always use { uri: string } format for both platforms
   useEffect(() => {
-    if (car?.video_url) {
-      videoPlayer.replace(car.video_url);
+    if (!videoPlayer || !finalUrl) return;
+
+    try {
+      if (isRealVideo(finalUrl) && typeof finalUrl === 'string' && !finalUrl.includes('Optional(')) {
+        // Always use object format for both iOS and Android
+        videoPlayer.replace({ uri: finalUrl } as any);
+        appLogger.debug('[CarDetail] Video player source updated', {
+          url: finalUrl.substring(0, 50),
+          platform: Platform.OS,
+        });
+      }
+    } catch (error) {
+      appLogger.error('[CarDetail] Error updating video player', {
+        error,
+        carId: car?.id,
+        platform: Platform.OS,
+      });
     }
-  }, [car?.video_url, videoPlayer]);
+  }, [finalUrl, videoPlayer, car?.id]);
 
   useEffect(() => {
     if (car?.id) {
@@ -115,80 +223,169 @@ export default function CarDetailsScreen() {
     }
   }, [car?.id, loadBoostStatus]);
 
+  // Трекинг просмотра объявления
+  useEffect(() => {
+    if (!car || viewTrackedRef.current) return;
+
+    // Трекаем просмотр только один раз
+    viewTrackedRef.current = true;
+
+    const category = (car.category || 'car') as CategoryType;
+    behavior.trackView(car.id, category, {
+      brand: car.brand,
+      model: car.model,
+      price: car.price,
+      year: car.year,
+      city: car.city || car.location,
+      color: car.color,
+      transmission: car.transmission,
+      source: 'detail',
+    });
+
+    // Запускаем таймер для длительного просмотра
+    behavior.startViewTimer(car.id, category);
+
+    return () => {
+      behavior.stopViewTimer();
+    };
+  }, [car, behavior]);
+
   const handleLike = async () => {
-    if (!currentUser || !car) return;
+    if (!requireAuth('like')) return;
+    if (!car) return;
+    
+    triggerHaptic('medium');
+    
     try {
-      if (isLiked) {
-        await db.unlikeCar(currentUser.id, car.id);
-        setIsLiked(false);
-        setCar({ ...car, likes: car.likes - 1 });
+      const user = await getCurrentUserSafe();
+      if (!user) return;
+      
+      // Optimistic update
+      const previousLiked = isLiked;
+      const previousLikes = car.likes || 0;
+      
+      setIsLiked(!previousLiked);
+      setCar({ ...car, likes: previousLiked ? Math.max(previousLikes - 1, 0) : previousLikes + 1 });
+      
+      // Backend call
+      const result = await toggleLike(user.id, car.id, previousLiked, previousLikes);
+      setIsLiked(result.isLiked);
+      setCar({ ...car, likes: result.likesCount });
+
+      // Трекинг поведения
+      const category = (car.category || 'car') as CategoryType;
+      if (result.isLiked) {
+        behavior.trackLike(car.id, category, {
+          brand: car.brand,
+          price: car.price,
+          city: car.city,
+        });
       } else {
-        await db.likeCar(currentUser.id, car.id);
-        setIsLiked(true);
-        setCar({ ...car, likes: car.likes + 1 });
+        behavior.trackUnlike(car.id, category);
       }
     } catch (error) {
-      console.error('Like error:', error);
+      // Revert on error
+      setIsLiked(!isLiked);
+      setCar({ ...car, likes: isLiked ? (car.likes || 0) + 1 : Math.max((car.likes || 1) - 1, 0) });
+      appLogger.error('Like error', { error });
     }
   };
 
   const handleSave = async () => {
-    if (!currentUser || !car) return;
+    if (!requireAuth('save')) return;
+    if (!car) return;
+    
+    triggerHaptic('medium');
+    
     try {
-      if (isSaved) {
-        await db.unsaveCar(currentUser.id, car.id);
-        setIsSaved(false);
-        setCar({ ...car, saves: car.saves - 1 });
+      const user = await getCurrentUserSafe();
+      if (!user) return;
+      
+      // Optimistic update
+      const previousSaved = isSaved;
+      const previousSaves = car.saves || 0;
+      
+      setIsSaved(!previousSaved);
+      setCar({ ...car, saves: previousSaved ? Math.max(previousSaves - 1, 0) : previousSaves + 1 });
+      
+      // Backend call
+      const result = await toggleSave(user.id, car.id, previousSaved, previousSaves);
+      setIsSaved(result.isSaved);
+      setCar({ ...car, saves: result.savesCount });
+
+      // Трекинг поведения
+      const category = (car.category || 'car') as CategoryType;
+      if (result.isSaved) {
+        behavior.trackFavorite(car.id, category, {
+          brand: car.brand,
+          price: car.price,
+          city: car.city,
+        });
       } else {
-        await db.saveCar(currentUser.id, car.id);
-        setIsSaved(true);
-        setCar({ ...car, saves: car.saves + 1 });
+        behavior.trackUnfavorite(car.id, category);
       }
     } catch (error) {
-      console.error('Save error:', error);
+      // Revert on error
+      setIsSaved(!isSaved);
+      setCar({ ...car, saves: isSaved ? (car.saves || 0) + 1 : Math.max((car.saves || 1) - 1, 0) });
+      appLogger.error('Save error', { error });
     }
   };
 
   const handleMessage = async () => {
-    if (!currentUser || !car) return;
+    if (!requireAuth('message')) return;
+    if (!car) return;
+    
+    triggerHaptic('medium');
     
     try {
-      const { data: conversation, error } = await db.getOrCreateConversation(
-        car.id,
-        currentUser.id,
-        car.seller_id
-      );
+      const user = await getCurrentUserSafe();
+      if (!user || !car.seller_id) return;
+      
+      const conversationId = await openChat(user.id, car.seller_id, car.id);
+      if (conversationId) {
+        // Трекинг начала чата
+        const category = (car.category || 'car') as CategoryType;
+        behavior.trackChatStart(car.id, category);
 
-      if (error) throw error;
-
-      if (conversation) {
-        router.push(`/chat/${conversation.id}`);
+        router.push({
+          pathname: '/chat/[conversationId]',
+          params: { conversationId },
+        });
       }
     } catch (error) {
-      console.error('Message error:', error);
-      Alert.alert('Ошибка', 'Не удалось создать чат');
+      appLogger.error('Message error', { error });
     }
   };
 
   const handleCall = () => {
-    if (car?.seller?.phone) {
-      Linking.openURL(`tel:${car.seller.phone}`);
-    }
+    if (!requireAuth('call')) return;
+    if (!car?.seller?.phone) return;
+
+    triggerHaptic('medium');
+
+    // Трекинг звонка
+    const category = (car.category || 'car') as CategoryType;
+    behavior.trackCall(car.id, category);
+
+    openCall(car.seller.phone);
   };
 
   const handleBoost = () => {
-    if (!currentUser || !car) return;
+    if (!requireAuth('boost')) return;
+    if (!car) return;
     
-    // Проверяем что пользователь владелец
-    if (currentUser.id !== car.seller_id) {
-      Alert.alert('Ошибка', 'Только владелец может продвигать объявление');
+    triggerHaptic('medium');
+    
+    if (!currentUser || !validateOwner(currentUser, car)) {
+      appLogger.warn('Boost attempted by non-owner', { userId: currentUser?.id, carId: car.id });
       return;
     }
     
     setShowBoostModal(true);
   };
 
-  const isOwner = currentUser && car && currentUser.id === car.seller_id;
+  const owner = currentUser && car ? isOwner(currentUser, car) : false;
 
   const renderAIScore = (score?: number) => {
     if (!score) return null;
@@ -306,19 +503,29 @@ export default function CarDetailsScreen() {
   return (
     <View style={styles.container}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Video Player */}
+        {/* Video Player - Android-optimized */}
         <View style={styles.videoContainer}>
-          {videoPlayer ? (
+          {hasRealVideo && videoPlayer ? (
             <VideoView
               player={videoPlayer}
               style={styles.video}
               nativeControls
               contentFit="cover"
               allowsFullscreen
+              showsTimecodes={false}
+              requiresLinearPlayback={false}
+              contentPosition={{ dx: 0, dy: 0 }}
             />
           ) : (
-            <View style={[styles.video, { justifyContent: 'center', alignItems: 'center' }]}>
-              <ActivityIndicator size="large" color="#FFF" />
+            <View style={[styles.video, styles.videoPlaceholder]}>
+              {loading ? (
+                <ActivityIndicator size="large" color="#FFF" />
+              ) : (
+                <>
+                  <Ionicons name="videocam-off-outline" size={48} color="#666" />
+                  <Text style={styles.noVideoText}>Видео недоступно</Text>
+                </>
+              )}
             </View>
           )}
           
@@ -401,17 +608,13 @@ export default function CarDetailsScreen() {
                   <Ionicons name="checkmark-circle" size={16} color="#007AFF" />
                 )}
               </View>
-              <View style={styles.sellerStats}>
-                <Ionicons name="star" size={14} color="#FFCC00" />
-                <Text style={styles.sellerRating}>{car.seller.rating?.toFixed(1) || '0.0'}</Text>
-              </View>
             </View>
             <Ionicons name="chevron-forward" size={24} color="#8E8E93" />
           </TouchableOpacity>
         )}
 
         {/* BOOST Section (только для владельца) */}
-        {isOwner && (
+        {owner && (
           <View style={styles.boostSection}>
             <View style={styles.boostHeader}>
               <View>
@@ -453,6 +656,15 @@ export default function CarDetailsScreen() {
               </TouchableOpacity>
             )}
           </View>
+        )}
+
+        {/* Похожие объявления */}
+        {car && (
+          <SimilarListings
+            listingId={car.id}
+            category={(car.category || 'car') as CategoryType}
+            limit={6}
+          />
         )}
 
         <View style={{ height: 100 }} />
@@ -539,6 +751,16 @@ const styles = StyleSheet.create({
   video: {
     width: '100%',
     height: '100%',
+  },
+  videoPlaceholder: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#1C1C1E',
+  },
+  noVideoText: {
+    color: '#666',
+    fontSize: 14,
+    marginTop: 8,
   },
   backButton: {
     position: 'absolute',
@@ -755,16 +977,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#FFF',
-  },
-  sellerStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 4,
-    gap: 4,
-  },
-  sellerRating: {
-    fontSize: 14,
-    color: '#8E8E93',
   },
   actionBar: {
     position: 'absolute',

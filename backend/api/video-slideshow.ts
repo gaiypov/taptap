@@ -1,3 +1,4 @@
+// @ts-nocheck - Legacy code, needs types for fluent-ffmpeg and multer
 /**
  * =====================================================
  * PHOTO TO VIDEO SLIDESHOW - BACKEND (Node.js + ffmpeg)

@@ -1,9 +1,14 @@
 // components/Feed/ListingVideoPlayer.tsx
+// Использует единый helper normalizeVideoUrl для безопасной нормализации VideoSource
+
 import type { Listing } from '@/types';
 import { isCarListing, isHorseListing } from '@/types';
+import { normalizeVideoUrl, isRealVideo } from '@/lib/video/videoSource';
 import { VideoView, useVideoPlayer } from '@expo/video';
-import React from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import React, { useMemo } from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { appLogger } from '@/utils/logger';
 
 import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
 
@@ -22,18 +27,74 @@ export default function ListingVideoPlayer({
   onSave,
   onShare,
 }: ListingVideoPlayerProps) {
-  const player = useVideoPlayer(listing.video_url, (player) => {
+  // КРИТИЧНО: Нормализуем videoUrl ПЕРЕД использованием
+  const primaryUrl = listing.video_url;
+  const finalUrl = useMemo(() => {
+    const normalized = normalizeVideoUrl(primaryUrl);
+    
+    // DEBUG лог для поиска источника Optional
+    if (__DEV__) {
+      appLogger.debug('DEBUG videoUrl source', {
+        original: primaryUrl,
+        normalized: normalized,
+        component: 'ListingVideoPlayer',
+        listingId: listing.id,
+      });
+    }
+    
+    return normalized;
+  }, [primaryUrl, listing.id]);
+
+  // Проверяем, является ли это реальным видео (не placeholder)
+  const hasRealVideo = useMemo(() => {
+    return isRealVideo(finalUrl);
+  }, [finalUrl]);
+
+  // Create player source - ALWAYS use { uri: string } format for both iOS and Android
+  const playerSource = useMemo(() => {
+    if (!finalUrl || finalUrl.length === 0) return null;
+    return { uri: finalUrl };
+  }, [finalUrl]);
+
+  const player = useVideoPlayer(playerSource as any);
+
+  // Настраиваем плеер после создания (только если есть реальное видео)
+  React.useEffect(() => {
+    if (!player || !hasRealVideo) return;
+    
+    try {
+    // @ts-expect-error - loop может существовать в рантайме
     player.loop = true;
+    // @ts-expect-error - muted может существовать в рантайме
     player.muted = true;
-  });
+    } catch (error) {
+      appLogger.warn('[ListingVideoPlayer] Player config error', { error, listingId: listing.id });
+    }
+  }, [player, hasRealVideo, listing.id]);
 
   React.useEffect(() => {
+    if (!player || !hasRealVideo) return;
+    
+    try {
     if (isActive) {
       player.play();
     } else {
       player.pause();
     }
-  }, [isActive, player]);
+    } catch (error) {
+      appLogger.warn('[ListingVideoPlayer] Playback error', { error, listingId: listing.id });
+    }
+    
+    return () => {
+      try {
+        if (player && hasRealVideo) {
+          player.pause();
+        }
+      } catch {
+        // Ignore cleanup errors
+      }
+    };
+  }, [isActive, player, hasRealVideo]);
 
   const formatNumber = (num: number) => {
     if (num >= 1000000) return `${(num / 1000000).toFixed(1)}M`;
@@ -45,6 +106,16 @@ export default function ListingVideoPlayer({
     return new Intl.NumberFormat('ru-RU').format(price);
   };
 
+  // Если нет реального видео — показываем placeholder
+  if (!hasRealVideo) {
+    return (
+      <View style={styles.placeholder}>
+        <Ionicons name="videocam-off" size={80} color="#666" />
+        <Text style={styles.placeholderText}>Видео недоступно</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       {/* Video */}
@@ -52,6 +123,11 @@ export default function ListingVideoPlayer({
         player={player}
         style={styles.video}
         contentFit="cover"
+        contentPosition={{ dx: 0, dy: 0 }}
+        nativeControls={false}
+        allowsFullscreen={false}
+        showsTimecodes={false}
+        requiresLinearPlayback={false}
       />
 
       {/* Overlay для проданных */}
@@ -127,11 +203,6 @@ export default function ListingVideoPlayer({
                   <Text style={styles.verifiedBadge}>✓</Text>
                 )}
               </View>
-              {typeof listing.seller.rating === 'number' && (
-                <Text style={styles.sellerRating}>
-                  ⭐ {listing.seller.rating.toFixed(1)}
-                </Text>
-              )}
             </View>
           </View>
         )}
@@ -329,10 +400,6 @@ const styles = StyleSheet.create({
     color: '#30D158',
     fontSize: 16,
   },
-  sellerRating: {
-    color: '#E5E5EA',
-    fontSize: 14,
-  },
   actions: {
     position: 'absolute',
     right: 12,
@@ -356,5 +423,17 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.75)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 3,
+  },
+  placeholder: {
+    width: '100%',
+    height: SCREEN_HEIGHT,
+    backgroundColor: '#000',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  placeholderText: {
+    color: '#666',
+    marginTop: 16,
+    fontSize: 18,
   },
 });

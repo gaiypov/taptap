@@ -24,6 +24,9 @@
   },
   "include": [
     "src/**/*",
+    "services/**/*",
+    "api/**/*",
+    "cli/**/*",
     "types/**/*",
     "../types/**/*"
   ],

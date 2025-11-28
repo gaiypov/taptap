@@ -1,30 +1,37 @@
 // app/(auth)/verify.tsx
 // Экран ввода 4-значного кода подтверждения
 
-import { useRouter, useLocalSearchParams } from 'expo-router';
-import { StatusBar } from 'expo-status-bar';
-import React, { useState, useRef, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  TouchableOpacity,
-  KeyboardAvoidingView,
-  Platform,
-  Alert,
-} from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { useAppDispatch } from '@/lib/store/hooks';
+import { setCredentials } from '@/lib/store/slices/authSlice';
+import { ultra } from '@/lib/theme/ultra';
+import { api } from '@/services/api';
+import { auth } from '@/services/auth';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { auth } from '@/services/auth';
-import { ultra } from '@/lib/theme/ultra';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { StatusBar } from 'expo-status-bar';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import { PremiumButton } from '@/components/ui/PremiumButton';
 
 const CODE_LENGTH = 4;
 
+// Helper function for delays
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 export default function VerifyCodeScreen() {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const params = useLocalSearchParams<{ phone?: string }>();
   const phone = params.phone || '';
 
@@ -32,6 +39,13 @@ export default function VerifyCodeScreen() {
   const [loading, setLoading] = useState(false);
   const [resendTimer, setResendTimer] = useState(60);
   const inputRefs = useRef<(TextInput | null)[]>([]);
+  const isNavigatingRef = useRef(false); // Защита от двойной навигации
+  const navigationSucceededRef = useRef(false); // Отслеживание успешной навигации
+  const isMountedRef = useRef(true);
+  // Track mount status to avoid state updates after unmount
+  useEffect(() => {
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   // Таймер для повторной отправки
   useEffect(() => {
@@ -89,9 +103,24 @@ export default function VerifyCodeScreen() {
   };
 
   const handleVerify = async (codeToVerify?: string) => {
+    // Guard: block double navigation
+    if (isNavigatingRef.current) return;
+    if (loading) {
+      console.warn('[AUTH] ⚠️ Verification already in progress, ignoring duplicate call');
+      return;
+    }
+
     const codeString = codeToVerify || code.join('');
     
+    console.log('[AUTH] 🔐 Verifying code:', {
+      code: codeString,
+      codeLength: codeString.length,
+      phone,
+      expectedLength: CODE_LENGTH,
+    });
+    
     if (codeString.length !== CODE_LENGTH) {
+      console.warn('[AUTH] ❌ Code length mismatch:', codeString.length, 'expected:', CODE_LENGTH);
       return;
     }
 
@@ -100,28 +129,175 @@ export default function VerifyCodeScreen() {
     }
 
     setLoading(true);
+    isNavigatingRef.current = true;
+    navigationSucceededRef.current = false; // Сбрасываем флаг успешной навигации
 
     try {
+      console.log('[AUTH] 🔄 Calling auth.verifyCode...');
       const result = await auth.verifyCode(phone, codeString);
+      
+      console.log('[AUTH] Verify response:', {
+        success: result.success,
+        hasUser: !!result.user,
+        userId: result.user?.id,
+        userPhone: result.user?.phone,
+        error: result.error,
+      });
 
-      if (result.success) {
-        // Успешная авторизация
+      if (result.success && result.user && 'token' in result && result.token) {
+        console.log('');
+        console.log('╔══════════════════════════════════════════════════════════════╗');
+        console.log('║       🎉 OTP VERIFICATION SUCCESSFUL - DEBUG TRACE 🎉       ║');
+        console.log('╠══════════════════════════════════════════════════════════════╣');
+        console.log('║ STEP 1: API Response Received                                ║');
+        console.log('╚══════════════════════════════════════════════════════════════╝');
+        console.log('[DEBUG] User from API:', JSON.stringify({
+          id: result.user.id,
+          phone: result.user.phone,
+          name: result.user.name,
+          avatar_url: result.user.avatar_url,
+        }, null, 2));
+        console.log('[DEBUG] Token length:', result.token.length);
+        console.log('[DEBUG] Token preview:', result.token.substring(0, 40) + '...');
+
+        console.log('');
+        console.log('╔══════════════════════════════════════════════════════════════╗');
+        console.log('║ STEP 2: Dispatching to Redux                                 ║');
+        console.log('╚══════════════════════════════════════════════════════════════╝');
+        console.log('[DEBUG] About to dispatch setCredentials with:');
+        console.log('[DEBUG]   user.id:', result.user.id);
+        console.log('[DEBUG]   user.phone:', result.user.phone);
+        console.log('[DEBUG]   user.name:', result.user.name);
+
+        // Dispatch Redux только после успешной финализации
+        dispatch(setCredentials({
+          user: result.user,
+          token: result.token,
+        }));
+
+        console.log('[DEBUG] ✅ Redux dispatch COMPLETED');
+        console.log('[DEBUG] User should now be in Redux state');
+        
+        // Небольшая задержка для завершения всех операций
+        await wait(150);
+        
+        // Инициализируем push-уведомления после успешного входа (безопасно)
+        try {
+          const { initPushNotifications } = await import('@/services/pushNotifications');
+          initPushNotifications().catch((err) => {
+            console.warn('[AUTH] Push notifications init failed (non-critical):', err);
+          });
+        } catch (err) {
+          console.warn('[AUTH] Failed to load push notifications module (non-critical):', err);
+        }
+        
+        // Проверяем, есть ли имя у пользователя
+        const userName = result.user.name || '';
+        const hasName = userName.trim().length > 0 && userName !== 'Пользователь';
+        
+        console.log('[AUTH] 🔍 Name check:', {
+          name: userName,
+          hasName,
+          nameLength: userName.trim().length,
+        });
+        
+        // Если имени нет - переходим на экран ввода имени
+        if (!hasName) {
+          console.log('[AUTH] 📝 No name found, navigating to name screen...');
+          router.replace('/(auth)/name');
+          navigationSucceededRef.current = true;
+          return;
+        }
+        
+        // Проверяем согласия (только если есть имя)
+        try {
+          const consentStatus = await api.consents.getStatus();
+          const hasConsents = consentStatus?.data?.hasConsents ?? false;
+          
+          console.log('[AUTH] 🔍 Consent check:', {
+            hasConsents,
+            requiresReconsent: consentStatus?.data?.requiresReconsent,
+          });
+          
+          // Если согласий нет - переходим на экран согласий
+          if (!hasConsents) {
+            console.log('[AUTH] 📋 No consents found, navigating to consent screen...');
+            router.replace('/(auth)/consent');
+            navigationSucceededRef.current = true;
+            return;
+          }
+        } catch (consentError: any) {
+          // Если проверка согласий не удалась, продолжаем на главный экран
+          // (согласия можно будет принять позже)
+          console.warn('[AUTH] ⚠️ Consent check failed, continuing to main app:', consentError?.message);
+        }
+        
+        // Навигация на главный экран (если есть имя и согласия)
+        console.log('[VerifyScreen] 🚀 Navigating to tabs...');
         router.replace('/(tabs)');
+        navigationSucceededRef.current = true;
       } else {
-        Alert.alert('Ошибка', result.error || 'Неверный код');
-        // Очищаем поля
-        setCode(['', '', '', '']);
-        inputRefs.current[0]?.focus();
+        // Ошибка верификации - показываем понятное сообщение
+        console.error('[AUTH] ❌ Verification failed:', result.error);
+        const errorMessage = result.error || 'Неверный код или код истек. Попробуйте запросить новый код.';
+        // НЕ сбрасываем isNavigatingRef здесь - будет сброшен в finally
+        Alert.alert('Ошибка', errorMessage, [
+          {
+            text: 'OK',
+            onPress: () => {
+              // Очищаем поля после закрытия Alert
+              if (isMountedRef.current) {
+                setCode(['', '', '', '']);
+              }
+              inputRefs.current[0]?.focus();
+            },
+          },
+        ]);
       }
-    } catch (error) {
-      console.error('Verify code error:', error);
-      Alert.alert('Ошибка', 'Произошла ошибка. Попробуйте позже.');
+    } catch (error: any) {
+      console.error('[AUTH] ❌ Verify code exception:', {
+        message: error?.message,
+        stack: error?.stack,
+        response: error?.response?.data,
+        status: error?.response?.status,
+        error,
+      });
+      
+      // Детальная обработка ошибок
+      let errorMessage = 'Произошла ошибка. Попробуйте позже.';
+      
+      if (error?.response?.status === 400) {
+        const errorData = error?.response?.data || error?.data || {};
+        errorMessage = errorData.error || errorData.message || 'Неверный код или код истек';
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+      // НЕ сбрасываем isNavigatingRef здесь - будет сброшен в finally
+      Alert.alert('Ошибка', errorMessage, [
+        {
+          text: 'OK',
+          onPress: () => {
+            if (isMountedRef.current) {
+              setCode(['', '', '', '']);
+            }
+            inputRefs.current[0]?.focus();
+          },
+        },
+      ]);
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+      // КРИТИЧНО: Сбрасываем флаг только если навигация НЕ произошла
+      // Если навигация успешна, мы уходим с экрана и флаг не нужен
+      if (!navigationSucceededRef.current) {
+        isNavigatingRef.current = false;
+      }
     }
   };
 
   const handleResendCode = async () => {
+    if (loading) return;
     if (resendTimer > 0) return;
 
     if (Platform.OS === 'ios') {
@@ -135,7 +311,9 @@ export default function VerifyCodeScreen() {
 
       if (result.success) {
         setResendTimer(60);
-        setCode(['', '', '', '']);
+        if (isMountedRef.current) {
+          setCode(['', '', '', '']);
+        }
         inputRefs.current[0]?.focus();
         Alert.alert('Успешно', 'Код отправлен повторно');
       } else {
@@ -145,7 +323,9 @@ export default function VerifyCodeScreen() {
       console.error('Resend code error:', error);
       Alert.alert('Ошибка', 'Произошла ошибка. Попробуйте позже.');
     } finally {
-      setLoading(false);
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
     }
   };
 
@@ -167,12 +347,15 @@ export default function VerifyCodeScreen() {
         <View style={styles.content}>
           {/* Header */}
           <View style={styles.header}>
-            <TouchableOpacity
+            <PremiumButton
+              variant="ghost"
+              size="sm"
               onPress={() => router.back()}
               style={styles.backButton}
+              haptic="light"
             >
               <Ionicons name="arrow-back" size={24} color={ultra.textPrimary} />
-            </TouchableOpacity>
+            </PremiumButton>
             <Text style={styles.headerTitle}>Подтверждение</Text>
             <View style={styles.backButtonPlaceholder} />
           </View>
@@ -206,36 +389,29 @@ export default function VerifyCodeScreen() {
             ))}
           </View>
 
-          {/* Verify button — градиент металлик Revolut Ultra */}
-          <TouchableOpacity
-            style={[
-              styles.button,
-              (code.join('').length !== CODE_LENGTH || loading) && styles.buttonDisabled,
-            ]}
+          {/* Verify button — Premium */}
+          <PremiumButton
+            variant="primary"
+            size="xl"
+            fullWidth
             onPress={() => handleVerify()}
             disabled={code.join('').length !== CODE_LENGTH || loading}
-            activeOpacity={0.8}
+            loading={loading}
+            haptic="success"
+            style={styles.button}
           >
-            <LinearGradient
-              colors={[ultra.gradientStart, ultra.gradientEnd]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={StyleSheet.absoluteFill}
-            />
-            {loading ? (
-              <Text style={styles.buttonText}>Проверка...</Text>
-            ) : (
-              <Text style={styles.buttonText}>Подтвердить</Text>
-            )}
-          </TouchableOpacity>
+            {loading ? 'Проверка...' : 'Подтвердить'}
+          </PremiumButton>
 
           {/* Resend code */}
           <View style={styles.resendContainer}>
             <Text style={styles.resendText}>Не получили код?</Text>
-            <TouchableOpacity
+            <PremiumButton
+              variant="ghost"
+              size="sm"
               onPress={handleResendCode}
               disabled={resendTimer > 0 || loading}
-              style={styles.resendButton}
+              haptic="light"
             >
               <Text
                 style={[
@@ -245,7 +421,7 @@ export default function VerifyCodeScreen() {
               >
                 {resendTimer > 0 ? `Отправить повторно (${resendTimer}с)` : 'Отправить повторно'}
               </Text>
-            </TouchableOpacity>
+            </PremiumButton>
           </View>
         </View>
       </KeyboardAvoidingView>

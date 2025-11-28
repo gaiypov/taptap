@@ -3,5 +3,6 @@
     "source.fixAll": "explicit",
     "source.organizeImports": "explicit",
     "source.sortMembers": "explicit"
-  }
+  },
+  "java.jdt.ls.java.home": "/Library/Java/JavaVirtualMachines/jdk-17.0.17.jdk/Contents/Home"
 }

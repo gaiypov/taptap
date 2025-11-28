@@ -1,10 +1,11 @@
 // components/Upload/RecordingGuide.tsx
-// REVOLUT ULTRA STYLE — RECORDING GUIDE (ULTIMATE EDITION)
-// Specific guides for Cars, Horses, Real Estate
+// REVOLUT ULTRA PLATINUM 2025-2026 — RECORDING GUIDE
+// Premium glassmorphism design with dark platinum theme
 
 import { CategoryType, UPLOAD_TEXTS } from '@/config/uploadTexts';
 import { ultra } from '@/lib/theme/ultra';
 import { Ionicons } from '@expo/vector-icons';
+import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useRef } from 'react';
@@ -103,22 +104,31 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
 
   return (
     <View style={styles.container}>
-      {/* Header — Revolut Ultra Style */}
+      {/* Header — Revolut Ultra Glassmorphism */}
       <Animated.View style={[styles.header, { opacity: headerOpacity }]}>
-        <TouchableOpacity 
-          onPress={() => {
-            if (Platform.OS === 'ios') Haptics.selectionAsync();
-            onBack();
-          }} 
-          style={styles.closeButton}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="close" size={22} color={ultra.textPrimary} />
-        </TouchableOpacity>
-        <View style={styles.headerTitleContainer}>
-          <Text style={styles.headerTitle}>{getCategoryTitle()}</Text>
+        <BlurView
+          intensity={Platform.OS === 'ios' ? 80 : 0}
+          tint="dark"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.headerContent}>
+          <TouchableOpacity 
+            onPress={() => {
+              if (Platform.OS === 'ios') Haptics.selectionAsync();
+              onBack();
+            }} 
+            style={styles.closeButton}
+            activeOpacity={0.7}
+          >
+            <View style={styles.closeButtonInner}>
+              <Ionicons name="close" size={22} color={ultra.textPrimary} />
+            </View>
+          </TouchableOpacity>
+          <View style={styles.headerTitleContainer}>
+            <Text style={styles.headerTitle}>{getCategoryTitle()}</Text>
+          </View>
+          <View style={styles.headerSpacer} />
         </View>
-        <View style={styles.headerSpacer} />
       </Animated.View>
 
       <Animated.ScrollView 
@@ -131,8 +141,13 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
         )}
         scrollEventThrottle={16}
       >
-        {/* Hero Tip — Revolut Ultra Gradient */}
+        {/* Hero Tip — Revolut Ultra Glassmorphism */}
         <View style={styles.heroTip}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 30 : 0}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
           <LinearGradient
             colors={[ultra.gradientStart, ultra.gradientEnd]}
             start={{ x: 0, y: 0 }}
@@ -140,24 +155,42 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
             style={styles.heroGradient}
           >
             <View style={styles.heroIconContainer}>
+              <BlurView
+                intensity={Platform.OS === 'ios' ? 20 : 0}
+                tint="dark"
+                style={StyleSheet.absoluteFillObject}
+              />
               <Ionicons name={getCategoryIcon() as any} size={40} color={ultra.accentSecondary} />
             </View>
+            <View style={styles.heroTipContent}>
             <Text style={styles.heroTipText}>
               {normalizedCategory === 'auto' ? 'Чистый авто продается на 20% дороже. Помойте машину перед съемкой!' : 
                normalizedCategory === 'horse' ? 'Покажите лошадь в движении на ровной площадке. Покупатели хотят видеть аллюры.' :
                'Откройте все шторы и включите свет. Светлые квартиры выглядят просторнее.'}
             </Text>
+              <View style={styles.heroTipBadge}>
+                <Ionicons name="star" size={14} color={ultra.accentSecondary} />
+                <Text style={styles.heroTipBadgeText}>Совет эксперта</Text>
+              </View>
+            </View>
           </LinearGradient>
         </View>
 
-        {/* Checklist Section — Revolut Ultra Cards */}
+        {/* Checklist Section — Revolut Ultra Glassmorphism Card */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="checkmark-circle" size={22} color={ultra.accent} />
+            <View style={styles.sectionIconContainer}>
+              <Ionicons name="checkmark-circle" size={22} color={ultra.accentSecondary} />
+            </View>
             <Text style={styles.sectionTitle}>Чек-лист съемки:</Text>
           </View>
           
           <View style={styles.cardContainer}>
+            <BlurView
+              intensity={Platform.OS === 'ios' ? 20 : 0}
+              tint="dark"
+              style={StyleSheet.absoluteFillObject}
+            />
             <View style={styles.checklistVerticalLine} />
             {config.tips.map((tip, index) => {
               const emojiMatch = tip.match(/^([^\s]+)\s/);
@@ -174,10 +207,18 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
                   }}
                 >
                   <View style={styles.checklistIconContainer}>
+                    <BlurView
+                      intensity={Platform.OS === 'ios' ? 15 : 0}
+                      tint="dark"
+                      style={StyleSheet.absoluteFillObject}
+                    />
                     <Text style={styles.checklistEmoji}>{emoji}</Text>
                   </View>
                   <View style={styles.checklistContent}>
                     <Text style={styles.checklistText}>{textContent}</Text>
+                    <View style={styles.checklistNumber}>
+                      <Text style={styles.checklistNumberText}>{index + 1}</Text>
+                    </View>
                   </View>
                 </TouchableOpacity>
               );
@@ -185,10 +226,12 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
           </View>
         </View>
 
-        {/* Examples Section — Revolut Ultra Cards */}
+        {/* Examples Section — Revolut Ultra Glassmorphism Cards */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="play-circle" size={22} color={ultra.accent} />
+            <View style={styles.sectionIconContainer}>
+              <Ionicons name="videocam" size={22} color={ultra.accentSecondary} />
+            </View>
             <Text style={styles.sectionTitle}>Примеры хороших видео:</Text>
           </View>
           
@@ -206,9 +249,26 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
                   if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}
               >
+                <BlurView
+                  intensity={Platform.OS === 'ios' ? 15 : 0}
+                  tint="dark"
+                  style={StyleSheet.absoluteFillObject}
+                />
                 <View style={styles.examplePreview}>
+                  <LinearGradient
+                    colors={[ultra.gradientStart, ultra.gradientEnd]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={StyleSheet.absoluteFillObject}
+                  />
                   <Text style={styles.exampleEmoji}>{example.emoji}</Text>
                   <View style={styles.durationBadge}>
+                    <BlurView
+                      intensity={Platform.OS === 'ios' ? 40 : 0}
+                      tint="dark"
+                      style={StyleSheet.absoluteFillObject}
+                    />
+                    <Ionicons name="time-outline" size={12} color={ultra.accentSecondary} style={{ marginRight: 2 }} />
                     <Text style={styles.durationText}>{example.duration}</Text>
                   </View>
                 </View>
@@ -220,7 +280,7 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
                     if (Platform.OS === 'ios') Haptics.selectionAsync();
                   }}
                 >
-                  <Ionicons name="play" size={16} color={ultra.accent} />
+                  <Ionicons name="play" size={16} color={ultra.accentSecondary} />
                   <Text style={styles.watchButtonText}>Смотреть</Text>
                 </TouchableOpacity>
               </TouchableOpacity>
@@ -228,29 +288,51 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
           </ScrollView>
         </View>
 
-        {/* Mistakes Section — Revolut Ultra Style (без красного!) */}
+        {/* Mistakes Section — Revolut Ultra Glassmorphism (без красного!) */}
         <View style={[styles.section, { marginBottom: 100 }]}>
           <View style={styles.sectionHeader}>
-            <Ionicons name="close-circle" size={22} color={ultra.textSecondary} />
+            <View style={styles.sectionIconContainer}>
+              <Ionicons name="close-circle" size={22} color={ultra.textSecondary} />
+            </View>
             <Text style={styles.sectionTitle}>Частые ошибки:</Text>
           </View>
           
           <View style={styles.mistakesCardContainer}>
+            <BlurView
+              intensity={Platform.OS === 'ios' ? 20 : 0}
+              tint="dark"
+              style={StyleSheet.absoluteFillObject}
+            />
             <View style={styles.mistakesVerticalLine} />
             {mistakes.map((mistake, index) => (
               <View key={index} style={styles.mistakeItem}>
                 <View style={styles.mistakeIconContainer}>
+                  <BlurView
+                    intensity={Platform.OS === 'ios' ? 20 : 0}
+                    tint="dark"
+                    style={StyleSheet.absoluteFillObject}
+                  />
                   <Ionicons name="close-circle" size={20} color={ultra.textMuted} />
                 </View>
+                <View style={styles.mistakeContent}>
                 <Text style={styles.mistakeText}>{mistake}</Text>
+                  <View style={styles.mistakeWarning}>
+                    <Ionicons name="warning" size={12} color={ultra.textMuted} />
+                  </View>
+                </View>
               </View>
             ))}
           </View>
         </View>
       </Animated.ScrollView>
 
-      {/* Footer Button — Revolut Ultra Gradient */}
+      {/* Footer Button — Revolut Ultra Platinum Gradient */}
       <View style={styles.footer}>
+        <BlurView
+          intensity={Platform.OS === 'ios' ? 80 : 0}
+          tint="dark"
+          style={StyleSheet.absoluteFillObject}
+        />
         <TouchableOpacity 
           onPress={() => {
             if (Platform.OS === 'ios') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -260,12 +342,14 @@ export default function RecordingGuide({ category, onStart, onBack }: RecordingG
           style={styles.startButton}
         >
           <LinearGradient
-            colors={[ultra.accentSecondary, ultra.accent]}
+            colors={[ultra.accentSecondary, ultra.accent, ultra.accentSecondary]}
             style={styles.startButtonGradient}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="videocam" size={24} color={ultra.background} />
+            <View style={styles.startButtonIconContainer}>
+              <Ionicons name="videocam" size={24} color={ultra.background} />
+            </View>
             <Text style={styles.startButtonText}>Понятно, начать съемку!</Text>
           </LinearGradient>
         </TouchableOpacity>
@@ -280,31 +364,39 @@ const styles = StyleSheet.create({
     backgroundColor: ultra.background,
   },
   header: {
+    paddingTop: Platform.OS === 'ios' ? 60 : 50,
+    paddingBottom: Platform.select({ ios: 20, android: 16, default: 20 }),
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255, 255, 255, 0.08)',
+    zIndex: 10,
+    overflow: 'hidden',
+  },
+  headerContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingTop: Platform.OS === 'ios' ? 60 : 50,
     paddingHorizontal: Platform.select({ ios: 20, android: 16, default: 20 }),
-    paddingBottom: Platform.select({ ios: 20, android: 16, default: 20 }),
-    borderBottomWidth: 1,
-    borderBottomColor: ultra.border,
-    backgroundColor: ultra.background,
-    zIndex: 10,
   },
   closeButton: {
     width: Platform.select({ ios: 40, android: 44, default: 40 }),
     height: Platform.select({ ios: 40, android: 44, default: 40 }),
-    borderRadius: Platform.select({ ios: 20, android: 22, default: 20 }),
-    backgroundColor: ultra.card,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: ultra.border,
+  },
+  closeButtonInner: {
+    width: '100%',
+    height: '100%',
+    borderRadius: Platform.select({ ios: 20, android: 22, default: 20 }),
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
+        shadowOpacity: 0.2,
         shadowRadius: 4,
       },
       android: {
@@ -336,17 +428,19 @@ const styles = StyleSheet.create({
     marginBottom: Platform.select({ ios: 32, android: 28, default: 32 }),
     borderRadius: 28,
     overflow: 'hidden',
-    borderWidth: 1.5,
-    borderColor: ultra.border,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : ultra.card,
+    position: 'relative',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.15,
-        shadowRadius: 12,
+        shadowOpacity: 0.3,
+        shadowRadius: 16,
       },
       android: {
-        elevation: 6,
+        elevation: 8,
       },
     }),
   },
@@ -358,23 +452,29 @@ const styles = StyleSheet.create({
     width: 72,
     height: 72,
     borderRadius: 36,
-    backgroundColor: ultra.card,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(30, 30, 30, 0.8)' : ultra.surface,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
-    borderWidth: 1.5,
-    borderColor: ultra.border,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    overflow: 'hidden',
+    position: 'relative',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
+        shadowOpacity: 0.3,
         shadowRadius: 8,
       },
       android: {
         elevation: 4,
       },
     }),
+  },
+  heroTipContent: {
+    alignItems: 'center',
+    gap: Platform.select({ ios: 16, android: 14, default: 16 }),
   },
   heroTipText: {
     color: ultra.textPrimary,
@@ -384,6 +484,24 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-semibold',
   },
+  heroTipBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Platform.select({ ios: 6, android: 5, default: 6 }),
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(0, 0, 0, 0.3)' : 'rgba(0, 0, 0, 0.4)',
+    paddingHorizontal: Platform.select({ ios: 12, android: 10, default: 12 }),
+    paddingVertical: Platform.select({ ios: 6, android: 5, default: 6 }),
+    borderRadius: Platform.select({ ios: 16, android: 14, default: 16 }),
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  heroTipBadgeText: {
+    color: ultra.accentSecondary,
+    fontSize: Platform.select({ ios: 12, android: 11, default: 12 }),
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-bold',
+    letterSpacing: 0.5,
+  },
 
   section: {
     marginBottom: Platform.select({ ios: 32, android: 28, default: 32 }),
@@ -391,36 +509,47 @@ const styles = StyleSheet.create({
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Platform.select({ ios: 10, android: 8, default: 10 }),
-    marginBottom: Platform.select({ ios: 16, android: 14, default: 16 }),
+    gap: Platform.select({ ios: 12, android: 10, default: 12 }),
+    marginBottom: Platform.select({ ios: 18, android: 16, default: 18 }),
     paddingLeft: 4,
   },
+  sectionIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255, 255, 255, 0.06)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+  },
   sectionTitle: {
-    fontSize: Platform.select({ ios: 15, android: 14, default: 15 }),
-    fontWeight: '800',
-    color: ultra.accent,
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
+    fontWeight: '900',
+    color: ultra.accentSecondary,
     textTransform: 'uppercase',
-    letterSpacing: 1.2,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-bold',
+    letterSpacing: 1.5,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-black',
   },
   
   cardContainer: {
-    backgroundColor: ultra.card,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : ultra.card,
     borderRadius: 28,
     padding: Platform.select({ ios: 24, android: 20, default: 24 }),
-    borderWidth: 1.5,
-    borderColor: ultra.border,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     gap: Platform.select({ ios: 22, android: 20, default: 22 }),
     position: 'relative',
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 16,
       },
       android: {
-        elevation: 4,
+        elevation: 8,
       },
     }),
   },
@@ -429,9 +558,10 @@ const styles = StyleSheet.create({
     left: Platform.select({ ios: 24, android: 20, default: 24 }),
     top: Platform.select({ ios: 24, android: 20, default: 24 }),
     bottom: Platform.select({ ios: 24, android: 20, default: 24 }),
-    width: 3.5,
-    backgroundColor: ultra.accent,
+    width: 3,
+    backgroundColor: ultra.accentSecondary,
     borderRadius: 2,
+    opacity: 0.6,
   },
   checklistItem: {
     flexDirection: 'row',
@@ -444,10 +574,12 @@ const styles = StyleSheet.create({
     height: Platform.select({ ios: 36, android: 34, default: 36 }),
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: ultra.surface,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(30, 30, 30, 0.6)' : ultra.surface,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: ultra.border,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    overflow: 'hidden',
+    position: 'relative',
   },
   checklistEmoji: {
     fontSize: Platform.select({ ios: 22, android: 21, default: 22 }),
@@ -455,13 +587,34 @@ const styles = StyleSheet.create({
   checklistContent: {
     flex: 1,
     paddingTop: Platform.select({ ios: 4, android: 3, default: 4 }),
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   checklistText: {
+    flex: 1,
     fontSize: Platform.select({ ios: 17, android: 16, default: 17 }),
     color: ultra.textPrimary,
     fontWeight: '600',
     lineHeight: Platform.select({ ios: 24, android: 23, default: 24 }),
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-semibold',
+  },
+  checklistNumber: {
+    width: Platform.select({ ios: 24, android: 22, default: 24 }),
+    height: Platform.select({ ios: 24, android: 22, default: 24 }),
+    borderRadius: Platform.select({ ios: 12, android: 11, default: 12 }),
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(255, 255, 255, 0.15)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: Platform.select({ ios: 8, android: 6, default: 8 }),
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+  },
+  checklistNumberText: {
+    color: ultra.accentSecondary,
+    fontSize: Platform.select({ ios: 11, android: 10, default: 11 }),
+    fontWeight: '900',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-black',
   },
 
   examplesScroll: {
@@ -470,33 +623,36 @@ const styles = StyleSheet.create({
   },
   exampleCard: {
     width: Platform.select({ ios: 160, android: 150, default: 160 }),
-    backgroundColor: ultra.card,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : ultra.card,
     borderRadius: 24,
     padding: Platform.select({ ios: 18, android: 16, default: 18 }),
-    borderWidth: 1.5,
-    borderColor: ultra.border,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+    position: 'relative',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
       },
       android: {
-        elevation: 4,
+        elevation: 6,
       },
     }),
   },
   examplePreview: {
     height: Platform.select({ ios: 120, android: 115, default: 120 }),
-    backgroundColor: ultra.surface,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(30, 30, 30, 0.6)' : ultra.surface,
     borderRadius: 20,
     marginBottom: Platform.select({ ios: 14, android: 12, default: 14 }),
     justifyContent: 'center',
     alignItems: 'center',
     position: 'relative',
-    borderWidth: 1.5,
-    borderColor: ultra.border,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    overflow: 'hidden',
   },
   exampleEmoji: {
     fontSize: Platform.select({ ios: 44, android: 42, default: 44 }),
@@ -505,10 +661,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     bottom: 8,
     left: 8,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.6)',
     paddingHorizontal: Platform.select({ ios: 8, android: 6, default: 8 }),
     paddingVertical: Platform.select({ ios: 4, android: 3, default: 4 }),
     borderRadius: 8,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   durationText: {
     color: ultra.textPrimary,
@@ -529,29 +690,30 @@ const styles = StyleSheet.create({
     gap: Platform.select({ ios: 6, android: 5, default: 6 }),
   },
   watchButtonText: {
-    color: ultra.accent,
+    color: ultra.accentSecondary,
     fontSize: Platform.select({ ios: 14, android: 13, default: 14 }),
-    fontWeight: '600',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-semibold',
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-bold',
   },
 
   mistakesCardContainer: {
-    backgroundColor: ultra.card,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : ultra.card,
     borderRadius: 28,
     padding: Platform.select({ ios: 24, android: 20, default: 24 }),
-    borderWidth: 1.5,
-    borderColor: ultra.border,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
     gap: Platform.select({ ios: 20, android: 18, default: 20 }),
     position: 'relative',
+    overflow: 'hidden',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.3,
+        shadowRadius: 16,
       },
       android: {
-        elevation: 4,
+        elevation: 8,
       },
     }),
   },
@@ -560,9 +722,10 @@ const styles = StyleSheet.create({
     left: Platform.select({ ios: 24, android: 20, default: 24 }),
     top: Platform.select({ ios: 24, android: 20, default: 24 }),
     bottom: Platform.select({ ios: 24, android: 20, default: 24 }),
-    width: 3.5,
+    width: 3,
     backgroundColor: ultra.textMuted,
     borderRadius: 2,
+    opacity: 0.5,
   },
   mistakeItem: {
     flexDirection: 'row',
@@ -571,7 +734,22 @@ const styles = StyleSheet.create({
     paddingLeft: Platform.select({ ios: 12, android: 10, default: 12 }),
   },
   mistakeIconContainer: {
-    marginTop: 2,
+    width: Platform.select({ ios: 28, android: 26, default: 28 }),
+    height: Platform.select({ ios: 28, android: 26, default: 28 }),
+    borderRadius: Platform.select({ ios: 14, android: 13, default: 14 }),
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(255, 255, 255, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  mistakeContent: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   mistakeText: {
     flex: 1,
@@ -581,6 +759,10 @@ const styles = StyleSheet.create({
     lineHeight: Platform.select({ ios: 23, android: 22, default: 23 }),
     fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-semibold',
   },
+  mistakeWarning: {
+    marginLeft: Platform.select({ ios: 8, android: 6, default: 8 }),
+    opacity: 0.6,
+  },
 
   footer: {
     position: 'absolute',
@@ -589,9 +771,9 @@ const styles = StyleSheet.create({
     right: 0,
     padding: Platform.select({ ios: 20, android: 16, default: 20 }),
     paddingBottom: Platform.OS === 'ios' ? 40 : 30,
-    backgroundColor: ultra.background,
     borderTopWidth: 1,
-    borderTopColor: ultra.border,
+    borderTopColor: 'rgba(255, 255, 255, 0.08)',
+    overflow: 'hidden',
   },
   startButton: {
     height: Platform.select({ ios: 68, android: 64, default: 68 }),
@@ -614,7 +796,16 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    gap: Platform.select({ ios: 10, android: 8, default: 10 }),
+    gap: Platform.select({ ios: 12, android: 10, default: 12 }),
+    paddingHorizontal: Platform.select({ ios: 8, android: 6, default: 8 }),
+  },
+  startButtonIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   startButtonText: {
     color: ultra.background,
