@@ -1,40 +1,45 @@
 // app/(tabs)/index.tsx - Оптимизированная видео лента лучше TikTok
 // С интеграцией api.video HLS стриминг, прелоадером и кэшированием
 
-import { EnhancedVideoCard, type EnhancedVideoCardProps } from '@/components/VideoFeed/EnhancedVideoCard';
+import { VideoCard } from '@/components/VideoFeed/VideoCard';
+import { CategoryTabs } from '@/components/Feed/CategoryTabs';
 import { VideoCardSkeleton } from '@/components/common/SkeletonLoader';
 import { CATEGORIES } from '@/constants/categories';
+import { useUserBehavior } from '@/hooks/useUserBehavior';
 import { useAppDispatch, useAppSelector } from '@/lib/store/hooks';
 import { addPreloadedIndex, clearPreloadedIndexes, setActiveCategory, setCurrentIndex } from '@/lib/store/slices/feedSlice';
 import { useAppTheme } from '@/lib/theme';
 import { ultra } from '@/lib/theme/ultra';
-import { apiVideo } from '@/services/apiVideo';
+import { getVideoEngine } from '@/lib/video/videoEngine';
 import { auth } from '@/services/auth';
-import { db, supabase } from '@/services/supabase';
-import type { Listing } from '@/types';
+import { supabase } from '@/services/supabase';
+import type { Listing, ListingCategory } from '@/types';
+import type { CategoryType } from '@/config/filterConfig';
 import { SCREEN_HEIGHT, SCREEN_WIDTH } from '@/utils/constants';
 import { appLogger } from '@/utils/logger';
+import { requireAuth } from '@/utils/permissionManager';
 import { Ionicons } from '@expo/vector-icons';
-import { FlashList } from '@shopify/flash-list';
+import { LegendList } from '@legendapp/list';
 import * as Haptics from 'expo-haptics';
 import { useRouter, useSegments } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Animated,
-    FlatList,
-    Platform,
-    RefreshControl,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
+  Animated,
+  Platform,
+  RefreshControl,
+  Share,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
 } from 'react-native';
 
-// Используем FlashList для native платформ, FlatList для web
-const VideoList = Platform.OS === 'web' ? FlatList : FlashList;
+// Используем LegendList для максимальной производительности (быстрее FlashList)
+// Signal-based recycling, динамические размеры, 100% TypeScript
+const VideoList = LegendList;
 
 type FeedListing = Omit<Listing, 'category'> & {
-  category: string;
+  category: ListingCategory | string;
   is_favorited?: boolean;
   is_saved?: boolean;
   isSaved?: boolean;
@@ -49,68 +54,7 @@ type FeedListing = Omit<Listing, 'category'> & {
   city?: string;
 };
 
-// Утилита для получения видео URL (HLS если api.video, иначе обычный)
-// Используется в EnhancedVideoCard, не удалять
-export function getVideoUrl(listing: FeedListing): string {
-  // Если есть video_id от api.video, используем HLS
-  if (listing.video_id && listing.video_id.trim() !== '') {
-    try {
-      const hlsUrl = apiVideo.getHLSUrl(listing.video_id);
-      if (hlsUrl && hlsUrl.trim() !== '') {
-        appLogger.debug('[Feed] Using HLS URL from video_id', {
-          listingId: listing.id,
-          videoId: listing.video_id,
-          hlsUrl: hlsUrl.substring(0, 50) + '...',
-        });
-        return hlsUrl;
-      }
-    } catch (error) {
-      appLogger.warn('[Feed] Error getting HLS URL for video_id', {
-        listingId: listing.id,
-        videoId: listing.video_id,
-        error,
-      });
-    }
-  }
-  // Fallback на обычный URL из video_url
-  const videoUrl = listing.video_url || (listing as any).videoUrl || '';
-  if (videoUrl && videoUrl.trim() !== '') {
-    appLogger.debug('[Feed] Using video_url', {
-      listingId: listing.id,
-      videoUrl: videoUrl.substring(0, 50) + '...',
-    });
-    return videoUrl;
-  }
-  // Последний fallback - проверяем все возможные поля
-  const fallbackUrl = (listing as any).video || (listing as any).videoUri || '';
-  if (fallbackUrl && fallbackUrl.trim() !== '') {
-    appLogger.debug('[Feed] Using fallback video URL', {
-      listingId: listing.id,
-      fallbackUrl: fallbackUrl.substring(0, 50) + '...',
-    });
-    return fallbackUrl;
-  }
-  
-  appLogger.warn('[Feed] No video URL found for listing', {
-    listingId: listing.id,
-    hasVideoId: !!listing.video_id,
-    hasVideoUrl: !!listing.video_url,
-  });
-  
-  return '';
-}
-
-// Утилита для получения превью
-// Используется в EnhancedVideoCard, не удалять
-export function getThumbnailUrl(listing: FeedListing): string | undefined {
-  if (listing.thumbnail_url) {
-    return listing.thumbnail_url;
-  }
-  if (listing.video_id) {
-    return apiVideo.getThumbnailUrl(listing.video_id);
-  }
-  return undefined;
-}
+// NOTE: getVideoUrl and getThumbnailUrl are now imported from @/lib/video/videoSource.ts
 
 // Оптимизированный компонент главной страницы
 export default function ImprovedIndexScreen() {
@@ -119,6 +63,9 @@ export default function ImprovedIndexScreen() {
   const theme = useAppTheme();
   const flatListRef = useRef<any>(null);
   const dispatch = useAppDispatch();
+
+  // Хук для отслеживания поведения пользователя
+  const behavior = useUserBehavior();
   
   // Redux состояние для feed
   const currentIndex = useAppSelector(state => state.feed.currentIndex);
@@ -126,25 +73,48 @@ export default function ImprovedIndexScreen() {
   const preloadedIndexesRedux = useAppSelector(state => state.feed.preloadedIndexes);
   
   // Проверяем, находимся ли мы на главном экране (вкладка index)
-  // segments может быть ['(tabs)', 'index'] или просто ['index'] в зависимости от структуры
-  // По умолчанию считаем, что мы на главном экране (чтобы видео могло играть)
+  // КРИТИЧНО: Проверяем что segments это массив, не пустой, и содержит 'index'
+  // Это исправляет баг где isFeedFocused defaults to true когда segments пустой
   const isFeedFocused = useMemo(() => {
-    if (segments.length === 0) return true; // По умолчанию считаем, что на главном
-    const lastSegment = segments[segments.length - 1] as string;
-    // Проверяем, что последний сегмент - это 'index' (главная вкладка)
-    return lastSegment === 'index' || 
-           (segments.length >= 2 && segments[0] === '(tabs)' && (segments[1] as string) === 'index');
+    const result = (
+      Array.isArray(segments) &&
+      segments.length > 0 &&
+      (segments as string[]).includes('index')
+    );
+    
+    if (__DEV__) {
+      appLogger.debug('[Feed] isFeedFocused calculation', {
+        result,
+        segments: segments.join('/'),
+        segmentsLength: segments.length,
+        includesIndex: Array.isArray(segments) ? (segments as string[]).includes('index') : false,
+      });
+    }
+    
+    return result;
   }, [segments]);
   
   // Локальное состояние
   const [listings, setListings] = useState<FeedListing[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [sortBy, setSortBy] = useState<'newest' | 'price_low' | 'price_high' | 'popular'>('newest');
+  const [sortBy] = useState<'newest' | 'price_low' | 'price_high' | 'popular'>('newest');
+  
+  // DEBUG: Логируем изменения listings
+  useEffect(() => {
+    appLogger.debug('[Feed] Listings state changed', {
+      count: listings.length,
+      loading,
+      refreshing,
+      activeCategory,
+      firstItemId: listings[0]?.id || 'none',
+    });
+  }, [listings, loading, refreshing, activeCategory]);
   
   // Анимации для категорий
   const categoryAnimations = useRef<Record<string, Animated.Value>>({});
   const previousCategoryRef = useRef<string>(activeCategory);
+  const dataLoadedRef = useRef(false);
   
   // Конвертируем массив из Redux в Set для совместимости
   const preloadedIndexes = preloadedIndexesRedux; // Используем массив напрямую
@@ -201,13 +171,20 @@ export default function ImprovedIndexScreen() {
 
   // Загрузка объявлений с оптимизацией и кэшированием
   const fetchListings = useCallback(async (category: string, refresh: boolean = false) => {
+    appLogger.debug('[Feed] fetchListings called', { category, refresh });
+    
     // Проверяем кэш если не refresh
     if (!refresh) {
       const cached = listingsCache.current[category];
       if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-          setListings(cached.data);
-          setLoading(false);
-          setRefreshing(false);
+            appLogger.debug('[Feed] Using cached data', { count: cached.data.length });
+            // ВАЖНО: Устанавливаем данные СНАЧАЛА
+            setListings(cached.data);
+            // Устанавливаем флаг загрузки
+            dataLoadedRef.current = true;
+            // Теперь устанавливаем loading в false
+            setLoading(false);
+            setRefreshing(false);
           // Устанавливаем первый элемент как активный
           dispatch(setCurrentIndex(0));
           dispatch(clearPreloadedIndexes());
@@ -216,17 +193,22 @@ export default function ImprovedIndexScreen() {
       }
     }
     
+    // Устанавливаем состояние загрузки ПЕРЕД началом загрузки
+    appLogger.debug('[Feed] Setting loading state', { refresh });
     if (refresh) {
       setRefreshing(true);
+      // НЕ устанавливаем loading в false при refresh - пусть остается как есть
+      // Это предотвратит показ пустого экрана во время refresh
     } else {
       setLoading(true);
+      setRefreshing(false);
     }
 
     try {
       // Проверка сессии не блокирует загрузку - позволяем анонимный доступ
       const { error: sessionError } = await supabase.auth.getSession();
       if (sessionError) {
-        console.warn('[Feed] Session check error (continuing anyway):', sessionError.message);
+        appLogger.warn('[Feed] Session check error (continuing anyway)', { error: sessionError.message });
         // Продолжаем без сессии - многие запросы могут работать анонимно
       }
 
@@ -303,145 +285,277 @@ export default function ImprovedIndexScreen() {
       };
 
       // Маппинг категорий для базы данных
+      // CategoryTabs использует единственное число (car, horse, real_estate, all)
+      // База данных также использует единственное число
       const categoryMap: Record<string, string> = {
         'cars': 'car',
+        'car': 'car',
         'horses': 'horse',
+        'horse': 'horse',
         'real_estate': 'real_estate',
+        'all': 'all',
       };
       const dbCategory = categoryMap[category] || category;
 
       // Fetch с retry и улучшенной обработкой ошибок
-      const fetchWithRetry = async (cat: string, retries = 2): Promise<any[]> => {
+      const fetchWithRetry = async (cat: string, retries = 4): Promise<any[]> => {
         for (let attempt = 0; attempt <= retries; attempt++) {
           try {
-            // Начинаем с упрощенного запроса без деталей категорий (избегаем permission denied)
-            let query = supabase
+            // Начинаем с упрощенного запроса без joins (избегаем ошибок relationship)
+            // Загружаем данные отдельно и объединяем вручную для большей надежности
+            appLogger.debug(`[Feed] Querying listings for category`, { category: cat });
+            let queryPromise = supabase
               .from('listings')
-              .select(`
-                *,
-                seller:profiles!seller_id(id, name, avatar_url)
-              `)
-              .eq('category', cat)
-              // Убираем фильтр по status, чтобы видеть все записи (включая тестовые)
-              // .eq('status', 'active')
+              .select('*');
+            
+            // Если категория не 'all', фильтруем по категории
+            if (cat !== 'all') {
+              queryPromise = queryPromise.eq('category', cat);
+            }
+            
+            queryPromise = queryPromise
+              // Пробуем сначала с фильтром по status, если нет результатов - без фильтра
+              .eq('status', 'active')
               .order('created_at', { ascending: false })
               .limit(50);
 
-            const { data, error } = await query;
+            // Добавляем timeout для запроса (30 секунд)
+            const timeoutPromise = new Promise<{ data: null; error: { message: string; code: string } }>((resolve) => {
+              setTimeout(() => {
+                resolve({ data: null, error: { message: 'Request timeout', code: 'ETIMEDOUT' } });
+              }, 30000);
+            });
 
-            if (data && data.length > 0) {
-              console.log(`[Feed] ✅ Loaded ${data.length} listings for category ${cat}`);
+            let queryResult: { data: any; error: any };
+            try {
+              queryResult = await Promise.race([
+                queryPromise,
+                timeoutPromise,
+              ]);
+            } catch (err: any) {
+              // Если запрос упал с исключением, обрабатываем как ошибку
+              queryResult = { 
+                data: null, 
+                error: err?.error || { message: err?.message || 'Unknown error', code: err?.code || 'UNKNOWN' } 
+              };
             }
 
-            if (error) {
-              console.warn(`[Feed] Attempt ${attempt + 1}/${retries + 1} failed:`, error.message);
-              
-              // Проверка на сетевые ошибки
-              const isNetworkError = 
-                error.message?.includes('Network request failed') ||
-                error.message?.includes('Failed to fetch') ||
-                error.message?.includes('network') ||
-                error.code === 'PGRST301' ||
-                error.code === 'ENOTFOUND' ||
-                error.code === 'ETIMEDOUT';
-              
-              // Если ошибка с foreign key, пробуем упрощенный запрос
-              if (error.message?.includes('foreign key') || error.message?.includes('relation') || error.code === 'PGRST201') {
-                console.log('[Feed] Trying simplified query without joins...');
-                const { data: simpleData, error: simpleError } = await supabase
-                  .from('listings')
-                  .select('*')
-                  .eq('category', cat)
-                  // Убираем фильтр по status для тестовых данных
-                  // .eq('status', 'active')
-                  .order('created_at', { ascending: false })
-                  .limit(50);
-                
-                if (!simpleError && simpleData && simpleData.length > 0) {
-                  console.log(`[Feed] ✅ Simplified query loaded ${simpleData.length} listings for category ${cat}`);
-                  // Загружаем продавцов отдельно
-                  const sellerIds = [...new Set(simpleData.map((item: any) => item.seller_user_id).filter(Boolean))];
-                  if (sellerIds.length > 0) {
-                    const { data: sellers } = await supabase
-                      .from('users')
-                      .select('id, name, avatar_url, phone')
-                      .in('id', sellerIds);
-                    
-                    const sellersMap = new Map(sellers?.map((s: any) => [s.id, s]) || []);
-                    return simpleData.map((item: any) => ({
-                      ...item,
-                      seller: sellersMap.get(item.seller_user_id) || null,
-                    }));
-                  }
-                  return simpleData;
-                }
-              }
+            const { data: simpleData, error: simpleError } = queryResult;
 
-              // Для сетевых ошибок увеличиваем задержку и пробуем еще раз
+            if (simpleError) {
+              appLogger.warn(`[Feed] Attempt failed`, { attempt: attempt + 1, retries: retries + 1, error: simpleError.message, code: simpleError.code });
+              
+              // Расширенная проверка на сетевые ошибки
+              const isNetworkError = 
+                simpleError.message?.toLowerCase().includes('network request failed') ||
+                simpleError.message?.toLowerCase().includes('failed to fetch') ||
+                simpleError.message?.toLowerCase().includes('network') ||
+                simpleError.message?.toLowerCase().includes('connection') ||
+                simpleError.message?.toLowerCase().includes('connection refused') ||
+                simpleError.message?.toLowerCase().includes('connection reset') ||
+                simpleError.message?.toLowerCase().includes('connection closed') ||
+                simpleError.message?.toLowerCase().includes('socket hang up') ||
+                simpleError.message?.toLowerCase().includes('econnrefused') ||
+                simpleError.message?.toLowerCase().includes('econnreset') ||
+                simpleError.message?.toLowerCase().includes('etimedout') ||
+                simpleError.message?.toLowerCase().includes('enotfound') ||
+                simpleError.message?.toLowerCase().includes('timeout') ||
+                simpleError.code === 'PGRST301' ||
+                simpleError.code === 'ENOTFOUND' ||
+                simpleError.code === 'ETIMEDOUT' ||
+                simpleError.code === 'ECONNREFUSED' ||
+                simpleError.code === 'ECONNRESET' ||
+                simpleError.code === 'EHOSTUNREACH';
+
+              // Для сетевых ошибок используем экспоненциальную задержку
               if (isNetworkError && attempt < retries) {
-                const delay = 2000 * (attempt + 1); // Увеличиваем задержку для сетевых ошибок
-                console.log(`[Feed] Network error, retrying in ${delay}ms...`);
+                const delay = Math.min(2000 * Math.pow(2, attempt), 10000); // Максимум 10 секунд
+                appLogger.debug(`[Feed] Network error detected, retrying`, { delay, attempt: attempt + 1, retries: retries + 1 });
                 await new Promise((r) => setTimeout(r, delay));
                 continue;
               }
 
-              if ((error.message?.includes('timeout') || error.message?.includes('Timeout')) && attempt < retries) {
-                await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+              // Для timeout ошибок также используем retry
+              if ((simpleError.message?.toLowerCase().includes('timeout') || simpleError.code === 'ETIMEDOUT') && attempt < retries) {
+                const delay = Math.min(1000 * Math.pow(2, attempt), 8000); // Максимум 8 секунд
+                appLogger.debug(`[Feed] Timeout error, retrying`, { delay, attempt: attempt + 1, retries: retries + 1 });
+                await new Promise((r) => setTimeout(r, delay));
                 continue;
               }
 
               // Последняя попытка - не логируем как ошибку, просто возвращаем пустой массив
               if (attempt === retries) {
                 if (isNetworkError) {
-                  console.warn('[Feed] Network request failed after retries. Check internet connection.');
+                  appLogger.warn('[Feed] Network request failed after all retries. Check internet connection.');
                 } else {
-                  console.error('[Feed] Final attempt failed:', error);
+                  appLogger.error('[Feed] Final attempt failed', { error: simpleError });
                 }
                 return [];
               }
               
-              await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+              // Для других ошибок также делаем retry с задержкой
+              const delay = Math.min(1000 * (attempt + 1), 5000);
+              await new Promise((r) => setTimeout(r, delay));
               continue;
             }
 
-            if (data && data.length > 0) {
-              console.log(`[Feed] ✅ Loaded ${data.length} listings for category: ${cat}`);
-              return data;
+            if (simpleData && simpleData.length > 0) {
+              appLogger.info(`[Feed] ✅ Loaded listings for category`, { count: simpleData.length, category: cat });
+              appLogger.debug(`[Feed] Sample categories in data`, { categories: simpleData.slice(0, 3).map((item: any) => item.category) });
+              
+              // Загружаем продавцов отдельно с retry логикой
+              const sellerIds = Array.from(new Set(simpleData.map((item: any) => item.seller_user_id).filter(Boolean)));
+              if (sellerIds.length > 0) {
+                let sellers: any[] = [];
+                let sellersError: any = null;
+                
+                // Пробуем загрузить продавцов с retry
+                for (let sellerAttempt = 0; sellerAttempt <= 2; sellerAttempt++) {
+                  try {
+                    const sellersQuery = supabase
+                  .from('users')
+                  .select('id, name, avatar_url, phone')
+                  .in('id', sellerIds);
+                
+                    const sellersTimeout = new Promise<{ data: null; error: { message: string } }>((_, reject) => {
+                      setTimeout(() => {
+                        reject({ data: null, error: { message: 'Sellers query timeout' } });
+                      }, 15000);
+                    });
+                    
+                    const result = await Promise.race([sellersQuery, sellersTimeout]).catch((err) => {
+                      return { data: null, error: err.error || { message: err.message || 'Unknown error' } };
+                    });
+                    
+                    if (result.error) {
+                      sellersError = result.error;
+                      const isNetworkError = 
+                        result.error.message?.toLowerCase().includes('network') ||
+                        result.error.message?.toLowerCase().includes('failed to fetch') ||
+                        result.error.message?.toLowerCase().includes('timeout');
+                      
+                      if (isNetworkError && sellerAttempt < 2) {
+                        const delay = 1000 * (sellerAttempt + 1);
+                        appLogger.debug(`[Feed] Sellers query network error, retrying`, { delay });
+                        await new Promise((r) => setTimeout(r, delay));
+                        continue;
+                      }
+                      // Если не сетьевая ошибка или последняя попытка, продолжаем без sellers
+                      break;
+                    }
+                    
+                    sellers = result.data || [];
+                    sellersError = null;
+                    break;
+                  } catch (err: any) {
+                    sellersError = err;
+                    if (sellerAttempt < 2) {
+                      const delay = 1000 * (sellerAttempt + 1);
+                      await new Promise((r) => setTimeout(r, delay));
+                      continue;
+                    }
+                    break;
+                  }
+                }
+                
+                if (sellersError) {
+                  appLogger.warn('[Feed] Failed to load sellers, continuing without seller data', { error: sellersError.message });
+                }
+                
+                const sellersMap = new Map(sellers.map((s: any) => [s.id, s]));
+                return simpleData.map((item: any) => ({
+                  ...item,
+                  seller: sellersMap.get(item.seller_user_id) || null,
+                }));
+              }
+              return simpleData;
+            } else {
+              appLogger.warn(`[Feed] ⚠️ No listings found for category with status='active'. Trying without status filter`, { category: cat });
+              
+              // Пробуем без фильтра по status
+              try {
+                let queryWithoutStatus = supabase
+                  .from('listings')
+                  .select('*');
+                
+                // Если категория не 'all', фильтруем по категории
+                if (cat !== 'all') {
+                  queryWithoutStatus = queryWithoutStatus.eq('category', cat);
+                }
+                
+                queryWithoutStatus = queryWithoutStatus
+                  .order('created_at', { ascending: false })
+                  .limit(50);
+                
+                const { data: dataWithoutStatus, error: errorWithoutStatus } = await queryWithoutStatus;
+                
+                if (errorWithoutStatus) {
+                  appLogger.error(`[Feed] Error querying without status filter`, { error: errorWithoutStatus });
+                } else if (dataWithoutStatus && dataWithoutStatus.length > 0) {
+                  appLogger.info(`[Feed] ✅ Found listings without status filter`, { count: dataWithoutStatus.length });
+                  appLogger.debug(`[Feed] Statuses in data`, { statuses: [...new Set(dataWithoutStatus.map((item: any) => item.status))] });
+                  // Возвращаем данные без фильтра по status
+                  return dataWithoutStatus;
+                } else {
+                  appLogger.warn(`[Feed] ⚠️ No listings found even without status filter`, { category: cat });
+                  // Проверяем, какие категории есть в базе
+                  const { data: allCategories } = await supabase
+                    .from('listings')
+                    .select('category')
+                    .limit(100);
+                  if (allCategories && allCategories.length > 0) {
+                    const uniqueCategories = [...new Set(allCategories.map((item: any) => item.category))];
+                    appLogger.debug(`[Feed] Available categories in DB`, { categories: uniqueCategories });
+                  }
+                }
+              } catch (retryError) {
+                appLogger.error(`[Feed] Error in retry query`, { error: retryError });
+              }
             }
 
             return [];
           } catch (err: any) {
+            // Расширенная проверка на сетевые ошибки в catch блоке
             const isNetworkError = 
-              err?.message?.includes('Network request failed') ||
-              err?.message?.includes('Failed to fetch') ||
-              err?.message?.includes('network') ||
+              err?.message?.toLowerCase().includes('network request failed') ||
+              err?.message?.toLowerCase().includes('failed to fetch') ||
+              err?.message?.toLowerCase().includes('network') ||
+              err?.message?.toLowerCase().includes('connection') ||
+              err?.message?.toLowerCase().includes('timeout') ||
               err?.code === 'ENOTFOUND' ||
-              err?.code === 'ETIMEDOUT';
+              err?.code === 'ETIMEDOUT' ||
+              err?.code === 'ECONNREFUSED' ||
+              err?.code === 'ECONNRESET' ||
+              err?.code === 'EHOSTUNREACH';
             
             if (isNetworkError) {
-              console.warn(`[Feed] Network exception on attempt ${attempt + 1}/${retries + 1}:`, err?.message || 'Network error');
+              appLogger.warn(`[Feed] Network exception on attempt`, { attempt: attempt + 1, retries: retries + 1, error: err?.message || 'Network error', code: err?.code });
             } else {
-              console.error(`[Feed] Exception on attempt ${attempt + 1}:`, err);
+              appLogger.error(`[Feed] Exception on attempt`, { attempt: attempt + 1, error: err });
             }
             
             if (attempt === retries) {
               return [];
             }
             
-            const delay = isNetworkError ? 2000 * (attempt + 1) : 1000 * (attempt + 1);
+            // Экспоненциальная задержка для сетевых ошибок
+            const delay = isNetworkError 
+              ? Math.min(2000 * Math.pow(2, attempt), 10000) 
+              : Math.min(1000 * (attempt + 1), 5000);
+            appLogger.debug(`[Feed] Retrying after delay`, { delay });
             await new Promise((r) => setTimeout(r, delay));
           }
         }
         return [];
       };
 
-      console.log(`[Feed] Fetching listings for category: ${category} (DB: ${dbCategory})`);
+      appLogger.debug(`[Feed] Fetching listings for category`, { category, dbCategory });
       const categoryListings = await fetchWithRetry(dbCategory);
-      console.log(`[Feed] Raw listings received: ${categoryListings.length}`);
+      appLogger.debug(`[Feed] Raw listings received`, { count: categoryListings.length });
       
       // Логируем первые несколько для отладки
       if (categoryListings.length > 0) {
-        console.log('[Feed] First listing sample:', {
+        appLogger.debug('[Feed] First listing sample', {
           id: categoryListings[0]?.id,
           title: categoryListings[0]?.title,
           category: categoryListings[0]?.category,
@@ -452,7 +566,7 @@ export default function ImprovedIndexScreen() {
       }
       
       const mapped = categoryListings.map(item => mapListing(item, category));
-      console.log(`[Feed] Mapped listings: ${mapped.length}`);
+      appLogger.debug(`[Feed] Mapped listings`, { count: mapped.length });
       
       // Логируем информацию о видео
       const withVideo = mapped.filter(l => l.video_url || l.video_id);
@@ -505,12 +619,28 @@ export default function ImprovedIndexScreen() {
             timestamp: Date.now(),
           };
           
-          setListings(algorithmSorted as FeedListing[]);
+          appLogger.debug('[Feed] Setting listings (algorithm sorted)', { count: algorithmSorted.length });
+          // Убеждаемся, что это массив и правильный тип
+          const validListings = Array.isArray(algorithmSorted) ? (algorithmSorted as FeedListing[]) : [];
+          
+          // ВАЖНО: Устанавливаем данные СНАЧАЛА, потом loading
+          // Это гарантирует, что listings обновятся до того, как loading станет false
+          setListings(validListings);
+          
+          // Устанавливаем флаг загрузки ПЕРЕД setLoading, чтобы условие рендеринга работало правильно
+          dataLoadedRef.current = true;
+          
+          // Теперь устанавливаем loading в false
+          setLoading(false);
+          setRefreshing(false);
+          
           // Устанавливаем первый элемент как активный
           dispatch(setCurrentIndex(0));
           // Устанавливаем прелоад для первых трех элементов
           dispatch(clearPreloadedIndexes());
-          [0, 1, 2].filter(i => i < algorithmSorted.length).forEach(i => dispatch(addPreloadedIndex(i)));
+          [0, 1, 2].filter(i => i < validListings.length).forEach(i => dispatch(addPreloadedIndex(i)));
+          
+          appLogger.debug('[Feed] Listings set, loading=false, dataLoaded=true', { count: validListings.length });
         } catch (error) {
           appLogger.warn('Error sorting listings, using default order', { error });
           
@@ -520,19 +650,42 @@ export default function ImprovedIndexScreen() {
             timestamp: Date.now(),
           };
           
-          setListings(sorted);
+          appLogger.debug('[Feed] Setting listings (default sorted)', { count: sorted.length });
+          // Убеждаемся, что это массив
+          const validListings = Array.isArray(sorted) ? sorted : [];
+          
+          // ВАЖНО: Устанавливаем данные СНАЧАЛА, потом loading
+          setListings(validListings);
+          
+          // Устанавливаем флаг загрузки ПЕРЕД setLoading
+          dataLoadedRef.current = true;
+          
+          // Теперь устанавливаем loading в false
+          setLoading(false);
+          setRefreshing(false);
+          
           // Устанавливаем первый элемент как активный
           dispatch(setCurrentIndex(0));
           // Устанавливаем прелоад для первых трех элементов
           dispatch(clearPreloadedIndexes());
-          [0, 1, 2].filter(i => i < sorted.length).forEach(i => dispatch(addPreloadedIndex(i)));
+          [0, 1, 2].filter(i => i < validListings.length).forEach(i => dispatch(addPreloadedIndex(i)));
+          
+          appLogger.debug('[Feed] Listings set (fallback), loading=false, dataLoaded=true', { count: validListings.length });
         }
       } else {
+        appLogger.debug('[Feed] No listings found for category', { category });
+        // ВАЖНО: Устанавливаем пустой массив СНАЧАЛА
         setListings([]);
+        // Устанавливаем флаг загрузки
+        dataLoadedRef.current = true;
+        // Теперь устанавливаем loading в false
+        setLoading(false);
+        setRefreshing(false);
         dispatch(setCurrentIndex(0));
         dispatch(clearPreloadedIndexes());
         // Очищаем кэш для пустой категории
         delete listingsCache.current[category];
+        appLogger.debug('[Feed] Empty result - loading set to false');
       }
     } catch (error: any) {
       appLogger.error('Error fetching listings', {
@@ -540,38 +693,95 @@ export default function ImprovedIndexScreen() {
         category,
         stack: error?.stack,
       });
+      appLogger.error('[Feed] fetchListings exception', { error });
       setListings([]);
-      // Не прерываем выполнение - просто показываем пустой список
-    } finally {
+      // Устанавливаем loading в false при ошибке
       setLoading(false);
       setRefreshing(false);
+      // Устанавливаем флаг загрузки для таймаута
+      dataLoadedRef.current = true;
+      appLogger.debug('[Feed] Error - loading set to false');
     }
   }, [dispatch, sortBy]);
 
+  // Инициализация категории при первом монтировании (только один раз)
+  const categoryInitialized = useRef(false);
+  useEffect(() => {
+    // Убеждаемся, что категория установлена (только при первом монтировании)
+    if (!categoryInitialized.current && (!activeCategory || activeCategory === '')) {
+      categoryInitialized.current = true;
+      dispatch(setActiveCategory('cars'));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Загрузка при монтировании и изменении категории или сортировки
   useEffect(() => {
+    // Пропускаем если категория не установлена
+    if (!activeCategory || activeCategory === '') {
+      // Устанавливаем категорию по умолчанию если она пустая
+      dispatch(setActiveCategory('cars'));
+      return;
+    }
+    
     appLogger.debug(`Category changed or component mounted: ${activeCategory}, sortBy: ${sortBy}`);
     let isMounted = true;
     
-    fetchListings(activeCategory).then(() => {
+    // Сбрасываем флаг загрузки при смене категории
+    dataLoadedRef.current = false;
+    
+    // Таймаут для предотвращения зависания (только если данные не загрузились)
+    // Увеличиваем таймаут до 15 секунд, так как запросы могут занимать время
+    const timeoutId = setTimeout(() => {
+      if (isMounted && !dataLoadedRef.current) {
+        appLogger.warn('[Feed] Loading timeout, forcing render (data may still be loading)');
+        // НЕ устанавливаем loading в false здесь - пусть fetchListings сам управляет состоянием
+        // Это предотвратит показ пустого экрана когда данные еще загружаются
+      }
+    }, 15000); // 15 секунд таймаут
+    
+    if (__DEV__) {
+      appLogger.debug('[Feed] Starting fetchListings for category', { category: activeCategory });
+    }
+    fetchListings(activeCategory)
+      .then(() => {
       if (isMounted) {
+          dataLoadedRef.current = true;
+          clearTimeout(timeoutId);
+          if (__DEV__) {
+            appLogger.debug('[Feed] fetchListings promise resolved successfully');
+          }
         // Устанавливаем первый индекс для прелоада после загрузки
         dispatch(setCurrentIndex(0));
         dispatch(clearPreloadedIndexes());
         [0, 1, 2].forEach(i => dispatch(addPreloadedIndex(i)));
+        } else {
+          if (__DEV__) {
+            appLogger.debug('[Feed] Component unmounted, skipping state updates');
+          }
       }
-    }).catch((error) => {
-      appLogger.error('Error in fetchListings effect', { error, category: activeCategory });
+      })
+      .catch((error) => {
+      appLogger.error('[Feed] fetchListings promise rejected', { error, category: activeCategory });
       if (isMounted) {
+          dataLoadedRef.current = true;
+          clearTimeout(timeoutId);
         setLoading(false);
         setRefreshing(false);
+          // Устанавливаем пустой список при ошибке
+          setListings([]);
+          if (__DEV__) {
+            appLogger.debug('[Feed] Error handler - loading set to false, listings cleared');
+          }
       }
     });
     
     return () => {
       isMounted = false;
+      clearTimeout(timeoutId);
     };
-  }, [activeCategory, sortBy, fetchListings, dispatch]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeCategory, sortBy]);
 
   // Скролл к началу при загрузке новых объявлений после смены категории
   const prevCategoryRef = useRef<string>(activeCategory);
@@ -636,7 +846,9 @@ export default function ImprovedIndexScreen() {
   const handleCategoryChange = useCallback((categoryId: string) => {
     if (categoryId === activeCategory) return; // Не обрабатываем повторный клик
     
-    console.log('[Feed] Category change requested:', categoryId, 'current:', activeCategory);
+    if (__DEV__) {
+      appLogger.debug('[Feed] Category change requested', { categoryId, current: activeCategory });
+    }
     
     // Haptic feedback для iOS
     if (Platform.OS === 'ios') {
@@ -651,13 +863,14 @@ export default function ImprovedIndexScreen() {
     dispatch(clearPreloadedIndexes());
     [0, 1, 2].forEach(i => dispatch(addPreloadedIndex(i)));
     
-    // Очищаем текущий список перед загрузкой новой категории
-    setListings([]);
+    // НЕ очищаем список перед загрузкой - пусть данные остаются до загрузки новых
+    // Это предотвращает показ "Нет объявлений" во время загрузки
     setLoading(true);
     
     // Загружаем данные для новой категории
     fetchListings(categoryId, false).catch(() => {
       setLoading(false);
+      setRefreshing(false);
     });
     
     // Плавный скролл к началу списка после загрузки
@@ -670,107 +883,384 @@ export default function ImprovedIndexScreen() {
 
   // Обработка pull-to-refresh
   const onRefresh = useCallback(() => {
-    console.log('[Feed] Pull to refresh triggered');
+    if (__DEV__) {
+      appLogger.debug('[Feed] Pull to refresh triggered', { category: activeCategory });
+    }
     fetchListings(activeCategory, true);
   }, [activeCategory, fetchListings]);
 
   // Обработчик лайков
   const handleLike = useCallback(async (listingId: string) => {
-    // Haptic feedback
-    if (Platform.OS === 'ios') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    }
+    if (!requireAuth('like')) return;
+    
+    const { triggerHaptic, toggleLike, getCurrentUserSafe } = await import('@/utils/listingActions');
+    triggerHaptic('medium');
     
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentUserSafe();
       if (!user) return;
 
-      const isLiked = await db.checkUserLiked(user.id, listingId);
-      
-      if (isLiked) {
-        await db.unlikeListing(user.id, listingId);
-        setListings(prev =>
-          prev.map(item =>
-            item.id === listingId
-              ? { ...item, is_liked: false, likes_count: Math.max((item.likes_count || 0) - 1, 0) }
-              : item
-          )
-        );
+      const listing = listings.find(item => item.id === listingId);
+      if (!listing) return;
+
+      const currentLiked = listing.is_liked || false;
+      const currentLikes = listing.likes_count || 0;
+
+      // Optimistic update
+      setListings(prev =>
+        prev.map(item =>
+          item.id === listingId
+            ? { ...item, is_liked: !currentLiked, likes_count: currentLiked ? Math.max(currentLikes - 1, 0) : currentLikes + 1 }
+            : item
+        )
+      );
+
+      // Backend call
+      const result = await toggleLike(user.id, listingId, currentLiked, currentLikes);
+      setListings(prev =>
+        prev.map(item =>
+          item.id === listingId
+            ? { ...item, is_liked: result.isLiked, likes_count: result.likesCount }
+            : item
+        )
+      );
+
+      // Трекинг поведения
+      const cat = (listing.category?.replace('s', '') || 'car') as CategoryType;
+      if (result.isLiked) {
+        behavior.trackLike(listingId, cat, {
+          brand: listing.details?.brand,
+          price: listing.price,
+          city: listing.city,
+        });
       } else {
-        await db.likeListing(user.id, listingId);
+        behavior.trackUnlike(listingId, cat);
+      }
+    } catch (error) {
+      // Revert on error
+      const listing = listings.find(item => item.id === listingId);
+      if (listing) {
         setListings(prev =>
           prev.map(item =>
             item.id === listingId
-              ? { ...item, is_liked: true, likes_count: (item.likes_count || 0) + 1 }
+              ? { ...item, is_liked: listing.is_liked, likes_count: listing.likes_count }
               : item
           )
         );
       }
-    } catch (error) {
-      console.error('Error handling like:', error);
+      appLogger.error('[Feed] Error handling like', { error });
     }
-  }, []);
+  }, [listings, behavior]);
 
   // Обработчик избранного
   const handleFavorite = useCallback(async (listingId: string) => {
+    if (!requireAuth('favorite')) return;
+    
+    const { triggerHaptic, toggleSave, getCurrentUserSafe } = await import('@/utils/listingActions');
+    triggerHaptic('medium');
+    
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = await getCurrentUserSafe();
       if (!user) return;
 
-      const isSaved = await db.checkUserSaved(user.id, listingId);
-      
-      if (isSaved) {
-        await db.unsaveListing(user.id, listingId);
-        setListings(prev =>
-          prev.map(item =>
-            item.id === listingId ? { ...item, is_favorited: false } : item
-          )
-        );
+      const listing = listings.find(item => item.id === listingId);
+      if (!listing) return;
+
+      const currentSaved = listing.is_favorited || false;
+      const currentSaves = 0; // saves count not tracked in feed
+
+      // Optimistic update
+      setListings(prev =>
+        prev.map(item =>
+          item.id === listingId ? { ...item, is_favorited: !currentSaved } : item
+        )
+      );
+
+      // Backend call
+      await toggleSave(user.id, listingId, currentSaved, currentSaves);
+
+      // Трекинг поведения
+      const cat = (listing.category?.replace('s', '') || 'car') as CategoryType;
+      if (!currentSaved) {
+        behavior.trackFavorite(listingId, cat, {
+          brand: listing.details?.brand,
+          price: listing.price,
+          city: listing.city,
+        });
       } else {
-        await db.saveListing(user.id, listingId);
+        behavior.trackUnfavorite(listingId, cat);
+      }
+    } catch (error) {
+      // Revert on error
+      const listing = listings.find(item => item.id === listingId);
+      if (listing) {
         setListings(prev =>
           prev.map(item =>
-            item.id === listingId ? { ...item, is_favorited: true } : item
+            item.id === listingId ? { ...item, is_favorited: listing.is_favorited } : item
           )
         );
       }
-    } catch (error) {
       appLogger.error('Error handling favorite', { error, listingId });
     }
-  }, []);
+  }, [listings, behavior]);
 
   // Обработчик комментариев
   const handleComment = useCallback((listing: FeedListing) => {
+    if (!requireAuth('comment')) return;
+    
     router.push({
       pathname: '/car/[id]',
       params: { id: listing.id },
     });
   }, [router]);
 
-  // Обработчик шаринга
-  const handleShare = useCallback((listing: FeedListing) => {
-    // TODO: Реализовать шаринг через react-native-share или Web Share API
-    console.log('Share listing:', listing.id);
+  // Helper to get listing title from details (for share)
+  const getListingTitle = useCallback((listing: FeedListing): string => {
+    const d = listing.details || {};
+    const cat = String(listing.category || '').toLowerCase();
+
+    if (cat.includes('car') && (d.brand || d.make)) {
+      return `${d.brand || d.make} ${d.model || ''}${d.year ? ` ${d.year}` : ''}`.trim();
+    }
+    if (cat.includes('horse') && d.breed) {
+      return `${d.breed}${d.age_years ? `, ${d.age_years} лет` : ''}`;
+    }
+    if (cat.includes('real_estate') && d.property_type) {
+      return `${d.property_type}${d.area_m2 ? `, ${d.area_m2}м²` : ''}`;
+    }
+    return 'Объявление на 360°';
   }, []);
+
+  // Обработчик сообщения продавцу
+  const handleMessage = useCallback(async (listing: FeedListing) => {
+    if (!requireAuth('message')) return;
+    
+    const sellerId = listing.seller?.id || listing.seller_id;
+    if (!sellerId) return;
+
+    try {
+      const currentUser = await auth.getCurrentUser();
+      if (!currentUser) return;
+
+      // Получаем или создаём чат
+      const { openChat, navigateToChat } = await import('@/utils/listingActions');
+      const conversationId = await openChat(currentUser.id, sellerId, listing.id);
+      
+      if (conversationId) {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        navigateToChat(router, conversationId);
+      }
+    } catch (error) {
+      appLogger.error('[Feed] Failed to open chat:', error);
+    }
+  }, [router]);
+
+  const handleShare = useCallback(async (listing: FeedListing) => {
+    // Cross-platform haptic feedback
+    try {
+      if (Platform.OS === 'ios') {
+        // iOS: Light impact for subtle feedback
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } else if (Platform.OS === 'android') {
+        // Android: Selection feedback works better on most devices
+        await Haptics.selectionAsync();
+      }
+    } catch {
+      // Haptics may not be available on all devices
+    }
+
+    try {
+      // Build share content
+      const title = listing.title || getListingTitle(listing);
+
+      // Get price formatted
+      const price = listing.price ? `${Number(listing.price).toLocaleString('ru-RU')} сом` : '';
+
+      // Get location
+      const location = listing.city || listing.location || 'Кыргызстан';
+
+      // Build description based on category
+      let description = title;
+      if (price) description += ` - ${price}`;
+      if (location) description += ` | ${location}`;
+
+      // Deep link to listing (app scheme or web URL)
+      const deepLink = `https://360auto.kg/listing/${listing.id}`;
+
+      // Platform-specific share message formatting
+      // Android: URL must be in message body (no separate URL field)
+      // iOS: Can use separate URL field for better preview
+      const message = Platform.select({
+        ios: description, // URL will be added via 'url' field
+        android: `${description}\n\n🔗 Смотреть в 360°:\n${deepLink}`,
+        default: `${description}\n\nСмотреть в 360°: ${deepLink}`,
+      });
+
+      appLogger.debug('[Feed] Sharing listing', { listingId: listing.id, title, platform: Platform.OS });
+
+      // Platform-optimized share options
+      const shareOptions = Platform.select({
+        ios: {
+          message,
+          title,
+          url: deepLink, // iOS shows better preview with separate URL
+        },
+        android: {
+          message, // Android includes URL in message
+          title,
+          // Note: Android ignores 'url' field, everything must be in message
+        },
+        default: {
+          message,
+          title,
+        },
+      });
+
+      const result = await Share.share(shareOptions as { message: string; title?: string; url?: string });
+
+      if (result.action === Share.sharedAction) {
+        // Success haptic feedback
+        if (Platform.OS === 'ios') {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        } else if (Platform.OS === 'android') {
+          await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        appLogger.info('[Feed] Listing shared successfully', {
+          listingId: listing.id,
+          platform: Platform.OS,
+          activityType: result.activityType
+        });
+
+        // Трекинг поведения
+        const cat = (listing.category?.replace('s', '') || 'car') as CategoryType;
+        behavior.trackShare(listing.id, cat);
+      } else if (result.action === Share.dismissedAction) {
+        appLogger.debug('[Feed] Share dismissed', { listingId: listing.id });
+      }
+    } catch (error: any) {
+      // Error haptic feedback
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {
+        // Ignore haptics errors
+      }
+      appLogger.error('[Feed] Share error', {
+        error: error?.message,
+        listingId: listing.id,
+        platform: Platform.OS
+      });
+    }
+  }, [getListingTitle, behavior]);
 
   // Используем ref для хранения актуальных значений listings
   const listingsRef = useRef(listings);
   const preloadedIndexesRef = useRef(preloadedIndexes);
-  
+  const lastTrackedViewRef = useRef<string | null>(null);
+
   useEffect(() => {
     listingsRef.current = listings;
   }, [listings]);
+
+  // Трекинг просмотров при смене текущего элемента
+  useEffect(() => {
+    if (!isFeedFocused || listings.length === 0) return;
+
+    const currentListing = listings[currentIndex];
+    if (!currentListing || currentListing.id === lastTrackedViewRef.current) return;
+
+    // Запоминаем, что уже трекнули этот просмотр
+    lastTrackedViewRef.current = currentListing.id;
+
+    // Трекаем просмотр
+    const cat = (currentListing.category?.replace('s', '') || 'car') as CategoryType;
+    behavior.trackView(currentListing.id, cat, {
+      brand: currentListing.details?.brand,
+      price: currentListing.price,
+      city: currentListing.city,
+      source: 'feed',
+    });
+
+    // Запускаем таймер для длительного просмотра
+    behavior.startViewTimer(currentListing.id, cat);
+
+    return () => {
+      behavior.stopViewTimer();
+    };
+  }, [currentIndex, isFeedFocused, listings, behavior]);
   
   useEffect(() => {
     preloadedIndexesRef.current = preloadedIndexes;
   }, [preloadedIndexes]);
+
+  // КРИТИЧНО: Refs для инициализации первого видео
+  const hasInitializedFirstVideo = useRef(false);
+  const feedLayoutReadyRef = useRef(false);
+
+  // Ref для хранения актуальных segments
+  const segmentsRef = useRef(segments);
+  useEffect(() => {
+    segmentsRef.current = segments;
+  }, [segments]);
+
+  // Ref для хранения актуального isFeedFocused
+  const isFeedFocusedRef = useRef(isFeedFocused);
+  useEffect(() => {
+    isFeedFocusedRef.current = isFeedFocused;
+    if (__DEV__) {
+      appLogger.debug('[Feed] isFeedFocusedRef updated', { isFeedFocused });
+    }
+  }, [isFeedFocused]);
+
+  // Ref для отслеживания предыдущего индекса (для haptic feedback)
+  const prevVisibleIndexRef = useRef<number>(-1);
 
   // Обработчик изменения видимых элементов
   // ВАЖНО: Используем useRef для стабильной функции, которая не пересоздается
   const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
     if (viewableItems.length > 0) {
       const index = viewableItems[0].index ?? 0;
+      
+      // Haptic feedback при переключении видео (лёгкая вибрация)
+      if (prevVisibleIndexRef.current !== -1 && prevVisibleIndexRef.current !== index) {
+        // Используем Light для минимальной вибрации
+        if (Platform.OS === 'ios') {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        } else if (Platform.OS === 'android') {
+          // На Android используем selectionAsync - ещё легче
+          Haptics.selectionAsync();
+        }
+      }
+      prevVisibleIndexRef.current = index;
+      
       dispatch(setCurrentIndex(index));
+      
+      // КРИТИЧНО: Устанавливаем активный индекс в video engine ТОЛЬКО если feed в фокусе
+      // Используем актуальное значение из ref для синхронизации
+      const currentIsFeedFocused = isFeedFocusedRef.current;
+      
+      if (__DEV__) {
+        appLogger.debug('[Feed] onViewableItemsChanged', {
+          index,
+          isFeedFocused: currentIsFeedFocused,
+          segments: segmentsRef.current.join('/'),
+        });
+      }
+      
+      if (currentIsFeedFocused) {
+        const videoEngine = getVideoEngine();
+        try {
+          videoEngine.setActiveIndex(index);
+          if (__DEV__) {
+            appLogger.debug('[Feed] setActiveIndex called', { index });
+          }
+        } catch (error) {
+          appLogger.error('[Feed] setActiveIndex error', { index, error });
+        }
+      } else {
+        if (__DEV__) {
+          appLogger.debug('[Feed] setActiveIndex skipped - feed not focused', { index });
+        }
+      }
       
       // Используем актуальные значения из ref
       const currentListings = listingsRef.current;
@@ -789,9 +1279,58 @@ export default function ImprovedIndexScreen() {
   }).current;
 
   const viewabilityConfig = useMemo(() => ({
-    itemVisiblePercentThreshold: 70, // Видео запускается когда 70% на экране (как в TikTok)
-    minimumViewTime: 100,
+    itemVisiblePercentThreshold: 50, // Reduced from 70% for faster video trigger on swipe
+    minimumViewTime: 50, // Reduced from 100ms for snappier response
   }), []);
+
+  // Функция для инициализации первого видео (после onViewableItemsChanged)
+  const initializeFirstVideo = useCallback(() => {
+    if (!isFeedFocused || listings.length === 0 || hasInitializedFirstVideo.current) {
+      return;
+    }
+
+    const videoEngine = getVideoEngine();
+    const firstListing = listings[0];
+
+    // Устанавливаем активный индекс
+    videoEngine.setActiveIndex(0);
+
+    // Вызываем onViewableItemsChanged для первого элемента
+    onViewableItemsChanged({
+      viewableItems: [{ index: 0, isViewable: true }],
+    });
+
+    hasInitializedFirstVideo.current = true;
+
+    if (__DEV__) {
+      appLogger.debug('[Feed] Initialized first video (immediate)', {
+        listingId: firstListing?.id,
+        hasVideo: !!(firstListing?.video_url || firstListing?.video_id),
+      });
+    }
+  }, [isFeedFocused, listings, onViewableItemsChanged]);
+
+  // Инициализация при готовности данных и layout
+  useEffect(() => {
+    if (listings.length > 0 && currentIndex === 0 && isFeedFocused && feedLayoutReadyRef.current) {
+      initializeFirstVideo();
+    }
+
+    // Сбрасываем флаги при смене категории
+    if (listings.length === 0) {
+      hasInitializedFirstVideo.current = false;
+      prevVisibleIndexRef.current = -1; // Сброс для haptic feedback
+    }
+  }, [listings.length, currentIndex, isFeedFocused, initializeFirstVideo]);
+
+  // Обработчик onLayout для FlatList - вызывается когда layout готов
+  const handleFeedLayout = useCallback(() => {
+    feedLayoutReadyRef.current = true;
+    // Пробуем инициализировать если данные уже загружены
+    if (listings.length > 0 && isFeedFocused && !hasInitializedFirstVideo.current) {
+      initializeFirstVideo();
+    }
+  }, [listings.length, isFeedFocused, initializeFirstVideo]);
 
   // Используем useMemo для стабильного массива viewabilityConfigCallbackPairs
   // onViewableItemsChanged стабилен через useRef, поэтому не нужно в зависимостях
@@ -804,114 +1343,123 @@ export default function ImprovedIndexScreen() {
 
   // Рендер элемента списка
   const renderItem = useCallback(({ item, index }: { item: FeedListing; index: number }) => {
+    // Защита от undefined/null
+    if (!item || !item.id) {
+      appLogger.warn('[Feed] renderItem: invalid item at index', { index });
+      return <View style={{ height: SCREEN_HEIGHT, backgroundColor: '#000' }} />;
+    }
+    
     // Определяем активность и прелоад
     // Если мы не на главном экране, все видео неактивны
-    const isItemActive = isFeedFocused && currentIndex === index;
-    const isItemPreloaded = preloadedIndexes.includes(index) || index === 0 || index === currentIndex + 1 || index === currentIndex - 1;
-    
-    return (
-      <EnhancedVideoCard
-        key={`${item.id}-${index}`}
-        listing={item as EnhancedVideoCardProps['listing']}
-        isActive={isItemActive}
-        isPreloaded={isItemPreloaded}
-        onLike={() => handleLike(item.id)}
-        onFavorite={() => handleFavorite(item.id)}
-        onComment={() => handleComment(item)}
-        onShare={() => handleShare(item)}
-      />
-    );
-  }, [currentIndex, preloadedIndexes, isFeedFocused, handleLike, handleFavorite, handleComment, handleShare]);
+    // КРИТИЧНО: Первый элемент (index 0) всегда активен при загрузке, если currentIndex === 0
+    // Это гарантирует, что видео начнет играть сразу
+    const isItemActive = isFeedFocused && (currentIndex === index || (index === 0 && currentIndex === 0 && listings.length > 0));
 
-  if (loading && !refreshing) {
+    if (__DEV__ && index === 0) {
+      appLogger.debug('[Feed] renderItem debug', {
+        index,
+        currentIndex,
+        isFeedFocused,
+        isItemActive,
+        segments: segments.join('/'),
+      });
+    }
+    
+    try {
+      return (
+        <VideoCard
+          key={`${item.id}-${index}`}
+          listing={item as any}
+          index={index}
+          isActive={isItemActive}
+          isFeedFocused={isFeedFocused}
+          onLike={() => handleLike(item.id)}
+          onSave={() => handleFavorite(item.id)}
+          onComment={() => handleComment(item)}
+          onShare={() => handleShare(item)}
+          onMessage={() => handleMessage(item)}
+        />
+      );
+    } catch (error) {
+      appLogger.error('[Feed] Error rendering item', { error, itemId: item.id, index });
+      return <View style={{ height: SCREEN_HEIGHT, backgroundColor: '#000' }} />;
+    }
+    // segments не нужен в зависимостях, так как используется только через isFeedFocused
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentIndex, preloadedIndexes, isFeedFocused, listings.length, handleLike, handleFavorite, handleComment, handleShare, handleMessage]);
+
+  // Показываем loading screen если загружаемся и нет данных (но не при refresh)
+  // ВАЖНО: Проверяем и loading, и dataLoadedRef, чтобы не показывать loading когда данные уже загружены
+  const shouldShowLoading = loading && listings.length === 0 && !refreshing && !dataLoadedRef.current;
+  
+  if (shouldShowLoading) {
+    appLogger.debug('[Feed] Rendering loading screen', { loading, listingsCount: listings.length, refreshing, dataLoaded: dataLoadedRef.current });
     return (
-      <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <View style={[styles.container, { backgroundColor: theme?.background || '#000' }]}>
         <VideoCardSkeleton />
         {__DEV__ && (
-          <View style={{ position: 'absolute', top: 100, left: 16, right: 16, backgroundColor: 'rgba(0,0,0,0.7)', padding: 8, borderRadius: 8 }}>
-            <Text style={{ color: '#fff', fontSize: 12 }}>Загрузка категории: {activeCategory}</Text>
+          <View style={{ position: 'absolute', top: 100, left: 16, right: 16, backgroundColor: 'rgba(0,0,0,0.7)', padding: 8, borderRadius: 8, zIndex: 1000 }}>
+            <Text style={{ color: '#fff', fontSize: 12 }}>Загрузка категории: {activeCategory || 'cars'}</Text>
+            <Text style={{ color: '#fff', fontSize: 10, marginTop: 4 }}>
+              loading={loading ? 'true' : 'false'}, refreshing={refreshing ? 'true' : 'false'}, listings={listings.length}, dataLoaded={dataLoadedRef.current ? 'true' : 'false'}
+            </Text>
           </View>
         )}
       </View>
     );
   }
 
+  // Логируем состояние перед рендерингом основного экрана
+  appLogger.debug('[Feed] Rendering main screen', { 
+    listingsCount: listings.length, 
+    loading, 
+    refreshing, 
+    dataLoaded: dataLoadedRef.current,
+    activeCategory 
+  });
+
   return (
-    <View style={[styles.container, { backgroundColor: theme.background }]}>
-      {/* Шапка сверху — матовая панель Revolut Ultra */}
-      <View style={styles.topBar}>
-        <View style={styles.categoryHeader}>
-          <View style={styles.headerContent}>
-            {filteredCategories.map((item, index) => {
-              const isActive = activeCategory === item.id;
-              const categoryName = item.name === 'Автомобили' ? 'Авто' : item.name === 'Лошади' ? 'Лошади' : item.name === 'Недвижимость' ? 'Недвижимость' : item.name;
-              return (
-                <React.Fragment key={item.id}>
-                  <TouchableOpacity
-                    activeOpacity={0.8}
-                    onPress={() => handleCategoryChange(item.id)}
-                    style={styles.categoryTab}
-                  >
-                    <Text style={[
-                      styles.categoryText,
-                      isActive && styles.activeText
-                    ]}>
-                      {categoryName}
-                    </Text>
-                    {isActive && <View style={styles.categoryUnderline} />}
-                  </TouchableOpacity>
-                  {index < filteredCategories.length - 1 && (
-                    <Text style={styles.categorySeparator}>•</Text>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </View>
-        </View>
-      </View>
+    <View style={[styles.container, { backgroundColor: theme?.background || '#000' }]}>
+      {/* Category Tabs — TikTok-style с blur эффектом */}
+      <CategoryTabs
+        selectedCategory={activeCategory === 'all' ? 'all' : (activeCategory as any)}
+        onCategoryChange={(category) => {
+          handleCategoryChange(category);
+        }}
+      />
 
       {/* Видео лента */}
+      {__DEV__ && listings && listings.length > 0 && (
+        <View style={{ position: 'absolute', top: 60, left: 16, right: 16, backgroundColor: 'rgba(0,255,0,0.5)', padding: 4, borderRadius: 4, zIndex: 10000 }}>
+          <Text style={{ color: '#000', fontSize: 10, fontWeight: 'bold' }}>
+            ✅ Rendering {listings.length} items
+          </Text>
+        </View>
+      )}
       <VideoList
         ref={flatListRef}
-        data={listings}
+        data={listings || []}
         renderItem={renderItem}
-        keyExtractor={(item, index) => `${item.id}-${index}`}
-        extraData={Platform.OS === 'web' ? undefined : { currentIndex, listingsLength: listings.length }}
+        keyExtractor={(item, index) => `${item?.id || index}-${index}`}
+        extraData={{ currentIndex, listingsLength: listings?.length || 0 }}
         pagingEnabled
         showsVerticalScrollIndicator={false}
+        onLayout={handleFeedLayout}
         ListEmptyComponent={
-          !loading && listings.length === 0 ? (
+          !loading && !refreshing && (!listings || listings.length === 0) && dataLoadedRef.current ? (
             <View style={[styles.emptyContainer, { backgroundColor: theme.background }]} pointerEvents="box-none">
-              <Ionicons name="videocam-off" size={80} color={ultra.textMuted} style={{ opacity: 0.6, marginBottom: 24 }} />
-              <Text style={[styles.emptyText, { color: ultra.textPrimary, fontSize: 24, fontWeight: '700', marginBottom: 8 }]}>
-                Нет объявлений
+              <Text style={[styles.emptyText, { color: ultra.textMuted, fontSize: 18, fontWeight: '400', letterSpacing: 0.5 }]}>
+                Пока пусто
               </Text>
-              <Text style={[styles.emptySubtext, { color: ultra.textMuted, marginBottom: 32 }]}>
-                В категории &quot;{CATEGORIES.find(c => c.id === activeCategory)?.name || activeCategory}&quot; пока нет объявлений
-              </Text>
-              <TouchableOpacity
-                style={[styles.emptyButton, { backgroundColor: ultra.surface, borderWidth: 1, borderColor: ultra.accent }]}
-                onPress={() => router.push('/(tabs)/upload')}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="add-circle-outline" size={24} color={ultra.textPrimary} style={{ marginRight: 8 }} />
-                <Text style={styles.emptyButtonText}>Создать объявление</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.emptyButtonSecondary, { borderColor: ultra.accent }]}
-                onPress={onRefresh}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="refresh-outline" size={20} color={ultra.accent} style={{ marginRight: 8 }} />
-                <Text style={[styles.emptyButtonSecondaryText, { color: ultra.accent }]}>Обновить</Text>
-              </TouchableOpacity>
             </View>
           ) : null
         }
-        pagingEnabled
         snapToInterval={SCREEN_HEIGHT}
         snapToAlignment="start"
         decelerationRate="fast"
+        scrollEventThrottle={16}
+        overScrollMode="never"
+        bounces={Platform.OS === 'ios'}
         viewabilityConfigCallbackPairs={viewabilityConfigCallbackPairs}
         refreshControl={
           <RefreshControl 
@@ -921,16 +1469,9 @@ export default function ImprovedIndexScreen() {
           />
         }
         onEndReachedThreshold={0.5}
-        {...(Platform.OS === 'web' ? {
-          // FlatList props для web
-          getItemLayout: (data: any, index: number) => ({
-            length: SCREEN_HEIGHT,
-            offset: SCREEN_HEIGHT * index,
-            index,
-          }),
-        } : {
-          // FlashList props для native (если нужны)
-        })}
+        // LegendList оптимизации - signal-based recycling, не нужен estimatedItemSize
+        recycleItems={true}
+        drawDistance={SCREEN_HEIGHT * 2}
       />
     </View>
   );
@@ -1247,162 +1788,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
-  actionsPanel: {
-    position: 'absolute',
-    right: Platform.select({
-      ios: 16,
-      android: 12,
-      web: 16,
-    }),
-    bottom: Platform.select({
-      ios: 140,
-      android: 120,
-      web: 140,
-    }),
-    gap: Platform.select({
-      ios: 24,
-      android: 20,
-      web: 24,
-    }),
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 9999, // Максимальный zIndex чтобы быть поверх всего
-    paddingVertical: Platform.select({
-      ios: 12,
-      android: 8,
-      web: 12,
-    }),
-    paddingHorizontal: Platform.select({
-      ios: 8,
-      android: 4,
-      web: 8,
-    }),
-    borderRadius: Platform.select({
-      ios: 24,
-      android: 20,
-      web: 24,
-    }),
-    backgroundColor: 'rgba(0, 0, 0, 0.6)', // Более непрозрачный фон для лучшей видимости
-    elevation: Platform.select({
-      android: 20,
-    }),
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.9,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 20,
-      },
-      web: {
-        boxShadow: '0px 6px 16px rgba(0, 0, 0, 0.9)',
-        position: 'fixed' as any,
-        display: 'block' as any,
-      },
-    }),
-  },
-  actionButton: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    minWidth: Platform.select({
-      ios: 56,
-      android: 52,
-    }),
-    minHeight: Platform.select({
-      ios: 56,
-      android: 52,
-    }),
-    paddingVertical: Platform.select({
-      ios: 8,
-      android: 6,
-    }),
-    borderRadius: Platform.select({
-      ios: 28,
-      android: 26,
-    }),
-  },
-  actionCount: {
-    fontSize: Platform.select({
-      ios: 14,
-      android: 12,
-    }),
-    fontWeight: '700',
-    marginTop: Platform.select({
-      ios: 6,
-      android: 4,
-    }),
-    color: '#FFFFFF',
-    textShadowColor: 'rgba(0, 0, 0, 0.9)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-    textAlign: 'center',
-    minWidth: 24,
-  },
-  actionIconContainer: {
-    width: Platform.select({
-      ios: 56,
-      android: 52,
-    }),
-    height: Platform.select({
-      ios: 56,
-      android: 52,
-    }),
-    borderRadius: Platform.select({
-      ios: 28,
-      android: 26,
-    }),
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: Platform.select({
-      ios: 1.5,
-      android: 1.5,
-    }),
-    borderColor: 'rgba(255, 255, 255, 0.4)',
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 3,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  muteButton: {
-    position: 'absolute',
-    top: Platform.select({
-      ios: 60,
-      android: 20,
-    }),
-    right: Platform.select({
-      ios: 16,
-      android: 12,
-    }),
-    width: Platform.select({
-      ios: 44,
-      android: 40,
-    }),
-    height: Platform.select({
-      ios: 44,
-      android: 40,
-    }),
-    borderRadius: Platform.select({
-      ios: 22,
-      android: 20,
-    }),
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: 1001,
-    borderWidth: Platform.select({
-      ios: 1,
-      android: 1.5,
-    }),
-    borderColor: 'rgba(255, 255, 255, 0.3)',
-  },
   emptyContainer: {
     width: SCREEN_WIDTH,
     height: SCREEN_HEIGHT,
@@ -1411,58 +1796,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
   },
   emptyText: {
-    fontSize: Platform.select({ ios: 20, android: 19, default: 20 }),
-    fontWeight: '600',
-    marginTop: Platform.select({ ios: 24, android: 20, default: 24 }),
-    textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Bold',
-  },
-  emptySubtext: {
-    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
-    marginTop: Platform.select({ ios: 8, android: 6, default: 8 }),
-    opacity: 0.7,
-    textAlign: 'center',
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Inter-Medium',
-  },
-  emptyButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 16,
-    minWidth: 200,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.25,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
-  emptyButtonText: {
-    color: '#FFF',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  emptyButtonSecondary: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
-    marginTop: 12,
-    borderWidth: 2,
-    minWidth: 200,
-  },
-  emptyButtonSecondaryText: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '400',
+    letterSpacing: 0.5,
+    textAlign: 'center',
   },
 });

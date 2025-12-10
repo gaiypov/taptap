@@ -1,14 +1,17 @@
 // app/listing/[id].tsx
 // Unified listing detail screen for all categories (auto, horse, real_estate)
+// Uses SimpleVideoPlayer for standalone video playback
 
+import { SimpleVideoPlayer } from '@/components/video/SimpleVideoPlayer';
 import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { VideoView, useVideoPlayer } from '@expo/video';
+import { appLogger } from '@/utils/logger';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Platform,
-  Pressable,
   ScrollView,
   Share,
   StyleSheet,
@@ -17,21 +20,33 @@ import {
   View,
 } from 'react-native';
 
-import { useAppTheme } from '@/lib/theme';
-import { getListing, type Listing as ListingType } from '@/services/listings';
-import { appLogger } from '@/utils/logger';
+import { extendedTheme } from '@/lib/theme';
+import { auth } from '@/services/auth';
+import { getListing } from '@/services/listings';
+import { openChat } from '@/utils/listingActions';
+import type { Listing as ListingType } from '@/types';
+
+// Cast listing to allow additional properties from database
+type ListingData = ListingType & {
+  video_player_url?: string;
+  video_thumbnail_url?: string;
+  ai_make?: string;
+  ai_model?: string;
+  ai_year?: number;
+};
 
 export default function ListingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
-  const theme = useAppTheme();
+  const theme = extendedTheme;
 
-  const [listing, setListing] = useState<ListingType | null>(null);
+  const [listing, setListing] = useState<ListingData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   // Video player setup
-  const getVideoUrl = (listing: ListingType | null) => {
+  const getVideoUrl = (listing: ListingData | null) => {
     if (listing?.video_id) {
       return `https://vod.api.video/vod/${listing.video_id}/hls/manifest.m3u8`;
     }
@@ -39,51 +54,7 @@ export default function ListingDetailScreen() {
   };
 
   const videoUrl = useMemo(() => getVideoUrl(listing), [listing?.video_id, listing?.video_player_url, listing?.video_thumbnail_url]);
-  const [userInteracted, setUserInteracted] = useState(false); // Web: track user interaction
-  const [videoReady, setVideoReady] = useState(false);
-  const isActive = true; // Always active on detail screen
-
-  const player = useVideoPlayer(videoUrl || 'https://invalid-url', (player) => {
-    player.loop = true;
-  });
-
-  // Set videoReady when player is ready
-  useEffect(() => {
-    if (!player || !videoUrl) return;
-
-    // Set videoReady after a delay to ensure player is initialized
-    // expo-video doesn't provide onLoad event, so we use a timeout
-    const timeout = setTimeout(() => {
-      setVideoReady(true);
-    }, 300);
-
-    return () => clearTimeout(timeout);
-  }, [player, videoUrl]);
-
-  // Handle user interaction for web
-  const handleUserInteraction = useCallback(() => {
-    if (Platform.OS === 'web' && !userInteracted) {
-      setUserInteracted(true);
-    }
-  }, [userInteracted]);
-
-  // Control playback based on isActive and videoReady
-  useEffect(() => {
-    if (!player || !videoUrl) return;
-
-    // Web: Only play after user interaction
-    if (Platform.OS === 'web' && !userInteracted) return;
-
-    if (isActive && videoReady) {
-      try {
-        player.play();
-      } catch (error) {
-        appLogger.warn('[ListingDetailScreen] Play failed', { error });
-      }
-    } else {
-      player.pause();
-    }
-  }, [isActive, videoReady, player, videoUrl, userInteracted]);
+  const posterUrl = listing?.video_thumbnail_url || listing?.thumbnail_url || undefined;
 
   useEffect(() => {
     if (!id) {
@@ -96,8 +67,13 @@ export default function ListingDetailScreen() {
       try {
         setLoading(true);
         setError(null);
+
+        // Load current user for chat functionality
+        const user = await auth.getCurrentUser();
+        setCurrentUser(user);
+
         const data = await getListing(id as string);
-        setListing(data);
+        setListing(data as ListingData);
       } catch (err: unknown) {
         const error = err as { message?: string };
         appLogger.error('Error loading listing', { error, listingId: id });
@@ -111,6 +87,17 @@ export default function ListingDetailScreen() {
   const handleShare = useCallback(async () => {
     if (!listing) return;
 
+    // Cross-platform haptic feedback on press
+    try {
+      if (Platform.OS === 'ios') {
+        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } else if (Platform.OS === 'android') {
+        await Haptics.selectionAsync();
+      }
+    } catch {
+      // Haptics may not be available
+    }
+
     try {
       const details = (listing as any).details as Record<string, unknown> | undefined;
       const brand = (details?.brand || details?.make || 'Авто') as string;
@@ -118,22 +105,102 @@ export default function ListingDetailScreen() {
       const year = (details?.year || '') as string | number;
       const price = listing.price?.toLocaleString('ru-RU') || '0';
       const location = (listing as any).location || (listing as any).city || 'Не указано';
+      const title = `${brand} ${model}`.trim();
 
-      const message = `🚗 ${brand} ${model} ${year}\n💰 ${price} ${listing.currency || 'KGS'}\n📍 ${location}\n\nСмотрите на 360°!`;
+      // Deep link to listing
+      const deepLink = `https://360auto.kg/listing/${listing.id}`;
+
+      // Platform-specific message formatting
+      const baseMessage = `🚗 ${brand} ${model} ${year}\n💰 ${price} ${listing.currency || 'KGS'}\n📍 ${location}`;
 
       if (Platform.OS === 'web') {
+        const webMessage = `${baseMessage}\n\n🔗 ${deepLink}`;
         if (navigator.share) {
-          await navigator.share({ title: `${brand} ${model}`, text: message });
+          await navigator.share({ title, text: webMessage, url: deepLink });
         } else {
-          await navigator.clipboard.writeText(message);
+          await navigator.clipboard.writeText(webMessage);
         }
       } else {
-        await Share.share({ message, title: `${brand} ${model}` });
+        // Platform-optimized share options
+        const shareOptions = Platform.select({
+          ios: {
+            message: `${baseMessage}\n\nСмотрите на 360°!`,
+            title,
+            url: deepLink, // iOS shows link preview
+          },
+          android: {
+            message: `${baseMessage}\n\n🔗 Смотреть в 360°:\n${deepLink}`,
+            title,
+            // Android ignores 'url' field
+          },
+          default: {
+            message: `${baseMessage}\n\n${deepLink}`,
+            title,
+          },
+        });
+
+        const result = await Share.share(shareOptions as { message: string; title?: string; url?: string });
+
+        // Success haptic feedback
+        if (result.action === Share.sharedAction) {
+          try {
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          } catch {
+            // Ignore haptics errors
+          }
+          appLogger.info('[Listing] Shared successfully', {
+            listingId: listing.id,
+            platform: Platform.OS,
+            activityType: result.activityType
+          });
+        }
       }
     } catch (error) {
-      appLogger.error('Share error', { error });
+      // Error haptic feedback
+      try {
+        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      } catch {
+        // Ignore haptics errors
+      }
+      appLogger.error('[Listing] Share error', { error, listingId: listing?.id });
     }
   }, [listing]);
+
+  const handleWriteToSeller = useCallback(async () => {
+    if (!listing) return;
+
+    // Check if user is authenticated
+    if (!currentUser) {
+      Alert.alert(
+        'Требуется авторизация',
+        'Войдите в аккаунт, чтобы написать продавцу',
+        [
+          { text: 'Отмена', style: 'cancel' },
+          { text: 'Войти', onPress: () => router.push('/(auth)/register') },
+        ]
+      );
+      return;
+    }
+
+    // Check if user is trying to message themselves
+    if (currentUser.id === listing.seller_id) {
+      Alert.alert('Это ваше объявление', 'Вы не можете написать сами себе');
+      return;
+    }
+
+    try {
+      const conversationId = await openChat(currentUser.id, listing.seller_id, listing.id);
+      if (conversationId) {
+        router.push({
+          pathname: '/chat/[conversationId]',
+          params: { conversationId },
+        });
+      }
+    } catch (error) {
+      appLogger.error('Error opening chat', { error });
+      Alert.alert('Ошибка', 'Не удалось открыть чат');
+    }
+  }, [listing, currentUser, router]);
 
   if (loading) {
     return (
@@ -163,14 +230,15 @@ export default function ListingDetailScreen() {
     >
       {/* Video Player */}
       {videoUrl && (
-        <Pressable style={styles.videoContainer} onPress={handleUserInteraction}>
-          <VideoView
-            player={player}
-            style={styles.video}
-            contentFit="cover"
-            nativeControls={true}
+        <View style={styles.videoContainer}>
+          <SimpleVideoPlayer
+            videoUrl={videoUrl}
+            posterUrl={posterUrl}
+            autoplay={true}
+            loop={true}
+            muted={false}
           />
-        </Pressable>
+        </View>
       )}
 
       {/* Listing Info */}
@@ -204,6 +272,13 @@ export default function ListingDetailScreen() {
 
       {/* Action Buttons */}
       <View style={styles.actionButtons}>
+        <TouchableOpacity
+          style={[styles.actionButton, styles.messageButton]}
+          onPress={handleWriteToSeller}
+        >
+          <Ionicons name="chatbubble-outline" size={24} color="#FFFFFF" />
+          <Text style={styles.actionButtonText}>Написать продавцу</Text>
+        </TouchableOpacity>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: theme.accentPrimary }]}
           onPress={handleShare}
@@ -289,6 +364,9 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 12,
     gap: 8,
+  },
+  messageButton: {
+    backgroundColor: '#34C759',
   },
   actionButtonText: {
     color: '#FFFFFF',

@@ -49,7 +49,7 @@ export const FILTER_CONFIG: Record<CategoryType, CategoryConfig> = {
   car: {
     icon: '🚗',
     name: 'Автомобили',
-    color: '#E63946',
+    color: '#C0C0C0',
     
     // Основные (всегда видны)
     mainFilters: ['city', 'price', 'year'],
@@ -99,7 +99,7 @@ export const FILTER_CONFIG: Record<CategoryType, CategoryConfig> = {
         options: [
           { value: 'black', hex: '#000000', label: 'Черный' },
           { value: 'white', hex: '#FFFFFF', label: 'Белый' },
-          { value: 'red', hex: '#E63946', label: 'Красный' },
+          { value: 'red', hex: '#FF3B30', label: 'Красный' }, // Keep red for car color filter only
           { value: 'blue', hex: '#457B9D', label: 'Синий' },
           { value: 'gray', hex: '#6C757D', label: 'Серый' },
           { value: 'silver', hex: '#C0C0C0', label: 'Серебристый' },

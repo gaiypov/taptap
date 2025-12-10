@@ -6,7 +6,7 @@ import { analyzeWithClaude } from './ai/claude';
 import { analyzeWithGoogleVision } from './ai/google';
 import { analyzeWithOpenAI } from './ai/openai';
 import { AI_CONFIG, checkAPIKeys, logAPICost, selectAvailableAI } from './ai/config';
-import { TEST_CONFIG, canMakeRequest, getCachedAnalysis, incrementRequestCount, setCachedAnalysis } from './ai/testMode';
+import { TEST_CONFIG, ENABLE_CLAUDE, ENABLE_OPENAI, canMakeRequest, getCachedAnalysis, incrementRequestCount, setCachedAnalysis } from './ai/testMode';
 import { extractKeyFrames, validateVideo } from './video';
 import { appLogger } from '@/utils/logger';
 
@@ -100,7 +100,7 @@ export async function analyzeHorseVideo(
     onProgress?.('AI анализ...', 60);
     let result: HorseAIAnalysis;
 
-    if (selectedAI === 'claude' && TEST_CONFIG.ENABLE_CLAUDE) {
+    if (selectedAI === 'claude' && ENABLE_CLAUDE) {
       // Передаем промпт как второй параметр
       const aiResult = await analyzeWithClaude(
         frames.map((f) => f.base64),
@@ -112,7 +112,7 @@ export async function analyzeHorseVideo(
       // Парсим результат и адаптируем к HorseAIAnalysis
       result = parseHorseAIResponse(aiResult);
       logAPICost('claude', frames.length);
-    } else if (selectedAI === 'openai' && TEST_CONFIG.ENABLE_OPENAI) {
+    } else if (selectedAI === 'openai' && ENABLE_OPENAI) {
       const aiResult = await analyzeWithOpenAI(frames.map((f) => f.base64), 'full_analysis', {
         temperature: 0.3,
       });

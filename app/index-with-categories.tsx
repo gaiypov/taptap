@@ -12,12 +12,12 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
     ActivityIndicator,
     Dimensions,
-    FlatList,
     RefreshControl,
     StyleSheet,
     Text,
     View,
 } from 'react-native';
+import { LegendList, LegendListRef } from '@legendapp/list';
 import { appLogger } from '@/utils/logger';
 
 import { SCREEN_HEIGHT } from '@/utils/constants';
@@ -30,7 +30,7 @@ export default function HomeScreenWithCategories() {
   const [refreshing, setRefreshing] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const flatListRef = useRef<FlatList>(null);
+  const flatListRef = useRef<LegendListRef>(null);
   const isMountedRef = useRef(true);
 
   useEffect(() => {
@@ -113,7 +113,9 @@ export default function HomeScreenWithCategories() {
   }, [loadUser, loadListings, currentCategory]);
 
   // Смена категории
-  const handleCategoryChange = (category: ListingCategory) => {
+  const handleCategoryChange = (category: ListingCategory | 'all') => {
+    // Игнорируем "all" — показываем все категории не поддерживается на этом экране
+    if (category === 'all') return;
     setCurrentCategory(category);
     setListings([]);
     setCurrentIndex(0);
@@ -359,12 +361,12 @@ export default function HomeScreenWithCategories() {
         onCategoryChange={handleCategoryChange}
       />
 
-      {/* Лента видео */}
-      <FlatList
+      {/* Лента видео — LegendList */}
+      <LegendList
         ref={flatListRef}
         data={listings}
         renderItem={renderItem}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item: Listing) => item.id}
         pagingEnabled
         showsVerticalScrollIndicator={false}
         snapToInterval={SCREEN_HEIGHT}
@@ -388,6 +390,8 @@ export default function HomeScreenWithCategories() {
             </View>
           ) : null
         }
+        recycleItems={true}
+        drawDistance={SCREEN_HEIGHT * 2}
       />
     </View>
   );

@@ -7,6 +7,20 @@ import { extractKeyFrames } from '../video';
 import { logAPICost, selectAvailableAI } from './config';
 import { canMakeRequest, incrementRequestCount, setCachedAnalysis } from './testMode';
 
+// ==============================================
+// НОВЫЕ ЭКСПОРТЫ ДЛЯ AI МОДЕРАЦИИ
+// ==============================================
+
+// Types
+export * from './types';
+
+// API Client
+export { aiApi, default as AIApiClient } from './aiApi';
+
+// Re-export hooks (для удобства)
+export { useAIModeration } from '@/hooks/useAIModeration';
+export { useVideoFrameExtractor } from '@/hooks/useVideoFrameExtractor';
+
 // Универсальный тип результата
 export type AIAnalysisResult = Partial<Car> | HorseAIAnalysis | RealEstateAIAnalysis;
 

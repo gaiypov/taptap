@@ -1,5 +1,5 @@
 import CommentItem from '@/components/Comments/CommentItem';
-import { db } from '@/services/supabase';
+import { commentsService, Comment } from '@/services/comments';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -14,7 +14,7 @@ export default function CommentThread({
   currentUserId,
   onReply,
 }: CommentThreadProps) {
-  const [replies, setReplies] = useState<any[]>([]);
+  const [replies, setReplies] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [repliesCount, setRepliesCount] = useState(0);
@@ -26,8 +26,8 @@ export default function CommentThread({
 
   const loadRepliesCount = async () => {
     try {
-      const { count } = await db.getRepliesCount(parentId);
-      setRepliesCount(count || 0);
+      const response = await commentsService.getReplies(parentId, { limit: 1 });
+      setRepliesCount(response.count || 0);
     } catch (error) {
       console.error('Load replies count error:', error);
     }
@@ -38,14 +38,9 @@ export default function CommentThread({
 
     try {
       setLoading(true);
-      const { data, error } = await db.getCommentReplies(parentId);
-
-      if (error) throw error;
-
-      if (data) {
-        setReplies(data);
+      const response = await commentsService.getReplies(parentId);
+      setReplies(response.data);
         setExpanded(true);
-      }
     } catch (error) {
       console.error('Load replies error:', error);
     } finally {
@@ -72,9 +67,20 @@ export default function CommentThread({
           {replies.map((reply) => (
             <View key={reply.id} style={styles.reply}>
               <CommentItem
-                comment={reply}
+                comment={{
+                  id: reply.id,
+                  user_id: reply.user_id,
+                  text: reply.text,
+                  likes: reply.likes_count,
+                  created_at: reply.created_at,
+                  edited_at: reply.is_edited ? reply.updated_at : undefined,
+                  parent_id: reply.parent_id,
+                  user: reply.user,
+                  isLiked: reply.is_liked,
+                }}
                 currentUserId={currentUserId}
                 onLike={() => {}}
+                isReply={true}
               />
             </View>
           ))}
@@ -118,4 +124,3 @@ const styles = StyleSheet.create({
     color: '#999',
   },
 });
-

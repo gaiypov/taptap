@@ -3,7 +3,7 @@
 
 import { appLogger } from '@/utils/logger';
 import Constants from 'expo-constants';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import storageService from './storage';
 
 const API_BASE_URL =

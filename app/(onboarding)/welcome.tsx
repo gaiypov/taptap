@@ -5,13 +5,13 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useEffect, useState } from 'react';
 import {
     Platform,
-    Pressable,
     StyleSheet,
     Text,
     View,
 } from 'react-native';
 
 import { SCREEN_WIDTH } from '@/utils/constants';
+import { PremiumButton } from '@/components/ui/PremiumButton';
 
 export default function WelcomeScreen() {
   const router = useRouter();
@@ -83,9 +83,11 @@ export default function WelcomeScreen() {
       <StatusBar style="light" />
 
       {/* Skip button */}
-      <Pressable onPress={handleSkip} style={styles.skipButton}>
-        <Text style={styles.skipText}>{t('onboarding.welcome.skip')} →</Text>
-      </Pressable>
+      <View style={styles.skipButton}>
+        <PremiumButton variant="ghost" onPress={handleSkip} haptic="light">
+          <Text style={styles.skipText}>{t('onboarding.welcome.skip')} →</Text>
+        </PremiumButton>
+      </View>
 
       {/* Content */}
       <View style={styles.content}>
@@ -119,19 +121,18 @@ export default function WelcomeScreen() {
         </View>
 
         {/* Button */}
-        <Pressable
+        <PremiumButton
+          variant="primary"
+          size="xl"
+          fullWidth
           onPress={handleContinue}
-          style={({ pressed }) => [
-            styles.button,
-            pressed && styles.buttonPressed,
-          ]}
+          haptic="medium"
+          style={styles.button}
         >
-          <Text style={styles.buttonText}>
-            {currentSlide === slides.length - 1
-              ? t('onboarding.welcome.button')
-              : t('common.continue')}
-          </Text>
-        </Pressable>
+          {currentSlide === slides.length - 1
+            ? t('onboarding.welcome.button')
+            : t('common.continue')}
+        </PremiumButton>
       </View>
     </View>
   );

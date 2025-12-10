@@ -1,7 +1,7 @@
 // app/filters/AutoFiltersScreen.tsx
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextStyle, View } from 'react-native';
 
 import { GlassField } from '@/components/ui/GlassField';
 import { PlatinumButton } from '@/components/ui/PlatinumButton';
@@ -125,11 +125,11 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
   },
   sectionTitle: {
-    ...(theme.typography?.sectionTitle || {}),
+    ...((theme.typography?.sectionTitle || {}) as TextStyle),
     marginBottom: theme.spacing.sm,
   },
   sectionLabel: {
-    ...(theme.typography?.label || {}),
+    ...((theme.typography?.label || {}) as TextStyle),
     marginBottom: theme.spacing.sm,
   },
   chipsRow: {

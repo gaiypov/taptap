@@ -38,18 +38,51 @@ export default function CameraScreen() {
   }, [cameraPermission, requestCameraPermission, microphonePermission, requestMicrophonePermission]);
   
   const stopRecording = useCallback(() => {
-    if (cameraRef.current && isRecording) {
-      cameraRef.current.stopRecording();
-      setIsRecording(false);
+    if (!isRecording) return;
+    
+    try {
+      if (cameraRef.current) {
+        cameraRef.current.stopRecording();
+      }
+    } catch (error) {
+      // Игнорируем ошибки при остановке
     }
+    
+    setIsRecording(false);
+  }, [isRecording]);
+
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordingPromiseRef = useRef<Promise<{ uri: string } | undefined> | null>(null);
+
+  // Cleanup при размонтировании
+  useEffect(() => {
+    return () => {
+      // Очищаем таймер
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
+      // Останавливаем запись если активна
+      if (isRecording && cameraRef.current) {
+        try {
+          cameraRef.current.stopRecording();
+        } catch (error) {
+          // Игнорируем ошибки при cleanup
+        }
+      }
+    };
   }, [isRecording]);
 
   // Таймер обратного отсчета
   useEffect(() => {
-    let interval: ReturnType<typeof setInterval>;
+    // Очищаем предыдущий интервал
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
     
     if (isRecording && countdown > 0) {
-      interval = setInterval(() => {
+      countdownIntervalRef.current = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
             stopRecording();
@@ -61,7 +94,10 @@ export default function CameraScreen() {
     }
     
     return () => {
-      if (interval) clearInterval(interval);
+      if (countdownIntervalRef.current) {
+        clearInterval(countdownIntervalRef.current);
+        countdownIntervalRef.current = null;
+      }
     };
   }, [isRecording, countdown, stopRecording]);
   
@@ -124,7 +160,6 @@ export default function CameraScreen() {
         style={styles.camera}
         facing={cameraType}
         onCameraReady={() => {
-          console.log('КАМЕРА ГОТОВА — МОЖНО ПИСАТЬ!');
           setIsCameraReady(true);
         }}
       >
@@ -227,37 +262,46 @@ export default function CameraScreen() {
                     setCountdown(120); // Сброс таймера
                     
                     // Используем recordAsync (правильный API для expo-camera)
-                    const video = await cameraRef.current.recordAsync({
+                    const recording = cameraRef.current.recordAsync({
                       maxDuration: 120,
                     });
                     
-                    if (video && video.uri) {
-                      console.log('Видео готово:', video.uri);
-                      setIsRecording(false);
-                      
-                      // Видео записано, можно загрузить на сервер
-                      Alert.alert(
-                        'Видео записано!',
-                        'Видео успешно записано. Хотите загрузить его?',
-                        [
-                          { text: 'Записать еще', style: 'cancel', onPress: () => setCountdown(120) },
-                          { 
-                            text: 'Загрузить', 
-                            onPress: () => {
-                              // TODO: Загрузить видео на сервер через delegated upload
-                              router.back();
+                    recordingPromiseRef.current = recording;
+                    
+                    recording.then((video) => {
+                      recordingPromiseRef.current = null;
+
+                      if (video && video.uri) {
+                        setIsRecording(false);
+                        
+                        // Видео записано, можно загрузить на сервер
+                        Alert.alert(
+                          'Видео записано!',
+                          'Видео успешно записано. Хотите загрузить его?',
+                          [
+                            { text: 'Записать еще', style: 'cancel', onPress: () => setCountdown(120) },
+                            { 
+                              text: 'Загрузить', 
+                              onPress: () => {
+                                // TODO: Загрузить видео на сервер через delegated upload
+                                router.back();
+                              }
                             }
-                          }
-                        ]
-                      );
-                    } else {
+                          ]
+                        );
+                      } else {
+                        setIsRecording(false);
+                        Alert.alert('Ошибка', 'Видео не было записано');
+                      }
+                    }).catch((error: any) => {
+                      recordingPromiseRef.current = null;
                       setIsRecording(false);
-                      Alert.alert('Ошибка', 'Видео не было записано');
-                    }
+                      Alert.alert('Ошибка', error?.message || 'Не удалось записать видео');
+                    });
                   } catch (error: any) {
-                    console.error('Ошибка записи:', error);
-                    Alert.alert('Ошибка', error?.message || 'Не удалось записать видео');
+                    recordingPromiseRef.current = null;
                     setIsRecording(false);
+                    Alert.alert('Ошибка', error?.message || 'Не удалось начать запись');
                   }
                 }
               }}

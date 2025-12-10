@@ -30,9 +30,9 @@ export const aiUtils = {
   },
 
   // Рекомендации по настройке
-  getRecommendations: (): string[] => {
+  getRecommendations: async (): Promise<string[]> => {
     const recs: string[] = [];
-    const keys = checkAPIKeys();
+    const keys = await checkAPIKeys();
 
     if (!keys.hasClaude) recs.push('🔑 Добавь Claude API ключ (самый дешёвый и точный)');
     if (!keys.hasOpenAI) recs.push('🔑 OpenAI — альтернатива');
@@ -92,7 +92,7 @@ export function logAIConfiguration() {
   return aiUtils.logConfig();
 }
 
-export function getSetupRecommendations(): string[] {
+export async function getSetupRecommendations(): Promise<string[]> {
   return aiUtils.getRecommendations();
 }
 

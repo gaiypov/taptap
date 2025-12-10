@@ -5,8 +5,11 @@
 
 /// <reference path="../types/express.d.ts" />
 
-// Загружаем переменные окружения ПЕРВЫМ делом (ДО всех импортов!)
-import { config } from 'dotenv';
+// ============================================
+// КРИТИЧЕСКИ ВАЖНО: Загружаем .env ПЕРВЫМ делом!
+// ============================================
+// ДО ВСЕХ импортов, иначе supabaseClient.ts не найдет переменные
+import 'dotenv/config'; // ← Автоматически загружает .env при импорте
 
 import compression from 'compression';
 import cors from 'cors';
@@ -29,24 +32,17 @@ import authRoutes from './api/v1/auth';
 
 // Legacy routes for backward compatibility
 import legacyAuthRoutes from '../api/auth';
+import smsRoutes from '../api/sms';
 import videoRoutes from '../api/video';
-config();
 
 // ============================================
 // ENVIRONMENT VALIDATION
 // ============================================
 
-const requiredEnvVars = [
-  'JWT_SECRET',
-  'SUPABASE_URL',
-  'SUPABASE_SERVICE_ROLE_KEY',
-  // 'SUPABASE_ANON_KEY', // Опционально, можно использовать из app.json
-] as const;
-
-for (const envVar of requiredEnvVars) {
-  const value = process.env[envVar];
+// Проверка обязательных переменных окружения
+const checkEnvVar = (name: string, value: string | undefined) => {
   if (!value) {
-    console.error(`❌ Missing environment variable: ${envVar}`);
+    console.error(`❌ Missing environment variable: ${name}`);
     console.error(`   Please set a valid value in backend/.env`);
     if (process.env.NODE_ENV === 'production') {
       process.exit(1);
@@ -54,7 +50,12 @@ for (const envVar of requiredEnvVars) {
       console.warn(`   ⚠️  Continuing in development mode, but some features may not work`);
     }
   }
-}
+};
+
+checkEnvVar('JWT_SECRET', process.env.JWT_SECRET);
+checkEnvVar('SUPABASE_URL', process.env.SUPABASE_URL);
+checkEnvVar('SUPABASE_SERVICE_ROLE_KEY', process.env.SUPABASE_SERVICE_ROLE_KEY);
+// 'SUPABASE_ANON_KEY' опционально, можно использовать из app.json
 
 // ============================================
 // EXPRESS APP SETUP
@@ -98,9 +99,29 @@ const allowedOrigins = rawOrigins
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Разрешаем запросы без origin (например, мобильные приложения)
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+      
+      // Разрешаем Expo Go origins (exp://...)
+      if (origin.startsWith('exp://') || origin.startsWith('exps://')) {
+        callback(null, true);
+        return;
+      }
+      
+      // В development разрешаем все origin (для мобильных устройств)
+      if (process.env.NODE_ENV === 'development') {
+        callback(null, true);
+        return;
+      }
+      
+      // В production проверяем allowedOrigins
+      if (allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
+        console.warn(`[CORS] Blocked origin: ${origin}`);
         callback(new Error(`CORS blocked origin: ${origin}`));
       }
     },
@@ -171,6 +192,7 @@ app.use('/api/v1/auth', authRoutes);
 // Legacy routes for backward compatibility
 app.use('/api/auth', legacyAuthRoutes);
 app.use('/api/video', videoRoutes);
+app.use('/api/sms', smsRoutes);
 
 // ============================================
 // ERROR HANDLING
@@ -185,10 +207,11 @@ app.use(errorHandler);
 
 const PORT = Number(process.env.PORT) || 3001;
 
-server.listen(PORT, () => {
+// КРИТИЧНО: Слушаем на всех интерфейсах (0.0.0.0), чтобы мобильные устройства могли подключиться
+server.listen(PORT, '0.0.0.0', () => {
   console.log('🚀 360⁰ Marketplace API Server Started');
   console.log(`📍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 Listening on port: ${PORT}`);
+  console.log(`🌐 Listening on port: ${PORT} (0.0.0.0 - all interfaces)`);
   console.log(`🔒 Security: Helmet + CORS + Rate Limit`);
   console.log(`🗄️ Database: Supabase`);
   console.log(`📱 Market: Kyrgyzstan Launch Ready`);

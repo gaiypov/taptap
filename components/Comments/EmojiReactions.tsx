@@ -1,14 +1,7 @@
-import { auth } from '@/services/auth';
-import { db } from '@/services/supabase';
+import { commentsService, CommentReaction } from '@/services/comments';
+import { supabase } from '@/services/supabase';
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
-interface Reaction {
-  emoji: string;
-  count: number;
-  users: string[];
-  hasReacted: boolean;
-}
 
 interface EmojiReactionsProps {
   commentId: string;
@@ -18,19 +11,25 @@ interface EmojiReactionsProps {
 const AVAILABLE_EMOJIS = ['❤️', '👍', '😂', '😍', '🔥', '👏'];
 
 export default function EmojiReactions({ commentId, onReact }: EmojiReactionsProps) {
-  const [reactions, setReactions] = useState<Reaction[]>([]);
+  const [reactions, setReactions] = useState<CommentReaction[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [showPicker, setShowPicker] = useState(false);
 
   useEffect(() => {
     loadUser();
-    loadReactions();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [commentId]);
+  }, []);
+
+  useEffect(() => {
+    if (currentUserId !== null) {
+    loadReactions();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [commentId, currentUserId]);
 
   const loadUser = async () => {
     try {
-      const user = await auth.getCurrentUser();
+      const { data: { user } } = await supabase.auth.getUser();
       setCurrentUserId(user?.id || null);
     } catch (error) {
       console.error('Load user error:', error);
@@ -39,29 +38,8 @@ export default function EmojiReactions({ commentId, onReact }: EmojiReactionsPro
 
   const loadReactions = async () => {
     try {
-      const { data, error } = await db.getCommentReactions(commentId);
-      
-      if (error || !data) return;
-
-      // Группируем реакции по эмодзи
-      const grouped = data.reduce((acc: any, r: any) => {
-        if (!acc[r.emoji]) {
-          acc[r.emoji] = {
-            emoji: r.emoji,
-            count: 0,
-            users: [],
-            hasReacted: false,
-          };
-        }
-        acc[r.emoji].count++;
-        acc[r.emoji].users.push(r.user_id);
-        if (currentUserId && r.user_id === currentUserId) {
-          acc[r.emoji].hasReacted = true;
-        }
-        return acc;
-      }, {});
-
-      setReactions(Object.values(grouped));
+      const data = await commentsService.getCommentReactions(commentId, currentUserId || undefined);
+      setReactions(data);
     } catch (error) {
       console.error('Load reactions error:', error);
     }
@@ -73,10 +51,10 @@ export default function EmojiReactions({ commentId, onReact }: EmojiReactionsPro
     try {
       const existingReaction = reactions.find(r => r.emoji === emoji);
       
-      if (existingReaction?.hasReacted) {
-        await db.removeReaction(commentId, currentUserId, emoji);
+      if (existingReaction?.is_reacted) {
+        await commentsService.removeReaction(commentId, emoji);
       } else {
-        await db.addReaction(commentId, currentUserId, emoji);
+        await commentsService.addReaction(commentId, emoji);
       }
 
       await loadReactions();
@@ -95,7 +73,7 @@ export default function EmojiReactions({ commentId, onReact }: EmojiReactionsPro
             key={reaction.emoji}
             style={[
               styles.reactionButton,
-              reaction.hasReacted && styles.reactionButtonActive,
+              reaction.is_reacted && styles.reactionButtonActive,
             ]}
             onPress={() => handleReaction(reaction.emoji)}
           >
@@ -202,4 +180,3 @@ const styles = StyleSheet.create({
     fontSize: 24,
   },
 });
-

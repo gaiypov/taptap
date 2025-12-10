@@ -1,11 +1,13 @@
 // app/camera/process.tsx — AI-ФАБРИКА ОБЪЯВЛЕНИЙ 2025
 
 import { analyzeCarVideo } from '@/services/ai';
+import { appLogger } from '@/utils/logger';
 import { auth } from '@/services/auth';
-import { db, storage } from '@/services/supabase';
+import { db } from '@/services/supabase';
+import { uploadVideoWithOfflineSupport } from '@/services/videoUploader';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,7 +23,8 @@ import Animated, {
   useAnimatedStyle,
   Easing,
 } from 'react-native-reanimated';
-import { Video, ResizeMode } from 'expo-av';
+import { normalizeVideoUrl, isRealVideo } from '@/lib/video/videoSource';
+import { VideoView, useVideoPlayer } from '@expo/video';
 import LottieView from 'lottie-react-native';
 import { ultra } from '@/lib/theme/ultra';
 
@@ -39,6 +42,34 @@ export default function ProcessVideoScreen() {
 
   const progress = useSharedValue(0);
   const controllerRef = useRef<AbortController | null>(null);
+  
+  // Video player для preview - КРИТИЧНО: нормализуем ПЕРЕД использованием
+  const finalUrl = useMemo(() => {
+    const normalized = normalizeVideoUrl(videoUri);
+    
+    // DEBUG лог для поиска источника Optional
+    if (__DEV__) {
+      appLogger.debug('DEBUG videoUrl source', {
+        original: videoUri,
+        normalized: normalized,
+        component: 'ProcessVideoScreen',
+      });
+    }
+    
+    return normalized;
+  }, [videoUri]);
+  const hasRealVideo = useMemo(() => {
+    return isRealVideo(finalUrl);
+  }, [finalUrl]);
+
+  // Create player source - ALWAYS use { uri: string } format for both iOS and Android
+  const playerSource = useMemo(() => {
+    if (!finalUrl || finalUrl.length === 0) return null;
+    return { uri: finalUrl };
+  }, [finalUrl]);
+
+  // Note: expo-video 3.x accepts { uri: string } at runtime, but types may expect string
+  const videoPlayer = useVideoPlayer(playerSource as any);
 
   const animatedProgress = useAnimatedStyle(() => ({
     width: withTiming(`${progress.value}%`, { duration: 800, easing: Easing.out(Easing.exp) }),
@@ -77,15 +108,22 @@ export default function ProcessVideoScreen() {
       const user = await auth.getCurrentUser();
       if (!user) throw new Error('Требуется авторизация');
 
-      const { url: videoUrl } = await storage.uploadVideo(videoUri, user.id);
-      const thumbnailUrl = result.thumbnail_url || 'https://picsum.photos/800/600';
+      // Загружаем видео через videoUploader
+      const uploadResult = await uploadVideoWithOfflineSupport(
+        videoUri,
+        'auto',
+        undefined,
+        { title: `${result.brand || 'Авто'} ${result.model || ''}` }
+      );
+      const videoUrl = uploadResult.hlsUrl;
+      const thumbnailUrl = result.thumbnail_url || uploadResult.thumbnailUrl || 'https://picsum.photos/800/600';
 
-      const car = await db.createCar({
+      const car = await db.createListing({
         seller_id: user.id,
         brand: result.brand || result.details?.brand || 'Неизвестно',
         model: result.model || result.details?.model || '',
         year: result.year || new Date().getFullYear(),
-        price: result.aiAnalysis?.estimatedPrice?.avg || 2500000,
+        price: result.aiAnalysis?.estimatedPrice?.min || result.aiAnalysis?.estimatedPrice?.max || 2500000,
         mileage: result.mileage || 0,
         color: result.color || 'Не указан',
         transmission: result.transmission || 'automatic',
@@ -106,7 +144,7 @@ export default function ProcessVideoScreen() {
 
     } catch (err: any) {
       if (err.name === 'AbortError') return;
-      console.error('AI Processing failed:', err);
+      appLogger.error('AI Processing failed', { error: err });
       setErrorMsg(err.message || 'Неизвестная ошибка');
       setStage('error');
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -127,16 +165,39 @@ export default function ProcessVideoScreen() {
     };
   }, []);
 
+  // Настройка видео плеера
+  useEffect(() => {
+    if (!videoPlayer || !hasRealVideo) return;
+    
+    try {
+      // @ts-expect-error - loop может существовать в рантайме
+      videoPlayer.loop = true;
+      videoPlayer.play();
+    } catch (error) {
+      appLogger.warn('[ProcessVideoScreen] Video player error', { error });
+    }
+    
+    return () => {
+      try {
+        videoPlayer.pause();
+      } catch {
+        // Ignore cleanup errors
+      }
+    };
+  }, [videoPlayer, hasRealVideo]);
+
   if (stage === 'idle' || stage === 'processing') {
     return (
       <View style={styles.container}>
-        <Video
-          source={{ uri: videoUri }}
+        <VideoView
+          player={videoPlayer}
           style={styles.videoPreview}
-          useNativeControls={false}
-          resizeMode={ResizeMode.COVER}
-          isLooping
-          shouldPlay
+          nativeControls={false}
+          contentFit="cover"
+          contentPosition={{ dx: 0, dy: 0 }}
+          allowsFullscreen={false}
+          showsTimecodes={false}
+          requiresLinearPlayback={false}
         />
 
         <View style={styles.overlay}>

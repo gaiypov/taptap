@@ -1,29 +1,38 @@
 // TikTok-style вертикальная лента видео для React Native
+// OPTIMIZED: Added isFeedFocused tracking and extracted VideoItem
 
-import apiVideoService from '@/services/apiVideo';
-import { auth } from '@/services/auth';
-import { db } from '@/services/supabase';
-import type { Car } from '@/types';
-import { formatPriceWithUSD } from '@/constants/currency';
-import { Ionicons } from '@expo/vector-icons';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadingOverlay } from '@/components/ui/LoadingOverlay';
-import { VideoView, useVideoPlayer } from '@expo/video';
-import { Platform } from 'react-native';
+import { formatPriceWithUSD } from '@/constants/currency';
+import { getHLSUrl } from '@/services/apiVideo';
+import { auth } from '@/services/auth';
+import { db, interactions, listings } from '@/services/supabase';
+import type { Car } from '@/types';
+import { Ionicons } from '@expo/vector-icons';
+import { appLogger } from '@/utils/logger';
+import { EngineVideoPlayer } from '@/components/VideoFeed/EngineVideoPlayer';
+import { getVideoEngine } from '@/lib/video/videoEngine';
+import { ultra } from '@/lib/theme/ultra';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useFocusEffect } from '@react-navigation/native';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-    ActivityIndicator,
-    FlatList,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+  type ViewToken,
 } from 'react-native';
+import { LegendList, LegendListRef } from '@legendapp/list';
 
-import { SCREEN_WIDTH, SCREEN_HEIGHT } from '@/utils/constants';
+import { SCREEN_HEIGHT, SCREEN_WIDTH } from '@/utils/constants';
+import { requireAuth } from '@/utils/permissionManager';
+import { toggleLike, openChat, triggerHaptic, getCurrentUserSafe } from '@/utils/listingActions';
+import { ScalePress, Bounce } from '@/components/animations/PremiumAnimations';
+import { CommentsBottomSheet } from '@/components/Comments/CommentsBottomSheet';
 
 // Helper component for price display
 function PriceDisplay({ price }: { price: number }) {
@@ -44,25 +53,50 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
   const [cars, setCars] = useState<Car[]>([]);
   const [loading, setLoading] = useState(true);
   const [currentIndex, setCurrentIndex] = useState(0);
-  
-  const flatListRef = useRef<FlatList>(null);
+  const [visibleItems, setVisibleItems] = useState<Set<number>>(new Set());
+  const [isFeedFocused, setIsFeedFocused] = useState(true);
+
+  // TikTok-style комментарии
+  const [showComments, setShowComments] = useState(false);
+  const [activeListingId, setActiveListingId] = useState<string | null>(null);
+  const [commentsCount, setCommentsCount] = useState(0);
+
+  const flatListRef = useRef<LegendListRef>(null);
   const router = useRouter();
+  const videoEngine = getVideoEngine();
+
+  // Track feed focus state using useFocusEffect
+  useFocusEffect(
+    useCallback(() => {
+      setIsFeedFocused(true);
+      // Resume active video when feed gains focus
+      if (currentIndex >= 0) {
+        videoEngine.setActiveIndex(currentIndex);
+      }
+      return () => {
+        setIsFeedFocused(false);
+        // Pause all videos when feed loses focus
+        videoEngine.pauseAll();
+      };
+    }, [currentIndex, videoEngine])
+  );
 
   const loadCars = useCallback(async () => {
     try {
       setLoading(true);
-      const { data, error } = await db.getCars({ limit: 20 });
+      // Используем listings.getByCategory вместо db.getCars
+      const { data, error } = await listings.getByCategory('car', 20);
       
       if (error) throw error;
       
       if (data) {
         // Фильтруем только авто с видео
-        const carsWithVideos = data.filter(car => car.video_url || car.video_id);
+        const carsWithVideos = (data as Car[]).filter((car: Car) => car.video_url || car.video_id);
         setCars(carsWithVideos);
         
         // Если есть initialCarId, находим его индекс
         if (initialCarId) {
-          const index = carsWithVideos.findIndex(car => car.id === initialCarId);
+          const index = carsWithVideos.findIndex((car: Car) => car.id === initialCarId);
           if (index !== -1) {
             setCurrentIndex(index);
             setTimeout(() => {
@@ -82,71 +116,147 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
     loadCars();
   }, [loadCars]);
 
-
-  /**
-   * Обработчик изменения видимого элемента
-   */
-  const onViewableItemsChanged = useCallback(({ viewableItems }: any) => {
-    if (viewableItems.length > 0) {
-      const index = viewableItems[0].index;
-      setCurrentIndex(index);
-      
-      // Отслеживаем просмотр
-      const car = cars[index];
-      if (car) {
-        trackView(car.id);
-      }
+  // Инициализируем видимость первого элемента после загрузки данных
+  useEffect(() => {
+    if (cars.length > 0 && visibleItems.size === 0) {
+      const initialIndex = initialCarId 
+        ? cars.findIndex(car => car.id === initialCarId)
+        : 0;
+      const validIndex = initialIndex >= 0 ? initialIndex : 0;
+      setVisibleItems(new Set([validIndex]));
+      setCurrentIndex(validIndex);
+      videoEngine.setActiveIndex(validIndex);
     }
-  }, [cars]);
+  }, [cars, initialCarId, videoEngine, visibleItems.size]);
 
-  const viewabilityConfig = {
-    itemVisiblePercentThreshold: 80, // 80% видно
-  };
+  // Synchronize indices when feed data changes
+  useEffect(() => {
+    if (cars.length === 0) return;
+
+    // Update all video indices in engine
+    cars.forEach((car, index) => {
+      videoEngine.updateVideoIndex(car.id, index);
+    });
+  }, [cars, videoEngine]);
+
+
+  // Use a Set to prevent double-counting views
+  const viewedCarsRef = useRef(new Set<string>());
 
   /**
-   * Отследить просмотр
+   * Отследить просмотр (debounced/unique)
    */
-  const trackView = async (carId: string) => {
+  const trackView = useCallback(async (carId: string) => {
+    // Track view only once per video
+    if (viewedCarsRef.current.has(carId)) return;
+    viewedCarsRef.current.add(carId);
+
     try {
-      await db.incrementViews(carId);
-      
-      // Обновляем локальное состояние
-      setCars(prevCars =>
-        prevCars.map(car =>
-          car.id === carId ? { ...car, views: car.views + 1 } : car
-        )
-      );
+      // Получаем текущее объявление и увеличиваем views
+      const { data: listing } = await listings.get(carId);
+      if (listing) {
+        const currentViews = (listing as any).views || 0;
+        await listings.update(carId, { views: currentViews + 1 });
+        
+        // Обновляем локальное состояние
+        setCars(prevCars =>
+          prevCars.map(car =>
+            car.id === carId ? { ...car, views: (car.views || 0) + 1 } : car
+          )
+        );
+      }
     } catch (error) {
-      console.error('Error tracking view:', error);
+      appLogger.error('Error tracking view', { error });
     }
-  };
+  }, []);
+
+
+  /**
+   * Обработчик изменения видимых элементов
+   * Обновляет видимость для каждого элемента и устанавливает активный индекс
+   */
+  const onViewableItemsChanged = useCallback(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      if (viewableItems.length === 0) return;
+
+      const nextVisible = new Set<number>();
+
+      viewableItems.forEach((vi) => {
+        if (typeof vi.index === 'number' && vi.isViewable) {
+          nextVisible.add(vi.index);
+        }
+
+        // Track view only once per video
+        const car = vi.item as Car | undefined;
+        if (car && !viewedCarsRef.current.has(car.id)) {
+          viewedCarsRef.current.add(car.id);
+          trackView(car.id);
+        }
+      });
+
+      setVisibleItems(nextVisible);
+
+      // Set active index for engine (first visible item)
+      const firstVisibleIndex = [...nextVisible][0];
+      if (typeof firstVisibleIndex === 'number') {
+        setCurrentIndex(firstVisibleIndex);
+        videoEngine.setActiveIndex(firstVisibleIndex);
+      }
+    },
+    [videoEngine, trackView]
+  );
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 50, // 50% видно для более точного определения
+    minimumViewTime: 100, // Минимум 100мс для стабильности
+  }).current;
+
 
   /**
    * Лайк автомобиля
    */
   const handleLike = async (car: Car) => {
+    if (!requireAuth('like')) return;
+    
+    triggerHaptic('medium');
+    
     try {
-      const currentUser = await auth.getCurrentUser();
-      if (!currentUser) return;
+      const user = await getCurrentUserSafe();
+      if (!user) return;
 
-      const isLiked = car.isLiked;
+      const isLiked = car.isLiked || false;
+      const currentLikes = car.likes || 0;
 
-      if (isLiked) {
-        await db.unlikeCar(currentUser.id, car.id);
-      } else {
-        await db.likeCar(currentUser.id, car.id);
-      }
-
-      // Обновляем локальное состояние
+      // Optimistic update
       setCars(prevCars =>
         prevCars.map(c =>
           c.id === car.id
-            ? { ...c, likes: isLiked ? c.likes - 1 : c.likes + 1, isLiked: !isLiked }
+            ? { ...c, likes: isLiked ? Math.max(currentLikes - 1, 0) : currentLikes + 1, isLiked: !isLiked }
             : c
         )
       );
-    } catch {
-      // Silent error
+
+      // Backend call
+      const result = await toggleLike(user.id, car.id, isLiked, currentLikes);
+      
+      // Update with result
+      setCars(prevCars =>
+        prevCars.map(c =>
+          c.id === car.id
+            ? { ...c, likes: result.likesCount, isLiked: result.isLiked }
+            : c
+        )
+      );
+    } catch (error) {
+      // Revert on error
+      setCars(prevCars =>
+        prevCars.map(c =>
+          c.id === car.id
+            ? { ...c, likes: car.likes, isLiked: car.isLiked }
+            : c
+        )
+      );
+      appLogger.error('[TikTokStyleFeed] Like error', { error });
     }
   };
 
@@ -160,12 +270,59 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
   /**
    * Открыть чат
    */
-  const handleChat = (car: Car) => {
-    router.push({
-      pathname: '/chat/[conversationId]',
-      params: { conversationId: car.id },
-    });
+  const handleChat = async (car: Car) => {
+    if (!requireAuth('message')) return;
+
+    triggerHaptic('medium');
+
+    try {
+      const user = await getCurrentUserSafe();
+      if (!user) return;
+
+      const sellerId = car.seller_id || car.seller?.id;
+      if (!sellerId) return;
+
+      const conversationId = await openChat(user.id, sellerId, car.id);
+      if (conversationId) {
+        router.push({
+          pathname: '/chat/[conversationId]',
+          params: { conversationId },
+        });
+      }
+    } catch (error) {
+      appLogger.error('Error opening chat', { error });
+    }
   };
+
+  /**
+   * Открыть комментарии (TikTok-style)
+   */
+  const handleOpenComments = useCallback((car: Car) => {
+    if (!requireAuth('comment')) return;
+
+    triggerHaptic('light');
+
+    // Ставим видео на паузу
+    videoEngine.pauseAll();
+
+    // Открываем комментарии
+    setActiveListingId(car.id);
+    setCommentsCount(car.comments_count || 0);
+    setShowComments(true);
+  }, [videoEngine]);
+
+  /**
+   * Закрыть комментарии
+   */
+  const handleCloseComments = useCallback(() => {
+    setShowComments(false);
+    setActiveListingId(null);
+
+    // Возобновляем видео
+    if (currentIndex >= 0) {
+      videoEngine.setActiveIndex(currentIndex);
+    }
+  }, [currentIndex, videoEngine]);
 
   /**
    * Открыть детали авто
@@ -175,13 +332,23 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
   };
 
   /**
-   * Компонент для отдельного видео элемента (чтобы использовать hooks)
-   * Мемоизирован для оптимизации производительности
+   * Компонент для отдельного видео элемента
+   * Использует EngineVideoPlayer для интеграции с VideoEngine360V4
    */
-  const VideoItem = React.memo(function VideoItem({ car, index, isActive }: { car: Car; index: number; isActive: boolean }) {
-    const videoUrl = car.video_url || (car.video_id ? apiVideoService.getHLSUrl(car.video_id) : null);
-    const videoPlayer = useVideoPlayer(videoUrl || '');
-    
+  const VideoItem = React.memo(function VideoItem({
+    car,
+    index,
+    isVisible,
+    isFeedFocused: feedFocused,
+  }: {
+    car: Car;
+    index: number;
+    isVisible: boolean;
+    isFeedFocused: boolean;
+  }) {
+    // Получаем video URL (может быть Optional, объект и т.д.)
+    const rawUrl = car.video_url || (car.video_id ? getHLSUrl(car.video_id) : null);
+
     const details = car.details ?? {
       brand: car.brand,
       model: car.model,
@@ -193,46 +360,18 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
     const year = car.year ?? details.year ?? 'N/A';
     const mileage = car.mileage ?? details.mileage ?? 0;
 
-    // Control video playback based on active state
-    useEffect(() => {
-      if (videoUrl) {
-        videoPlayer.loop = true;
-        videoPlayer.muted = false;
-        if (isActive) {
-          videoPlayer.play();
-        } else {
-          videoPlayer.pause();
-        }
-      }
-      return () => {
-        if (videoPlayer) {
-          videoPlayer.pause();
-        }
-      };
-    }, [isActive, videoUrl, videoPlayer]);
-
-    const handlePress = () => {
-      router.push({
-        pathname: '/car/[id]',
-        params: { id: car.id },
-      });
-    };
-
     return (
       <View style={styles.videoContainer}>
-        {videoUrl ? (
-          <VideoView
-            player={videoPlayer}
-            style={styles.video}
-            contentFit="cover"
-            allowsFullscreen
-          />
-        ) : (
-          <View style={[styles.video, styles.placeholderVideo]}>
-            <Ionicons name="videocam-off" size={64} color="#666" />
-            <Text style={styles.placeholderText}>Видео недоступно</Text>
-          </View>
-        )}
+        {/* Используем EngineVideoPlayer ONLY */}
+        <EngineVideoPlayer
+          id={car.id}
+          index={index}
+          rawUrl={rawUrl}
+          posterUrl={car.thumbnail_url}
+          mutedByDefault={false}
+          isVisible={isVisible}
+          isFeedFocused={feedFocused}
+        />
 
         {/* Градиентный оверлей снизу */}
         <LinearGradient
@@ -271,23 +410,31 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
 
         {/* Действия справа (TikTok style) */}
         <View style={styles.actionsContainer}>
-          {/* Лайк */}
-          <TouchableOpacity
-            style={styles.actionButton}
-            onPress={() => handleLike(car)}
-          >
-            <Ionicons
-              name={car.isLiked ? 'heart' : 'heart-outline'}
-              size={32}
-              color={car.isLiked ? '#FF3B30' : '#FFFFFF'}
-            />
-            <Text style={styles.actionText}>{car.likes}</Text>
-          </TouchableOpacity>
+          {/* Лайк с Bounce анимацией */}
+          <ScalePress scale={0.9}>
+            <Bounce trigger={car.isLiked}>
+              <TouchableOpacity
+                style={styles.actionButton}
+                onPress={() => handleLike(car)}
+              >
+                <Ionicons
+                  name={car.isLiked ? 'heart' : 'heart-outline'}
+                  size={32}
+                  color={car.isLiked ? ultra.accent : '#FFFFFF'}
+                />
+                <Text style={styles.actionText}>{car.likes}</Text>
+              </TouchableOpacity>
+            </Bounce>
+          </ScalePress>
 
           {/* Сохранить */}
           <TouchableOpacity
             style={styles.actionButton}
-            onPress={() => {/* TODO: Save functionality */}}
+            onPress={async () => {
+              if (!requireAuth('save')) return;
+              triggerHaptic('medium');
+              // TODO: Implement save functionality using toggleSave helper
+            }}
           >
             <Ionicons
               name={car.isSaved ? 'bookmark' : 'bookmark-outline'}
@@ -306,13 +453,22 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
             <Text style={styles.actionText}>Share</Text>
           </TouchableOpacity>
 
+          {/* Комментарии — TikTok Style */}
+          <TouchableOpacity
+            style={styles.actionButton}
+            onPress={() => handleOpenComments(car)}
+          >
+            <Ionicons name="chatbubble-outline" size={32} color="#FFFFFF" />
+            <Text style={styles.actionText}>{car.comments_count || 0}</Text>
+          </TouchableOpacity>
+
           {/* Чат */}
           <TouchableOpacity
             style={[styles.actionButton, styles.chatButton]}
             onPress={() => handleChat(car)}
           >
             <LinearGradient
-              colors={['#FF3B30', '#FF1744']}
+              colors={[ultra.accent, ultra.accentSecondary]}
               style={styles.chatButtonGradient}
             >
               <Ionicons name="chatbubble" size={28} color="#FFFFFF" />
@@ -322,6 +478,19 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
       </View>
     );
   });
+
+  // Cleanup VideoEngine при размонтировании компонента
+  useEffect(() => {
+    return () => {
+      videoEngine.clear();
+    };
+  }, [videoEngine]);
+
+  // ВАЖНО: Хуки должны вызываться до ранних return!
+  const renderVideoItem = useCallback(({ item, index }: { item: Car; index: number }) => {
+    const isVisible = visibleItems.has(index);
+    return <VideoItem car={item} index={index} isVisible={isVisible} isFeedFocused={isFeedFocused} />;
+  }, [visibleItems, isFeedFocused]); // Include isFeedFocused in deps
 
   if (loading) {
     return <LoadingOverlay message="Загрузка видео..." />;
@@ -338,13 +507,9 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
     );
   }
 
-  const renderVideoItem = useCallback(({ item, index }: { item: Car; index: number }) => {
-    return <VideoItem car={item} index={index} isActive={index === currentIndex} />;
-  }, [currentIndex, cars]);
-
   return (
-    <View style={{ flex: 1, backgroundColor: '#fafafa' }}>
-      <FlatList
+    <View style={{ flex: 1, backgroundColor: '#000' }}>
+      <LegendList
       ref={flatListRef}
       data={cars}
       renderItem={renderVideoItem}
@@ -356,22 +521,29 @@ export default function TikTokStyleFeed({ initialCarId }: VideoFeedProps) {
       decelerationRate="fast"
       onViewableItemsChanged={onViewableItemsChanged}
       viewabilityConfig={viewabilityConfig}
-      initialNumToRender={2}
-      maxToRenderPerBatch={2}
-      windowSize={3}
-      removeClippedSubviews
-      getItemLayout={(data, index) => ({
-        length: SCREEN_HEIGHT,
-        offset: SCREEN_HEIGHT * index,
-        index,
-        })}
+        // LegendList оптимизации — signal-based recycling
+        recycleItems={true}
+        drawDistance={SCREEN_HEIGHT * 2}
       />
+
+      {/* TikTok-style комментарии */}
+      {activeListingId && (
+        <CommentsBottomSheet
+          listingId={activeListingId}
+          isVisible={showComments}
+          onClose={handleCloseComments}
+          initialCommentsCount={commentsCount}
+        />
+      )}
     </View>
   );
 }
 
 // Set displayName for better debugging
 TikTokStyleFeed.displayName = 'TikTokStyleFeed';
+
+// 🔍 Why Did You Render — отслеживание лишних ререндеров
+// (TikTokStyleFeed as any).whyDidYouRender = true; // DISABLED
 
 const styles = StyleSheet.create({
   videoContainer: {
@@ -415,48 +587,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#FFFFFF',
     marginBottom: 4,
-    ...Platform.select({
-      web: {
-        textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
-      },
-      default: {
-        textShadowColor: 'rgba(0, 0, 0, 0.5)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 4,
-      },
-    }),
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   carPrice: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#FF3B30',
+    color: ultra.accent,
     marginBottom: 4,
-    ...Platform.select({
-      web: {
-        textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
-      },
-      default: {
-        textShadowColor: 'rgba(0, 0, 0, 0.5)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 4,
-      },
-    }),
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   carPriceUSD: {
     fontSize: 12,
     fontWeight: '500',
     color: '#8E8E93',
     marginTop: 2,
-    ...Platform.select({
-      web: {
-        textShadow: '0 1px 4px rgba(0, 0, 0, 0.5)',
-      },
-      default: {
-        textShadowColor: 'rgba(0, 0, 0, 0.5)',
-        textShadowOffset: { width: 0, height: 1 },
-        textShadowRadius: 4,
-      },
-    }),
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 4,
   },
   carDetails: {
     fontSize: 14,

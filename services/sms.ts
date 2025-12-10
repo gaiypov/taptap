@@ -21,13 +21,43 @@ export async function sendSMS(phone: string, message: string): Promise<boolean> 
       body: JSON.stringify({ phone, message }),
     });
 
+    // Обработка ошибок 502 (бэкенд не отвечает)
+    if (response.status === 502 || response.status === 0) {
+      const errorMsg = `Бэкенд не отвечает (502). Проверьте, что сервер запущен на ${API_URL}`;
+      appLogger.error('[SMS] Backend unavailable', { 
+        phone, 
+        status: response.status,
+        apiUrl: API_URL,
+        error: errorMsg 
+      });
+      throw new Error(errorMsg);
+    }
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      appLogger.error('[SMS] HTTP error', { 
+        phone, 
+        status: response.status, 
+        statusText: response.statusText,
+        error: errorText 
+      });
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
     const result = await response.json();
     appLogger.info('[SMS] Sent', { phone, success: result.success });
 
     return result.success;
   } catch (error: any) {
-    appLogger.error('[SMS] Failed', { phone, error: error.message });
-    return false;
+    // Улучшенная обработка ошибок сети
+    if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+      const networkError = `Не удалось подключиться к бэкенду на ${API_URL}. Убедитесь, что сервер запущен.`;
+      appLogger.error('[SMS] Network error', { phone, apiUrl: API_URL, error: networkError });
+      throw new Error(networkError);
+    }
+    
+    appLogger.error('[SMS] Failed', { phone, error: error.message, apiUrl: API_URL });
+    throw error;
   }
 }
 

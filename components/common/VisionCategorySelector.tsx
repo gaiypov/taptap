@@ -81,7 +81,7 @@ interface CategoryChipProps {
   icon: keyof typeof Ionicons.glyphMap;
   isSelected: boolean;
   onPress: () => void;
-  theme: ReturnType<typeof useAppTheme>;
+  theme: any;
   isDark: boolean;
 }
 

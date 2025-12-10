@@ -30,7 +30,7 @@ export async function moderateImage(imageUri: string): Promise<ModerationResult>
   try {
     // Читаем изображение как base64
     const base64 = await FileSystem.readAsStringAsync(imageUri, {
-      encoding: FileSystem.EncodingType.Base64,
+      encoding: 'base64' as const,
     });
 
     // Отправляем на бэкенд (безопасно!)

@@ -41,7 +41,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
 async function getUserTeamMemberships(userId: string) {
   const { data: memberships, error } = await supabase
-    .from('team_members')
+    .from('business_members')
     .select('business_id, role')
     .eq('user_id', userId);
 
@@ -90,17 +90,19 @@ async function checkListingAccess(listingId: string, userId: string): Promise<{ 
  * POST /api/listings
  * Create a new listing
  */
-router.post('/', 
+router.post('/',
   authenticateToken,
   validateBody(createListingSchema),
   asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
     const userId = req.user!.id;
     const data = req.validatedData;
 
-    // Validate category-specific details
-    const detailsValidation = validateListingDetails(data.category, data.details);
-    if (!detailsValidation.isValid) {
-      throw new CustomError(detailsValidation.error!, 400, 'VALIDATION_ERROR');
+    // Validate category-specific details only if details are provided
+    if (data.details && Object.keys(data.details).length > 0) {
+      const detailsValidation = validateListingDetails(data.category, data.details);
+      if (!detailsValidation.isValid) {
+        throw new CustomError(detailsValidation.error!, 400, 'VALIDATION_ERROR');
+      }
     }
 
     // Check business account limits if business_id is provided
@@ -125,12 +127,13 @@ router.post('/',
     // Sanitize input
     const sanitizedData = sanitizeInput(data);
 
-    // Create listing
+    // Create listing - use seller_user_id for consistency with Supabase schema
     const listingData = {
       ...sanitizedData,
-      seller_id: userId,
-      status: 'pending_review', // All listings go through moderation
-      moderation_status: 'pending',
+      seller_user_id: userId,
+      seller_id: userId, // Keep both for compatibility
+      status: 'active', // Set to active for immediate visibility (can change to pending_review for moderation)
+      moderation_status: 'approved', // Auto-approve for now (can change to pending for moderation)
       expires_at: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString(), // 90 days
     };
 

@@ -1,5 +1,5 @@
 // components/AITestComponent.tsx
-import { aiUtils, analyzeCarVideo, checkAPIKeys, quickIdentifyCar, selectAvailableAI } from '@/services/ai';
+import { analyzeCarVideo, checkAPIKeys, quickIdentifyCar, selectAvailableAI } from '@/services/ai';
 import React, { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -22,13 +22,6 @@ export default function AITestComponent() {
       // Выбираем AI провайдер
       const ai = selectAvailableAI();
       console.log('🤖 Selected AI:', ai);
-      
-      // Получаем статус AI сервиса
-      const status = aiUtils.getAIStatus();
-      console.log('📊 AI Service Status:', status);
-      
-      // Логируем конфигурацию
-      aiUtils.logAIConfiguration();
       
       setApiStatus(keys);
       setSelectedAI(ai);

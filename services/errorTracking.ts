@@ -1,4 +1,4 @@
-// services/errorTracking.ts — SENTRY + КАСТОМНЫЙ ЛОГГЕР 2025 ГОДА
+// services/errorTracking.ts — SENTRY + PERFORMANCE MONITORING 2025
 // ФИНАЛЬНАЯ ВЕРСИЯ — ГОТОВА К ЗАПУСКУ В APP STORE И PLAY MARKET
 
 import * as Sentry from '@sentry/react-native';
@@ -8,9 +8,23 @@ import { Platform } from 'react-native';
 const SENTRY_DSN = Constants.expoConfig?.extra?.SENTRY_DSN || '';
 const ENVIRONMENT = __DEV__ ? 'development' : 'production';
 
+// Типы для performance monitoring
+interface PerformanceSpan {
+  finish: () => void;
+  setData: (key: string, value: any) => void;
+  setStatus: (status: 'ok' | 'error' | 'cancelled') => void;
+}
+
+interface ActiveTransaction {
+  transaction: any;
+  startTime: number;
+}
+
 class ErrorTrackingService {
   private initialized = false;
   private breadcrumbCache = new Map<string, number>();
+  private activeTransactions = new Map<string, ActiveTransaction>();
+  private performanceMetrics = new Map<string, number[]>();
 
   init() {
     if (this.initialized || !SENTRY_DSN) {
@@ -21,16 +35,22 @@ class ErrorTrackingService {
     Sentry.init({
       dsn: SENTRY_DSN,
       environment: ENVIRONMENT,
-      enableInExpoDevelopment: false,
       debug: __DEV__,
-      tracesSampleRate: 1.0,
-      profilesSampleRate: 1.0,
+      // Performance monitoring
+      tracesSampleRate: __DEV__ ? 1.0 : 0.2, // 100% в dev, 20% в prod
+      profilesSampleRate: __DEV__ ? 1.0 : 0.1, // 100% в dev, 10% в prod
       enableAutoSessionTracking: true,
       enableCaptureFailedRequests: true,
+      // Автоматическое измерение navigation
+      enableAutoPerformanceTracing: true,
       beforeSend(event) {
         // Можно фильтровать ошибки сети, если нужно
         return event;
       },
+      // Performance integrations
+      integrations: [
+        Sentry.reactNativeTracingIntegration(),
+      ],
     });
 
     // Теги приложения
@@ -39,7 +59,150 @@ class ErrorTrackingService {
     Sentry.setTag('expo_sdk', Constants.expoConfig?.sdkVersion || 'unknown');
 
     this.initialized = true;
-    console.log(`[ErrorTracking] Sentry запущен в режиме ${ENVIRONMENT}`);
+    console.log(`[ErrorTracking] Sentry Performance запущен в режиме ${ENVIRONMENT}`);
+  }
+
+  // ==============================================
+  // PERFORMANCE MONITORING
+  // ==============================================
+
+  /**
+   * Начать транзакцию для измерения операции
+   * @example
+   * const transaction = errorTracking.startTransaction('load-feed', 'ui.load');
+   * // ... операция ...
+   * transaction.finish();
+   */
+  startTransaction(name: string, op: string = 'custom'): PerformanceSpan {
+    const startTime = performance.now();
+
+    if (!this.initialized) {
+      // Fallback без Sentry
+      return {
+        finish: () => {
+          const duration = performance.now() - startTime;
+          this.recordMetric(name, duration);
+          if (__DEV__) console.log(`[Perf] ${name}: ${duration.toFixed(2)}ms`);
+        },
+        setData: () => {},
+        setStatus: () => {},
+      };
+    }
+
+    // Sentry v8 API - startSpan requires callback
+    let spanRef: any = null;
+    Sentry.startSpan({ name, op }, (span) => {
+      spanRef = span;
+    });
+    
+    this.activeTransactions.set(name, { transaction: spanRef, startTime });
+
+    return {
+      finish: () => {
+        const duration = performance.now() - startTime;
+        this.recordMetric(name, duration);
+        spanRef?.end?.();
+        this.activeTransactions.delete(name);
+        if (__DEV__) console.log(`[Perf] ${name}: ${duration.toFixed(2)}ms`);
+      },
+      setData: (key: string, value: any) => {
+        spanRef?.setAttribute?.(key, value);
+      },
+      setStatus: (status: 'ok' | 'error' | 'cancelled') => {
+        spanRef?.setStatus?.({ code: status === 'ok' ? 1 : 2, message: status });
+      },
+    };
+  }
+
+  /**
+   * Измерить время выполнения функции
+   * @example
+   * const result = await errorTracking.measureAsync('api-call', async () => {
+   *   return await fetch(...);
+   * });
+   */
+  async measureAsync<T>(name: string, fn: () => Promise<T>, op: string = 'function'): Promise<T> {
+    const span = this.startTransaction(name, op);
+    try {
+      const result = await fn();
+      span.setStatus('ok');
+      return result;
+    } catch (error) {
+      span.setStatus('error');
+      throw error;
+    } finally {
+      span.finish();
+    }
+  }
+
+  /**
+   * Измерить синхронную функцию
+   */
+  measure<T>(name: string, fn: () => T, op: string = 'function'): T {
+    const span = this.startTransaction(name, op);
+    try {
+      const result = fn();
+      span.setStatus('ok');
+      return result;
+    } catch (error) {
+      span.setStatus('error');
+      throw error;
+    } finally {
+      span.finish();
+    }
+  }
+
+  /**
+   * Записать метрику для анализа
+   */
+  recordMetric(name: string, value: number) {
+    if (!this.performanceMetrics.has(name)) {
+      this.performanceMetrics.set(name, []);
+    }
+    const metrics = this.performanceMetrics.get(name)!;
+    metrics.push(value);
+    
+    // Храним последние 100 значений
+    if (metrics.length > 100) {
+      metrics.shift();
+    }
+  }
+
+  /**
+   * Получить статистику метрики
+   */
+  getMetricStats(name: string): { avg: number; min: number; max: number; count: number } | null {
+    const metrics = this.performanceMetrics.get(name);
+    if (!metrics || metrics.length === 0) return null;
+
+    return {
+      avg: metrics.reduce((a, b) => a + b, 0) / metrics.length,
+      min: Math.min(...metrics),
+      max: Math.max(...metrics),
+      count: metrics.length,
+    };
+  }
+
+  /**
+   * Логировать все метрики в консоль (для отладки)
+   */
+  logAllMetrics() {
+    if (!__DEV__) return;
+    
+    console.log('\n📊 Performance Metrics:');
+    console.log('─'.repeat(50));
+    
+    for (const [name, _] of this.performanceMetrics) {
+      const stats = this.getMetricStats(name);
+      if (stats) {
+        console.log(
+          `${name}: avg=${stats.avg.toFixed(2)}ms, ` +
+          `min=${stats.min.toFixed(2)}ms, max=${stats.max.toFixed(2)}ms ` +
+          `(${stats.count} samples)`
+        );
+      }
+    }
+    console.log('─'.repeat(50));
   }
 
   captureException(
@@ -50,7 +213,7 @@ class ErrorTrackingService {
 
     Sentry.withScope((scope) => {
       if (context?.user) scope.setUser(context.user);
-      if (context?.tags) Object.entries(context.tags).forEach(([k, v]) => scope.setTag(k, v));
+      if (context?.tags) Object.entries(context.tags).forEach(([k, v]) => scope.setTag(k, String(v)));
       if (context?.extra) scope.setExtra('extra', context.extra);
       Sentry.captureException(error);
     });
@@ -65,7 +228,7 @@ class ErrorTrackingService {
 
     Sentry.withScope((scope) => {
       if (context?.user) scope.setUser(context.user);
-      if (context?.tags) Object.entries(context.tags).forEach(([k, v]) => scope.setTag(k, v));
+      if (context?.tags) Object.entries(context.tags).forEach(([k, v]) => scope.setTag(k, String(v)));
       if (context?.extra) scope.setExtra('extra', context.extra);
       Sentry.captureMessage(message, level as any);
     });

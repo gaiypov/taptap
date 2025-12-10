@@ -1,12 +1,11 @@
 // app/preview.tsx
+import { SimpleVideoPlayer } from '@/components/video/SimpleVideoPlayer';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { VideoView, useVideoPlayer } from '@expo/video';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { appLogger } from '@/utils/logger';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -16,18 +15,30 @@ import {
 
 import { getListing, type Listing } from '@/services/listings';
 
+// Расширенный тип для preview с AI-полями
+type PreviewListing = Listing & {
+  video_player_url?: string;
+  video_thumbnail_url?: string;
+  ai_make?: string;
+  ai_model?: string;
+  ai_year?: number | string;
+  ai_color?: string;
+  ai_quality_score?: number;
+  ai_confidence?: number;
+};
+
 export default function PreviewScreen() {
   const { listingId } = useLocalSearchParams<{ listingId: string }>();
   const router = useRouter();
 
-  const [listing, setListing] = useState<Listing | null>(null);
+  const [listing, setListing] = useState<PreviewListing | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   // Video player setup
   // For api.video, we need to use HLS URL for VideoView
   // HLS URL format: https://vod.api.video/vod/{videoId}/hls/manifest.m3u8
-  const getVideoUrl = (listing: Listing | null) => {
+  const getVideoUrl = (listing: PreviewListing | null) => {
     if (listing?.video_id) {
       // Construct HLS URL from video_id
       return `https://vod.api.video/vod/${listing.video_id}/hls/manifest.m3u8`;
@@ -36,51 +47,8 @@ export default function PreviewScreen() {
     return listing?.video_player_url || listing?.video_thumbnail_url || '';
   };
 
-  const videoUrl = useMemo(() => getVideoUrl(listing), [listing?.video_id, listing?.video_player_url, listing?.video_thumbnail_url]);
-  const [userInteracted, setUserInteracted] = useState(false); // Web: track user interaction
-  const [videoReady, setVideoReady] = useState(false);
-
-  const player = useVideoPlayer(videoUrl, (player) => {
-    player.loop = true;
-  });
-
-  // Set videoReady when player is ready
-  useEffect(() => {
-    if (!player || !videoUrl) return;
-
-    // Set videoReady after a delay to ensure player is initialized
-    // expo-video doesn't provide onLoad event, so we use a timeout
-    const timeout = setTimeout(() => {
-      setVideoReady(true);
-    }, 300);
-
-    return () => clearTimeout(timeout);
-  }, [player, videoUrl]);
-
-  // Handle user interaction for web
-  const handleUserInteraction = useCallback(() => {
-    if (Platform.OS === 'web' && !userInteracted) {
-      setUserInteracted(true);
-    }
-  }, [userInteracted]);
-
-  // Control playback based on videoReady
-  useEffect(() => {
-    if (!player || !videoUrl) return;
-
-    // Web: Only play after user interaction
-    if (Platform.OS === 'web' && !userInteracted) return;
-
-    if (videoReady) {
-      try {
-        player.play();
-      } catch (error) {
-        console.warn('[PreviewScreen] Play failed', error);
-      }
-    } else {
-      player.pause();
-    }
-  }, [videoReady, player, videoUrl, userInteracted]);
+  const videoUrl = getVideoUrl(listing);
+  const posterUrl = listing?.video_thumbnail_url || listing?.thumbnail_url || undefined;
 
   useEffect(() => {
     if (!listingId) {
@@ -96,7 +64,7 @@ export default function PreviewScreen() {
         const data = await getListing(listingId);
         setListing(data);
       } catch (err: any) {
-        console.error('Error loading listing:', err);
+        appLogger.error('Error loading listing', { error: err });
         setError(err.message || 'Ошибка загрузки листинга');
       } finally {
         setLoading(false);
@@ -106,7 +74,7 @@ export default function PreviewScreen() {
 
   const handlePublish = () => {
     if (listingId) {
-      router.push(`/publish/${listingId}`);
+      router.push(`/publish/${listingId}` as any);
     }
   };
 
@@ -138,15 +106,15 @@ export default function PreviewScreen() {
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       {/* Video Player */}
       {videoUrl && (
-        <Pressable style={styles.videoContainer} onPress={handleUserInteraction}>
-          <VideoView
-            player={player}
-            style={styles.video}
-            contentFit="cover"
-            nativeControls={true}
-            allowsFullscreen={true}
+        <View style={styles.videoContainer}>
+          <SimpleVideoPlayer
+            videoUrl={videoUrl}
+            posterUrl={posterUrl}
+            autoplay={true}
+            loop={true}
+            muted={false}
           />
-        </Pressable>
+        </View>
       )}
 
       {/* AI Analysis Card */}

@@ -4,9 +4,10 @@ import { useOfflineInit } from '@/hooks/useOfflineInit';
 
 import { useNetworkStatus } from '@/hooks/useNetworkStatus';
 
-import { initVideoUploadService } from '@/services/videoUploader';
+// DISABLED: Background upload service causes spam when backend is not running
+// import { initVideoUploadService } from '@/services/videoUploader';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 
 export function ReduxProviders({ children }: { children: React.ReactNode }) {
   // Оффлайн-кэш (SQLite + AsyncStorage)
@@ -15,11 +16,11 @@ export function ReduxProviders({ children }: { children: React.ReactNode }) {
   // Мониторинг сети + авто-синхронизация
   useNetworkStatus();
 
-  // Сервис фоновой загрузки видео (работает даже в background)
-  useEffect(() => {
-    const cleanup = initVideoUploadService();
-    return cleanup; // Очистка при размонтировании (на всякий случай)
-  }, []);
+  // DISABLED: Сервис фоновой загрузки видео - вызывает спам при отсутствии бэкенда
+  // useEffect(() => {
+  //   const cleanup = initVideoUploadService();
+  //   return cleanup;
+  // }, []);
 
   return <>{children}</>;
 }

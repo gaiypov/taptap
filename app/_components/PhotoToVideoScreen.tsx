@@ -56,10 +56,14 @@ const MUSIC_OPTIONS = [
 export default function PhotoToVideoScreen() {
   const router = useRouter();
   const [photos, setPhotos] = useState<ImagePicker.ImagePickerAsset[]>([]);
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<{
+    duration: number;
+    transition: 'none' | 'fade' | 'slide' | 'zoom';
+    music: 'none' | 'upbeat' | 'calm';
+  }>({
     duration: 4,
-    transition: 'fade' as const,
-    music: 'upbeat' as const,
+    transition: 'fade',
+    music: 'upbeat',
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);

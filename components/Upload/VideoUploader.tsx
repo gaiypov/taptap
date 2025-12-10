@@ -1,19 +1,21 @@
 // Компонент загрузки видео с api.video для React Native
 
-import apiVideoService, { type UploadProgress } from '@/services/apiVideo';
+import { isRealVideo, normalizeVideoUrl } from '@/lib/video/videoSource';
 import { db } from '@/services/supabase';
+import { uploadVideoWithOfflineSupport } from '@/services/videoUploader';
+import { appLogger } from '@/utils/logger';
 import { Ionicons } from '@expo/vector-icons';
 import { VideoView, useVideoPlayer } from '@expo/video';
 import * as ImagePicker from 'expo-image-picker';
 import { LinearGradient } from 'expo-linear-gradient';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 interface VideoUploaderProps {
@@ -23,8 +25,49 @@ interface VideoUploaderProps {
 }
 
 // Component for video preview
-function VideoPreviewComponent({ videoUri }: { videoUri: string }) {
-  const player = useVideoPlayer(videoUri);
+function VideoPreviewComponent({ videoUri }: { videoUri: string | null }) {
+  // КРИТИЧНО: Нормализуем videoUri ПЕРЕД использованием
+  // Для локальных файлов (file://) normalizeVideoUrl тоже работает
+  const finalUrl = useMemo(() => {
+    const normalized = normalizeVideoUrl(videoUri);
+    
+    // DEBUG лог для поиска источника Optional
+    if (__DEV__) {
+      appLogger.debug('DEBUG videoUrl source', {
+        original: videoUri,
+        normalized: normalized,
+        component: 'VideoUploader.VideoPreviewComponent',
+      });
+    }
+    
+    return normalized;
+  }, [videoUri]);
+
+  // Проверяем, является ли это реальным видео (не placeholder)
+  // Для локальных файлов (file://) считаем реальным видео
+  const hasRealVideo = useMemo(() => {
+    if (!finalUrl) return false;
+    // Локальные файлы (file://) - это реальное видео
+    if (finalUrl.startsWith('file://')) return true;
+    return isRealVideo(finalUrl);
+  }, [finalUrl]);
+
+  // Create player source - ALWAYS use { uri: string } format for both iOS and Android
+  const playerSource = useMemo(() => {
+    if (!finalUrl || finalUrl.length === 0) return null;
+    return { uri: finalUrl };
+  }, [finalUrl]);
+
+  const player = useVideoPlayer(playerSource as any);
+
+  // Если нет реального видео - показываем сообщение
+  if (!hasRealVideo) {
+    return (
+      <View style={styles.previewContainer}>
+        <Text style={styles.previewTitle}>Предпросмотр недоступно</Text>
+      </View>
+    );
+  }
   
   return (
     <View style={styles.previewContainer}>
@@ -35,6 +78,9 @@ function VideoPreviewComponent({ videoUri }: { videoUri: string }) {
         nativeControls
         contentFit="contain"
         allowsFullscreen
+        showsTimecodes={false}
+        requiresLinearPlayback={false}
+        contentPosition={{ dx: 0, dy: 0 }}
       />
     </View>
   );
@@ -77,7 +123,7 @@ export default function VideoUploader({
         setVideoUri(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error picking video:', error);
+      appLogger.error('Error picking video', { error });
       Alert.alert('Ошибка', 'Не удалось выбрать видео');
     }
   };
@@ -109,7 +155,7 @@ export default function VideoUploader({
         setVideoUri(result.assets[0].uri);
       }
     } catch (error) {
-      console.error('Error recording video:', error);
+      appLogger.error('Error recording video', { error });
       Alert.alert('Ошибка', 'Не удалось записать видео');
     }
   };
@@ -127,22 +173,25 @@ export default function VideoUploader({
       setIsUploading(true);
       setUploadProgress(0);
 
-      // Загрузка на api.video
-      const result = await apiVideoService.uploadVideo(videoUri, (progress: UploadProgress) => {
-        setUploadProgress(progress.percentage);
-      });
+      // Загрузка на api.video с поддержкой прогресса
+      const result = await uploadVideoWithOfflineSupport(
+        videoUri,
+        'car', // категория по умолчанию
+        (progress) => {
+          setUploadProgress(progress);
+        },
+        {
+          title: '360Auto Video',
+        }
+      );
 
       setVideoId(result.videoId);
 
-      // Получаем HLS URL
-      const hlsUrl = apiVideoService.getHLSUrl(result.videoId);
-      const thumbnailUrl = apiVideoService.getThumbnailUrl(result.videoId);
-
-      // Если есть carId, обновляем запись в БД
+      // Если есть carId, обновляем запись в БД (используем updateListing для listings)
       if (carId) {
-        await db.updateCar(carId, {
-          video_url: hlsUrl,
-          thumbnail_url: thumbnailUrl,
+        await db.updateListing(carId, {
+          video_url: result.hlsUrl,
+          thumbnail_url: result.thumbnailUrl,
           video_id: result.videoId,
         });
       }
@@ -150,14 +199,14 @@ export default function VideoUploader({
       Alert.alert('Успешно!', 'Видео загружено');
       
       if (onUploadComplete) {
-        onUploadComplete(result.videoId, hlsUrl);
+        onUploadComplete(result.videoId, result.hlsUrl);
       }
 
       // Сброс состояния
       setVideoUri(null);
       setUploadProgress(0);
     } catch (error) {
-      console.error('Upload error:', error);
+      appLogger.error('Upload error', { error });
       Alert.alert('Ошибка', 'Не удалось загрузить видео');
       
       if (onUploadError) {

@@ -39,7 +39,7 @@ export default function SoldButton({
             setLoading(true);
             try {
               const response = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/listings/${listingId}/mark-sold`,
+                `${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001'}/api/listings/${listingId}/mark-sold`,
                 {
                   method: 'POST',
                   headers: {
@@ -91,7 +91,7 @@ export default function SoldButton({
             setLoading(true);
             try {
               const response = await fetch(
-                `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001'}/api/listings/${listingId}/reactivate`,
+                `${process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001'}/api/listings/${listingId}/reactivate`,
                 {
                   method: 'POST',
                   headers: {

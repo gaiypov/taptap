@@ -1,7 +1,7 @@
 // app/filters/RealEstateFiltersScreen.tsx
 import { useRouter } from 'expo-router';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TextStyle, View } from 'react-native';
 
 import { PlatinumButton } from '@/components/ui/PlatinumButton';
 import { PlatinumChip } from '@/components/ui/PlatinumChip';
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     marginBottom: theme.spacing.lg,
   },
   sectionLabel: {
-    ...(theme.typography?.label || {}),
+    ...((theme.typography?.label || {}) as TextStyle),
     marginBottom: theme.spacing.sm,
   },
   chipsRow: {

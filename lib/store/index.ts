@@ -7,6 +7,8 @@ import videoReducer from './slices/videoSlice';
 import offlineReducer from './slices/offlineSlice';
 import chatReducer from './slices/chatSlice';
 import listingsReducer from './slices/listingsSlice';
+import authSheetReducer from './slices/authSheetSlice';
+import aiModerationReducer from './slices/aiModerationSlice';
 
 export const store = configureStore({
   reducer: {
@@ -17,6 +19,8 @@ export const store = configureStore({
     offline: offlineReducer,
     chat: chatReducer,
     listings: listingsReducer,
+    authSheet: authSheetReducer,
+    aiModeration: aiModerationReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

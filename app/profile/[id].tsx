@@ -8,7 +8,6 @@ import { useCallback, useEffect, useState } from 'react';
 import {
     ActivityIndicator,
     Alert,
-    FlatList,
     Image,
     ScrollView,
     StyleSheet,
@@ -16,6 +15,7 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
+import { LegendList } from '@legendapp/list';
 
 import { SCREEN_WIDTH } from '@/utils/constants';
 const CAR_CARD_WIDTH = (SCREEN_WIDTH - 48) / 2; // 2 колонки с отступами
@@ -40,14 +40,15 @@ export default function SellerProfileScreen() {
       // Загружаем профиль продавца
       const { data: userData, error: userError } = await db.getUserById(id);
       if (userError) throw userError;
-      
-      setSeller(userData);
+
+      setSeller(userData as User | null);
       
       // Загружаем объявления продавца
-      const { data: carsData, error: carsError } = await db.getSellerCars(id);
+      const { data: carsData, error: carsError } = await db.getSellerListings(id);
       if (carsError) throw carsError;
-      
-      setCars(carsData || []);
+
+      // Cast listings to Car type for compatibility
+      setCars((carsData || []) as Car[]);
     } catch (error) {
       console.error('Load profile error:', error);
     } finally {
@@ -76,14 +77,17 @@ export default function SellerProfileScreen() {
         currentUser.id, // buyerId
         seller.id // sellerId
       );
-      
+
       if (error) throw error;
       if (!conversation) throw new Error('Conversation was not created');
-      
+
+      // Cast conversation to get id property
+      const conv = conversation as { id: string };
+
       // Переходим в чат
       router.push({
         pathname: '/chat/[conversationId]',
-        params: { conversationId: conversation.id },
+        params: { conversationId: conv.id },
       });
     } catch (error) {
       console.error('Create conversation error:', error);
@@ -156,13 +160,6 @@ export default function SellerProfileScreen() {
               <Text style={styles.statValue}>{activeCars.length}</Text>
               <Text style={styles.statLabel}>Активных</Text>
             </View>
-            <View style={styles.statDivider} />
-            <View style={styles.statItem}>
-              <Text style={styles.statValue}>
-                {(seller.rating ?? 0) > 0 ? (seller.rating ?? 0).toFixed(1) : '-'}
-              </Text>
-              <Text style={styles.statLabel}>Рейтинг</Text>
-            </View>
           </View>
         </LinearGradient>
 
@@ -196,13 +193,14 @@ export default function SellerProfileScreen() {
               <Text style={styles.emptyText}>Нет активных объявлений</Text>
             </View>
           ) : (
-            <FlatList
+            <LegendList
               data={activeCars}
-              renderItem={({ item }) => <CarCard car={item} />}
+              renderItem={({ item }: { item: Car }) => <CarCard car={item} />}
               keyExtractor={(item) => item.id}
               numColumns={2}
-              columnWrapperStyle={styles.carGrid}
               scrollEnabled={false}
+              recycleItems={true}
+              contentContainerStyle={styles.carGridContainer}
             />
           )}
         </View>
@@ -213,13 +211,14 @@ export default function SellerProfileScreen() {
             <Text style={styles.sectionTitle}>
               Продано ({soldCars.length})
             </Text>
-            <FlatList
+            <LegendList
               data={soldCars}
-              renderItem={({ item }) => <CarCard car={item} sold />}
+              renderItem={({ item }: { item: Car }) => <CarCard car={item} sold />}
               keyExtractor={(item) => item.id}
               numColumns={2}
-              columnWrapperStyle={styles.carGrid}
               scrollEnabled={false}
+              recycleItems={true}
+              contentContainerStyle={styles.carGridContainer}
             />
           </View>
         )}
@@ -409,6 +408,9 @@ const styles = StyleSheet.create({
   carGrid: {
     justifyContent: 'space-between',
     marginBottom: 16,
+  },
+  carGridContainer: {
+    gap: 16,
   },
   carCard: {
     width: CAR_CARD_WIDTH,

@@ -10,9 +10,9 @@ import {
   Text,
   TouchableOpacity,
   View,
-  FlatList,
   Platform,
 } from 'react-native';
+import { LegendList } from '@legendapp/list';
 import * as Haptics from 'expo-haptics';
 
 export interface Country {
@@ -77,10 +77,10 @@ export function CountryCodeSelector({
               </TouchableOpacity>
             </View>
 
-            <FlatList
+            <LegendList
               data={COUNTRIES}
-              keyExtractor={(item) => item.code}
-              renderItem={({ item }) => (
+              keyExtractor={(item: Country) => item.code}
+              renderItem={({ item }: { item: Country }) => (
                 <TouchableOpacity
                   style={[
                     styles.countryItem,
@@ -109,6 +109,7 @@ export function CountryCodeSelector({
                   )}
                 </TouchableOpacity>
               )}
+              recycleItems={true}
             />
           </View>
         </View>

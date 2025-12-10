@@ -33,7 +33,7 @@ async function create360TextIcon(outputPath, size, bgColor = '#E31E24') {
 }
 
 async function main() {
-  console.log('🎨 Создаю иконки 360° (только текст, без Red Petroleum)...\n');
+  console.log('🎨 Создаю иконки 360°...\n');
   
   // Создаем директорию для бэкапа
   const backupDir = 'assets/images/backup-old-icons';
@@ -104,7 +104,7 @@ async function main() {
   
   console.log('\n🎉 Все иконки созданы!');
   console.log('📦 Старые иконки сохранены в: assets/images/backup-old-icons/');
-  console.log('\n✅ Теперь все иконки содержат только "360°" без Red Petroleum!');
+  console.log('\n✅ Все иконки созданы успешно!');
   console.log('\n📊 Запустите: npx expo start --clear');
   console.log('   чтобы очистить кэш и увидеть новые иконки');
 }

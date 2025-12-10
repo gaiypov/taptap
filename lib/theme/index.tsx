@@ -1,55 +1,78 @@
-// lib/theme/index.ts — ТЕМА УРОВНЯ APPLE VISION PRO + DUBAI 2025
-// ФИНАЛЬНАЯ ВЕРСИЯ — ГОТОВАЯ К APP STORE (ноябрь 2025)
+/**
+ * Theme System — Revolut Ultra Platinum 2025-2026
+ * 
+ * Дизайн-система:
+ * - Absolute Black (#000000) — OLED-оптимизированный фон
+ * - Pure White (#FFFFFF) — максимальный контраст
+ * - Platinum (#E5E4E2) — фирменный цвет
+ * 
+ * Типографика:
+ * - Заголовки: fontWeight 900/800, letterSpacing -1
+ * - Лейблы: UPPERCASE, letterSpacing 1
+ */
 
-import { useColorScheme } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useMemo, memo } from 'react';
-import Animated, { useSharedValue, withTiming, useAnimatedStyle } from 'react-native-reanimated';
+import { useColorScheme } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
-// === БАЗОВЫЕ ЦВЕТА (ultra-стиль) ===
-const ultra = {
-  black: '#0A0A0A',
-  dark: '#121212',
-  card: '#1C1C1E',
-  surface: '#2C2C2E',
-  border: '#383838',
-  text: '#FFFFFF',
-  textSecondary: '#B0B0B0',
-  textMuted: '#888888',
-  accent: '#C0C0C0',
-  accentSecondary: '#E0E0E0',
-  gradientStart: '#1E1E1E',
-  gradientEnd: '#121212',
-  platinum: '#E5E5E5',
-  platinumGlow: '#FFFFFF',
-};
+// Import from ultra.ts
+import { ultra, typography, shadows, radius, spacing } from './ultra';
+export { ultra, typography, shadows, radius, spacing } from './ultra';
 
-// === ТЕМЫ ===
+// Import styles
+export * from './styles';
+
+// ============================================================================
+// Темы
+// ============================================================================
+
 const lightTheme = {
-  background: '#F5F5F7',
-  surface: '#FFFFFF',
+  background: '#FFFFFF',
+  surface: '#F5F5F7',
   card: '#FFFFFF',
   border: '#E5E5E5',
   text: '#000000',
   textSecondary: '#666666',
   textMuted: '#999999',
-  accent: '#007AFF',
-  gradient: ['#F5F5F7', '#E5E5E7', '#F5F5F7'] as [string, string, string],
+  accent: ultra.platinum,
+  gradient: ['#FFFFFF', '#F5F5F7', '#FFFFFF'] as [string, string, string],
+  // Vision components compatibility
+  surfaceGlass: 'rgba(255, 255, 255, 0.1)',
+  surfaceGlassActive: 'rgba(255, 255, 255, 0.2)',
+  borderSoft: 'rgba(0, 0, 0, 0.1)',
+  textPrimary: '#000000',
+  accentPrimary: ultra.platinum,
+  glowPrimary: ultra.platinum,
 };
 
 const darkTheme = {
-  background: ultra.black,
-  surface: ultra.surface,
-  card: ultra.card,
-  border: ultra.border,
-  text: ultra.text,
-  textSecondary: ultra.textSecondary,
-  textMuted: ultra.textMuted,
-  accent: ultra.accent,
-  gradient: [ultra.gradientStart, ultra.black, ultra.gradientEnd] as [string, string, string],
+  background: ultra.background,      // #000000
+  surface: ultra.surface,            // #111111
+  card: ultra.card,                  // #0A0A0A
+  border: ultra.border,              // #1F1F1F
+  text: ultra.textPrimary,           // #FFFFFF
+  textSecondary: ultra.textSecondary, // #E5E4E2 (Platinum)
+  textMuted: ultra.textMuted,        // #888888
+  accent: ultra.platinum,            // #E5E4E2
+  gradient: ['#0A0A0A', '#000000', '#050505'] as [string, string, string],
+  // Vision components compatibility
+  surfaceGlass: 'rgba(255, 255, 255, 0.05)',
+  surfaceGlassActive: 'rgba(255, 255, 255, 0.1)',
+  borderSoft: 'rgba(255, 255, 255, 0.1)',
+  textPrimary: ultra.textPrimary,
+  accentPrimary: ultra.platinum,
+  glowPrimary: ultra.platinum,
 };
 
-// === РЕАКТИВНЫЙ ХУК ===
+// ============================================================================
+// Хуки
+// ============================================================================
+
 export function useTheme() {
   const scheme = useColorScheme();
   return useMemo(() => {
@@ -59,6 +82,7 @@ export function useTheme() {
 
 // Алиасы для обратной совместимости
 export const useAppTheme = useTheme;
+
 export function useThemeContext() {
   const scheme = useColorScheme();
   return {
@@ -67,17 +91,20 @@ export function useThemeContext() {
   };
 }
 
-// ThemedBackground компонент
-export const ThemedBackground = memo(({ 
-  children, 
-  style 
-}: { 
+// ============================================================================
+// Компоненты
+// ============================================================================
+
+export const ThemedBackground = memo(({
+  children,
+  style,
+}: {
   children?: React.ReactNode;
   style?: any;
 }) => {
   const scheme = useColorScheme();
   const colors = scheme === 'dark' ? darkTheme.gradient : lightTheme.gradient;
-  
+
   return (
     <LinearGradient colors={colors} style={[{ flex: 1 }, style]}>
       {children}
@@ -87,17 +114,21 @@ export const ThemedBackground = memo(({
 
 ThemedBackground.displayName = 'ThemedBackground';
 
-// === АНИМИРОВАННЫЙ ФОН ===
-export const AnimatedGradientBackground = memo(({ children }: { children?: React.ReactNode }) => {
+export const AnimatedGradientBackground = memo(({
+  children,
+}: {
+  children?: React.ReactNode;
+}) => {
   const scheme = useColorScheme();
   const progress = useSharedValue(scheme === 'dark' ? 1 : 0);
 
   React.useEffect(() => {
     progress.value = withTiming(scheme === 'dark' ? 1 : 0, { duration: 800 });
-  }, [scheme]);
+  }, [scheme, progress]);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    backgroundColor: progress.value === 1 ? darkTheme.background : lightTheme.background,
+    backgroundColor:
+      progress.value === 1 ? darkTheme.background : lightTheme.background,
   }));
 
   const colors = scheme === 'dark' ? darkTheme.gradient : lightTheme.gradient;
@@ -113,19 +144,22 @@ export const AnimatedGradientBackground = memo(({ children }: { children?: React
 
 AnimatedGradientBackground.displayName = 'AnimatedGradientBackground';
 
-// === ГОТОВЫЕ ТЕМЫ ДЛЯ ЭКСПОРТА ===
+// ============================================================================
+// Экспорт
+// ============================================================================
+
 export const theme = {
   light: lightTheme,
   dark: darkTheme,
   ultra,
-  current: () => {
-    // Для использования вне компонентов - возвращаем dark по умолчанию
-    // В компонентах используйте useTheme()
-    return darkTheme;
-  },
+  typography,
+  shadows,
+  radius,
+  spacing,
+  current: () => darkTheme, // По умолчанию dark
 };
 
-// Экспорт для обратной совместимости
-export { ultra };
 export { lightTheme, darkTheme };
 
+// Тип темы для TypeScript
+export type Theme = typeof darkTheme;

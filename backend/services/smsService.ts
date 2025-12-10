@@ -143,8 +143,9 @@ export async function sendSms(
   });
 
   // Используем AbortController для timeout (Node.js 18+ встроенный fetch)
+  // Увеличено до 25 секунд, так как nikita.kg может отвечать медленно
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15_000);
+  const timeoutId = setTimeout(() => controller.abort(), 25_000);
 
   try {
     const response = await fetch(NIKITA.url!, {

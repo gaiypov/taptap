@@ -1,135 +1,149 @@
 // hooks/useAuth.ts
-import { useEffect, useState } from 'react';
-import { Platform } from 'react-native';
-import { auth } from '../services/auth';
+// Unified auth hook using Redux as single source of truth
+
+import { useCallback, useEffect } from 'react';
+import { useAppDispatch, useAppSelector } from '@/lib/store/hooks';
+import { logout as logoutAction, setCredentials, setLoading } from '@/lib/store/slices/authSlice';
+import { auth } from '@/services/auth';
+import storageService from '@/services/storage';
+import { appLogger } from '@/utils/logger';
 
 export interface AuthState {
   user: any | null;
   loading: boolean;
   error: string | null;
+  isAuthenticated: boolean;
 }
 
+/**
+ * Unified auth hook - uses Redux as single source of truth
+ *
+ * Usage:
+ * ```tsx
+ * const { user, isAuthenticated, loading, signOut } = useAuth();
+ *
+ * if (!isAuthenticated) {
+ *   return <LoginPrompt />;
+ * }
+ * ```
+ */
 export function useAuth() {
-  const [authState, setAuthState] = useState<AuthState>({
-    user: null,
-    loading: true,
-    error: null,
-  });
+  const dispatch = useAppDispatch();
+  const { user, token, isAuthenticated, isLoading } = useAppSelector((state) => state.auth);
 
+  // Debug log on mount
   useEffect(() => {
-    loadUser();
-  }, []);
+    console.log('[useAuth] 🔍 Auth state from Redux:', {
+      isAuthenticated,
+      isLoading,
+      hasUser: !!user,
+      userId: user?.id,
+      userPhone: user?.phone,
+      userName: user?.name,
+      hasToken: !!token,
+    });
+  }, [isAuthenticated, isLoading, user, token]);
 
-  const loadUser = async () => {
-    try {
-      setAuthState(prev => ({ ...prev, loading: true, error: null }));
-      const tempUser = await auth.getCurrentUser();
-      setAuthState({
-        user: tempUser,
-        loading: false,
-        error: null,
-      });
-    } catch (error: any) {
-      setAuthState({
-        user: null,
-        loading: false,
-        error: error.message,
-      });
-    }
-  };
+  // Hydrate auth from storage on mount (if Redux is empty)
+  useEffect(() => {
+    const hydrateFromStorage = async () => {
+      // Skip if already authenticated or loading
+      if (isAuthenticated || !isLoading) return;
 
-  const signOut = async () => {
+      try {
+        console.log('[useAuth] 🔄 Hydrating auth from storage...');
+
+        const [storedToken, storedUser] = await Promise.all([
+          storageService.getAuthToken(),
+          storageService.getUserData(),
+        ]);
+
+        console.log('[useAuth] Storage data:', {
+          hasToken: !!storedToken,
+          hasUser: !!storedUser,
+          userId: storedUser?.id,
+        });
+
+        if (storedToken && storedUser && storedUser.id) {
+          console.log('[useAuth] ✅ Found valid session in storage, dispatching to Redux');
+          dispatch(setCredentials({
+            user: storedUser,
+            token: storedToken,
+          }));
+        } else {
+          console.log('[useAuth] ❌ No valid session in storage');
+          dispatch(setLoading(false));
+        }
+      } catch (error: any) {
+        appLogger.error('[useAuth] Error hydrating from storage', { error: error?.message });
+        dispatch(setLoading(false));
+      }
+    };
+
+    hydrateFromStorage();
+  }, [dispatch, isAuthenticated, isLoading]);
+
+  const signOut = useCallback(async () => {
     try {
-      setAuthState(prev => ({ ...prev, loading: true, error: null }));
+      console.log('[useAuth] 🚪 Signing out...');
+
+      // Clear storage
       await auth.signOut();
-      setAuthState({
-        user: null,
-        loading: false,
-        error: null,
-      });
-    } catch (error: any) {
-      setAuthState(prev => ({ ...prev, loading: false, error: error.message }));
-      throw error;
-    }
-  };
 
-  const signIn = async (email: string, password: string) => {
-    try {
-      setAuthState(prev => ({ ...prev, loading: true, error: null }));
-      
-      // Создаем временного пользователя для демо
-      const tempUser = {
-        id: 'temp-user-' + Date.now(),
-        email,
-        name: email.split('@')[0],
-        phone: '+996 555 123 456',
-        is_verified: false,
-        total_sales: 0,
-        rating: 0.0,
-        created_at: new Date().toISOString(),
-      };
-      
-      // Сохраняем пользователя в AsyncStorage
-      if (Platform.OS === 'web') {
-        localStorage.setItem('@360auto:user', JSON.stringify(tempUser));
-      } else {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        await AsyncStorage.setItem('@360auto:user', JSON.stringify(tempUser));
-      }
-      
-      setAuthState({
-        user: tempUser,
-        loading: false,
-        error: null,
-      });
-      return tempUser;
-    } catch (error: any) {
-      setAuthState(prev => ({ ...prev, loading: false, error: error.message }));
-      throw error;
-    }
-  };
+      // Clear Redux
+      dispatch(logoutAction());
 
-  const signUp = async (email: string, password: string, fullName?: string) => {
-    try {
-      setAuthState(prev => ({ ...prev, loading: true, error: null }));
-      
-      // Создаем временного пользователя для демо
-      const tempUser = {
-        id: 'temp-user-' + Date.now(),
-        email,
-        name: fullName || email.split('@')[0],
-        phone: '+996 555 123 456',
-        is_verified: false,
-        total_sales: 0,
-        rating: 0.0,
-        created_at: new Date().toISOString(),
-      };
-      
-      // Сохраняем пользователя в AsyncStorage
-      if (Platform.OS === 'web') {
-        localStorage.setItem('@360auto:user', JSON.stringify(tempUser));
-      } else {
-        const AsyncStorage = require('@react-native-async-storage/async-storage').default;
-        await AsyncStorage.setItem('@360auto:user', JSON.stringify(tempUser));
-      }
-      
-      setAuthState({
-        user: tempUser,
-        loading: false,
-        error: null,
-      });
-      return { user: tempUser };
+      console.log('[useAuth] ✅ Sign out complete');
     } catch (error: any) {
-      setAuthState(prev => ({ ...prev, loading: false, error: error.message }));
+      appLogger.error('[useAuth] Sign out error', { error: error?.message });
+      // Still clear Redux even if storage clear fails
+      dispatch(logoutAction());
       throw error;
     }
-  };
+  }, [dispatch]);
+
+  const refreshUser = useCallback(async () => {
+    try {
+      console.log('[useAuth] 🔄 Refreshing user data...');
+
+      const currentUser = await auth.getCurrentUser();
+      const currentToken = await storageService.getAuthToken();
+
+      if (currentUser && currentToken) {
+        dispatch(setCredentials({
+          user: currentUser,
+          token: currentToken,
+        }));
+        console.log('[useAuth] ✅ User refreshed:', { userId: currentUser.id });
+      } else {
+        console.log('[useAuth] ❌ No user data found during refresh');
+      }
+    } catch (error: any) {
+      appLogger.error('[useAuth] Refresh user error', { error: error?.message });
+    }
+  }, [dispatch]);
 
   return {
-    ...authState,
+    // State from Redux
+    user,
+    loading: isLoading,
+    isAuthenticated,
+    error: null, // No longer tracking error in hook
+
+    // Actions
     signOut,
-    signIn,
-    signUp,
-    refreshUser: loadUser,
+    refreshUser,
+
+    // Legacy compatibility - these are deprecated, use phone auth flow instead
+    signIn: async () => {
+      console.warn('[useAuth] signIn is deprecated. Use phone auth flow instead.');
+      throw new Error('Use phone auth flow');
+    },
+    signUp: async () => {
+      console.warn('[useAuth] signUp is deprecated. Use phone auth flow instead.');
+      throw new Error('Use phone auth flow');
+    },
   };
 }
+
+export default useAuth;

@@ -36,8 +36,8 @@ export const lightTheme: Theme = {
   card: '#ffffff',
   border: '#e5e5e5',
   placeholder: '#999999',
-  primary: '#FF3B30',
-  error: '#FF3B30',
+  primary: '#C0C0C0', // Silver (Revolut Ultra Platinum)
+  error: '#FF3B30', // Keep red for errors
   success: '#34C759',
   warning: '#FF9500',
 };
@@ -51,8 +51,8 @@ export const darkTheme: Theme = {
   card: '#1C1C1E',
   border: '#333333',
   placeholder: '#888888',
-  primary: '#FF3B30',
-  error: '#FF453A',
+  primary: '#C0C0C0', // Silver (Revolut Ultra Platinum)
+  error: '#FF453A', // Keep red for errors
   success: '#32D74B',
   warning: '#FF9F0A',
 };

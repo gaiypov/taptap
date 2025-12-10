@@ -1,9 +1,16 @@
 'use client';
 
+import { ultra } from '@/lib/theme/ultra';
 import { Ionicons } from '@expo/vector-icons';
-import { CameraView as ExpoCameraView, useCameraPermissions } from 'expo-camera';
+import { BlurView } from 'expo-blur';
+import { CameraView as ExpoCameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import ShootingGuide from './ShootingGuide';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const IS_SMALL_SCREEN = SCREEN_HEIGHT < 667;
 
 interface CameraCaptureProps {
   category: 'car' | 'horse' | 'real_estate';
@@ -19,33 +26,33 @@ const categoryConfig = {
     icon: '🚗',
     name: 'Автомобиль',
     hints: [
-      '📸 Покажите авто спереди',
-      '🔄 Покажите авто сзади',
-      '🚪 Откройте двери, салон',
-      '🔊 Заведите двигатель',
-      '🏁 Отлично! Завершайте',
+      '📸 Спереди',
+      '🔄 Сзади',
+      '🚪 Салон',
+      '🔊 Двигатель',
+      '🏁 Завершайте',
     ],
   },
   horse: {
     icon: '🐴',
     name: 'Лошадь',
     hints: [
-      '📸 Покажите лошадь целиком',
-      '🏃 Покажите как двигается',
-      '👀 Крупный план морды',
-      '🦵 Покажите ноги',
-      '🏁 Отлично! Завершайте',
+      '📸 Целиком',
+      '🏃 В движении',
+      '👀 Крупно',
+      '🦵 Ноги',
+      '🏁 Завершайте',
     ],
   },
   real_estate: {
     icon: '🏠',
     name: 'Недвижимость',
     hints: [
-      '🚶 Медленно пройдите по комнатам',
-      '🪟 Покажите вид из окон',
-      '🛋️ Покажите мебель и ремонт',
-      '🏡 Двор и подъезд',
-      '🏁 Отлично! Завершайте',
+      '🚶 Обход комнат',
+      '🪟 Вид',
+      '🛋️ Ремонт',
+      '🏡 Двор',
+      '🏁 Завершайте',
     ],
   },
 };
@@ -56,6 +63,8 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
   const [currentHintIndex, setCurrentHintIndex] = useState(0);
   const [isCameraReady, setIsCameraReady] = useState(false);
   const [permission, requestPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  const [audioEnabled, setAudioEnabled] = useState(true);
   const cameraRef = useRef<ExpoCameraView>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
@@ -149,12 +158,11 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
       // recordAsync возвращает Promise, который резолвится когда запись завершена
       const recordingPromise = cameraRef.current.recordAsync({
         maxDuration: MAX_DURATION,
-        quality: '720p',
       });
 
       // Обрабатываем результат записи
       recordingPromise
-        .then((video: { uri: string }) => {
+        .then((video: { uri: string } | undefined) => {
           if (video?.uri) {
             setIsRecording(false);
             onComplete(video.uri);
@@ -189,17 +197,39 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
-  if (!permission) {
+  if (!permission || !micPermission) {
     return <View />;
   }
 
-  if (!permission.granted) {
+  if (!permission.granted || !micPermission.granted) {
     return (
       <View style={styles.container}>
-        <Text style={styles.message}>Нужно разрешение для доступа к камере</Text>
-        <TouchableOpacity style={styles.button} onPress={requestPermission}>
-          <Text style={styles.buttonText}>Разрешить</Text>
-        </TouchableOpacity>
+        <View style={styles.permissionContainer}>
+          <Ionicons
+            name={!permission.granted ? "camera" : "mic"}
+            size={64}
+            color={ultra.accent}
+            style={{ marginBottom: 20 }}
+          />
+          <Text style={styles.message}>
+            {!permission.granted ? 'Нужен доступ к камере' : 'Нужен доступ к микрофону'}
+          </Text>
+          <Text style={styles.submessage}>
+            Для записи видео с голосом нужны разрешения камеры и микрофона
+          </Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => {
+              if (!permission.granted) {
+                requestPermission();
+              } else if (!micPermission.granted) {
+                requestMicPermission();
+              }
+            }}
+          >
+            <Text style={styles.buttonText}>Разрешить</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
@@ -212,6 +242,7 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
         style={styles.camera}
         facing="back"
         mode="video"
+        mute={!audioEnabled}
         onCameraReady={() => {
           console.log('✅ Camera ready in CameraCapture');
           setIsCameraReady(true);
@@ -226,42 +257,119 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
       {/* Overlay gradient */}
       <View style={styles.overlay} />
 
-      {/* Close button */}
-      <TouchableOpacity
-        onPress={onBack}
-        style={styles.closeButton}
-      >
-        <Ionicons name="close" size={24} color="#FFF" />
-      </TouchableOpacity>
+      {/* Top left buttons */}
+      <View style={styles.topLeftButtons}>
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.closeButton}
+          activeOpacity={0.7}
+        >
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 40 : 0}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.closeButtonInner}>
+            <Ionicons name="close" size={22} color={ultra.textPrimary} />
+          </View>
+        </TouchableOpacity>
 
-      {/* Category indicator */}
-      <View style={styles.categoryIndicator}>
-        <Text style={styles.categoryEmoji}>{config.icon}</Text>
-        <Text style={styles.categoryName}>{config.name}</Text>
+        <TouchableOpacity
+          onPress={() => setAudioEnabled(!audioEnabled)}
+          style={styles.audioButton}
+          activeOpacity={0.7}
+        >
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 40 : 0}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.audioButtonInner}>
+            <Ionicons
+              name={audioEnabled ? "mic" : "mic-off"}
+              size={22}
+              color={audioEnabled ? ultra.accent : ultra.textMuted}
+            />
+          </View>
+        </TouchableOpacity>
       </View>
 
-      {/* Recording hint */}
+      {/* Category indicator — Revolut Ultra Glassmorphism */}
+      <View style={styles.categoryIndicator}>
+        <BlurView
+          intensity={Platform.OS === 'ios' ? 30 : 0}
+          tint="dark"
+          style={StyleSheet.absoluteFillObject}
+        />
+        <View style={styles.categoryContent}>
+          <View style={styles.categoryIconContainer}>
+        <Text style={styles.categoryEmoji}>{config.icon}</Text>
+          </View>
+        <Text style={styles.categoryName}>{config.name}</Text>
+        </View>
+      </View>
+
+      {/* Shooting Guide - показывается ДО начала записи */}
+      <ShootingGuide category={category} visible={!isRecording && isCameraReady} />
+
+      {/* Recording hint — Revolut Ultra Glassmorphism */}
       {isRecording && (
         <Animated.View style={[styles.recordingHint, { opacity: pulseAnim }]}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 40 : 0}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
+          <LinearGradient
+            colors={[ultra.gradientStart, ultra.gradientEnd]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.hintGradient}
+          >
+            <View style={styles.hintIconContainer}>
+              <Ionicons name="bulb" size={16} color={ultra.accentSecondary} />
+            </View>
           <Text style={styles.hintText}>
             {config.hints[currentHintIndex]}
           </Text>
+          </LinearGradient>
         </Animated.View>
       )}
 
-      {/* Timer */}
+      {/* Timer — Revolut Ultra Glassmorphism */}
       {isRecording && (
         <View style={styles.timer}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 40 : 0}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
+          <LinearGradient
+            colors={['#EF4444', '#DC2626']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.timerGradient}
+          >
           <Animated.View style={[styles.recordingDot, { opacity: pulseAnim }]} />
           <Text style={styles.timerText}>{formatTime(recordingTime)}</Text>
+          </LinearGradient>
         </View>
       )}
 
-      {/* Progress bar */}
+      {/* Progress bar — Revolut Ultra Glassmorphism */}
       {isRecording && (
         <View style={styles.progressContainer}>
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 20 : 0}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
+          <View style={styles.progressContent}>
           <View style={styles.progressBar}>
-            <View
+              <LinearGradient
+                colors={['#EF4444', '#DC2626']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
               style={[
                 styles.progressFill,
                 { width: `${(recordingTime / MAX_DURATION) * 100}%` }
@@ -273,11 +381,12 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
             <Text style={styles.progressRemaining}>
               {formatTime(MAX_DURATION - recordingTime)} осталось
             </Text>
+            </View>
           </View>
         </View>
       )}
 
-      {/* Record button */}
+      {/* Record button — Revolut Ultra Glassmorphism */}
       <View style={styles.recordButtonContainer}>
         <TouchableOpacity
           onPress={toggleRecording}
@@ -287,11 +396,24 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
             isRecording && styles.recordButtonRecording,
             (!isCameraReady && !isRecording) && styles.recordButtonDisabled
           ]}
+          activeOpacity={0.8}
         >
+          <BlurView
+            intensity={Platform.OS === 'ios' ? 30 : 0}
+            tint="dark"
+            style={StyleSheet.absoluteFillObject}
+          />
           {isRecording ? (
+            <View style={styles.stopIconContainer}>
             <View style={styles.stopIcon} />
+            </View>
           ) : (
-            <View style={styles.recordIcon} />
+            <LinearGradient
+              colors={['#EF4444', '#DC2626']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.recordIcon}
+            />
           )}
         </TouchableOpacity>
       </View>
@@ -311,7 +433,13 @@ export default function CameraCapture({ category, onComplete, onBack }: CameraCa
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#000',
+    backgroundColor: ultra.background,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  permissionContainer: {
+    alignItems: 'center',
+    paddingHorizontal: 40,
   },
   camera: {
     flex: 1,
@@ -321,167 +449,334 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'transparent',
   },
-  closeButton: {
+  topLeftButtons: {
     position: 'absolute',
-    top: 50,
+    top: Platform.OS === 'ios' ? 60 : 50,
     left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    flexDirection: 'row',
+    gap: 12,
+    zIndex: 20,
+  },
+  closeButton: {
+    width: Platform.select({ ios: 44, android: 40, default: 44 }),
+    height: Platform.select({ ios: 44, android: 40, default: 44 }),
+    borderRadius: Platform.select({ ios: 22, android: 20, default: 22 }),
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  audioButton: {
+    width: Platform.select({ ios: 44, android: 40, default: 44 }),
+    height: Platform.select({ ios: 44, android: 40, default: 44 }),
+    borderRadius: Platform.select({ ios: 22, android: 20, default: 22 }),
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  audioButtonInner: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    zIndex: 20,
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : 'rgba(0, 0, 0, 0.5)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: Platform.select({ ios: 22, android: 20, default: 22 }),
+  },
+  closeButtonInner: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : 'rgba(0, 0, 0, 0.5)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: Platform.select({ ios: 22, android: 20, default: 22 }),
   },
   categoryIndicator: {
     position: 'absolute',
-    top: 50,
+    top: Platform.OS === 'ios' ? 60 : 50,
     left: '50%',
-    transform: [{ translateX: -80 }],
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 20,
+    transform: [{ translateX: -90 }],
+    borderRadius: Platform.select({ ios: 24, android: 20, default: 24 }),
+    overflow: 'hidden',
+    zIndex: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  categoryContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    zIndex: 20,
+    gap: Platform.select({ ios: 10, android: 8, default: 10 }),
+    paddingHorizontal: Platform.select({ ios: 20, android: 16, default: 20 }),
+    paddingVertical: Platform.select({ ios: 12, android: 10, default: 12 }),
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : 'rgba(0, 0, 0, 0.5)',
+  },
+  categoryIconContainer: {
+    width: Platform.select({ ios: 32, android: 28, default: 32 }),
+    height: Platform.select({ ios: 32, android: 28, default: 32 }),
+    borderRadius: Platform.select({ ios: 16, android: 14, default: 16 }),
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   categoryEmoji: {
-    fontSize: 24,
+    fontSize: Platform.select({ ios: 20, android: 18, default: 20 }),
   },
   categoryName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
+    fontWeight: '700',
+    color: ultra.textPrimary,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-bold',
   },
   recordingHint: {
     position: 'absolute',
-    top: 100,
+    top: IS_SMALL_SCREEN ? 80 : (Platform.OS === 'ios' ? 110 : 100),
     left: '50%',
-    transform: [{ translateX: -120 }],
-    backgroundColor: 'rgba(239, 68, 68, 0.9)',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 20,
+    transform: [{ translateX: -100 }],
+    borderRadius: Platform.select({ ios: 20, android: 18, default: 20 }),
+    overflow: 'hidden',
     zIndex: 20,
-    maxWidth: 240,
+    maxWidth: 200,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  hintGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Platform.select({ ios: 8, android: 6, default: 8 }),
+    paddingHorizontal: IS_SMALL_SCREEN ? 10 : (Platform.select({ ios: 12, android: 10, default: 12 })),
+    paddingVertical: IS_SMALL_SCREEN ? 6 : (Platform.select({ ios: 8, android: 6, default: 8 })),
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(239, 68, 68, 0.85)' : 'rgba(239, 68, 68, 0.9)',
+  },
+  hintIconContainer: {
+    width: IS_SMALL_SCREEN ? 18 : (Platform.select({ ios: 20, android: 18, default: 20 })),
+    height: IS_SMALL_SCREEN ? 18 : (Platform.select({ ios: 20, android: 18, default: 20 })),
+    borderRadius: IS_SMALL_SCREEN ? 9 : (Platform.select({ ios: 10, android: 9, default: 10 })),
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   hintText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#FFF',
+    flex: 1,
+    fontSize: IS_SMALL_SCREEN ? 12 : (Platform.select({ ios: 13, android: 12, default: 13 })),
+    fontWeight: '700',
+    color: ultra.textPrimary,
     textAlign: 'center',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-bold',
   },
   timer: {
     position: 'absolute',
-    top: 50,
+    top: Platform.OS === 'ios' ? 60 : 50,
     right: 20,
-    backgroundColor: '#EF4444',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    borderRadius: Platform.select({ ios: 24, android: 20, default: 24 }),
+    overflow: 'hidden',
+    zIndex: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.15)',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  timerGradient: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    zIndex: 20,
+    gap: Platform.select({ ios: 10, android: 8, default: 10 }),
+    paddingHorizontal: Platform.select({ ios: 18, android: 16, default: 18 }),
+    paddingVertical: Platform.select({ ios: 10, android: 8, default: 10 }),
+    backgroundColor: '#EF4444',
   },
   recordingDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: '#FFF',
+    width: Platform.select({ ios: 10, android: 9, default: 10 }),
+    height: Platform.select({ ios: 10, android: 9, default: 10 }),
+    borderRadius: Platform.select({ ios: 5, android: 4.5, default: 5 }),
+    backgroundColor: ultra.textPrimary,
   },
   timerText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFF',
+    fontSize: Platform.select({ ios: 14, android: 13, default: 14 }),
+    fontWeight: '900',
+    color: ultra.textPrimary,
     fontFamily: 'monospace',
+    letterSpacing: 0.5,
   },
   progressContainer: {
     position: 'absolute',
-    bottom: 120,
+    bottom: IS_SMALL_SCREEN ? 90 : (Platform.OS === 'ios' ? 110 : 100),
     left: 16,
     right: 16,
+    borderRadius: Platform.select({ ios: 14, android: 12, default: 14 }),
+    overflow: 'hidden',
     zIndex: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
+    backgroundColor: Platform.OS === 'ios' ? 'rgba(23, 23, 23, 0.6)' : 'rgba(0, 0, 0, 0.5)',
+    padding: IS_SMALL_SCREEN ? 8 : (Platform.select({ ios: 10, android: 8, default: 10 })),
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  progressContent: {
+    gap: Platform.select({ ios: 10, android: 8, default: 10 }),
   },
   progressBar: {
-    height: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.3)',
-    borderRadius: 4,
+    height: Platform.select({ ios: 6, android: 5, default: 6 }),
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: Platform.select({ ios: 3, android: 2.5, default: 3 }),
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#EF4444',
-    borderRadius: 4,
+    borderRadius: Platform.select({ ios: 3, android: 2.5, default: 3 }),
   },
   progressText: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
   },
   progressTime: {
-    fontSize: 14,
-    color: '#FFF',
+    fontSize: Platform.select({ ios: 13, android: 12, default: 13 }),
+    color: ultra.textPrimary,
+    fontWeight: '700',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-bold',
   },
   progressRemaining: {
-    fontSize: 14,
-    color: '#FFF',
+    fontSize: Platform.select({ ios: 13, android: 12, default: 13 }),
+    color: ultra.textSecondary,
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-semibold',
   },
   recordButtonContainer: {
     position: 'absolute',
-    bottom: 40,
+    bottom: Platform.OS === 'ios' ? 50 : 40,
     left: '50%',
     transform: [{ translateX: -40 }],
     zIndex: 20,
   },
   recordButton: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    borderWidth: 4,
-    borderColor: '#FFF',
-    backgroundColor: '#EF4444',
+    width: Platform.select({ ios: 80, android: 76, default: 80 }),
+    height: Platform.select({ ios: 80, android: 76, default: 80 }),
+    borderRadius: Platform.select({ ios: 40, android: 38, default: 40 }),
+    borderWidth: Platform.select({ ios: 4, android: 3, default: 4 }),
+    borderColor: ultra.textPrimary,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.4,
+        shadowRadius: 16,
+      },
+      android: {
+        elevation: 8,
+      },
+    }),
   },
   recordButtonRecording: {
     transform: [{ scale: 0.9 }],
   },
   recordButtonDisabled: {
     opacity: 0.5,
-    backgroundColor: '#666',
+    backgroundColor: ultra.textMuted,
   },
   recordIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: '#EF4444',
+    width: Platform.select({ ios: 64, android: 60, default: 64 }),
+    height: Platform.select({ ios: 64, android: 60, default: 64 }),
+    borderRadius: Platform.select({ ios: 32, android: 30, default: 32 }),
+  },
+  stopIconContainer: {
+    width: Platform.select({ ios: 28, android: 26, default: 28 }),
+    height: Platform.select({ ios: 28, android: 26, default: 28 }),
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   stopIcon: {
-    width: 24,
-    height: 24,
-    backgroundColor: '#FFF',
-    borderRadius: 4,
+    width: Platform.select({ ios: 20, android: 18, default: 20 }),
+    height: Platform.select({ ios: 20, android: 18, default: 20 }),
+    backgroundColor: ultra.textPrimary,
+    borderRadius: Platform.select({ ios: 4, android: 3, default: 4 }),
   },
   warningContainer: {
     position: 'absolute',
-    bottom: 160,
+    bottom: Platform.OS === 'ios' ? 180 : 160,
     left: '50%',
     transform: [{ translateX: -100 }],
     zIndex: 20,
   },
   warningText: {
-    fontSize: 14,
+    fontSize: Platform.select({ ios: 14, android: 13, default: 14 }),
     color: '#FCD34D',
     textAlign: 'center',
+    fontWeight: '600',
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif-semibold',
   },
   message: {
     textAlign: 'center',
-    paddingBottom: 10,
-    color: '#fff',
-    fontSize: 16,
+    paddingBottom: 8,
+    color: ultra.textPrimary,
+    fontSize: Platform.select({ ios: 18, android: 17, default: 18 }),
+    fontWeight: '700',
+  },
+  submessage: {
+    textAlign: 'center',
+    paddingBottom: 20,
+    color: ultra.textSecondary,
+    fontSize: Platform.select({ ios: 14, android: 13, default: 14 }),
+    lineHeight: 20,
   },
   button: {
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
@@ -489,8 +784,8 @@ const styles = StyleSheet.create({
     borderRadius: 25,
   },
   buttonText: {
-    fontSize: 16,
+    fontSize: Platform.select({ ios: 16, android: 15, default: 16 }),
     fontWeight: 'bold',
-    color: '#fff',
+    color: ultra.textPrimary,
   },
 });

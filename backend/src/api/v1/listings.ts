@@ -1,7 +1,7 @@
 // Listings API — Production Ready Kyrgyzstan 2025
 // RLS-only • No service_role • Race-condition free • Realtime Ready
 
-import express from 'express';
+import express, { Response } from 'express';
 import { z } from 'zod';
 import type { AuthenticatedRequest } from '../../middleware/auth.js';
 import { authenticateToken, optionalAuth } from '../../middleware/auth.js';

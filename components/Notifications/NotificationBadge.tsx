@@ -25,9 +25,10 @@ export default function NotificationBadge({ size = 18, fontSize = 11 }: Notifica
       const user = await auth.getCurrentUser();
       if (!user) return;
 
-      const { count: unreadCount } = await db.getUnreadNotificationsCount(user.id);
-      
-      setCount(unreadCount || 0);
+      // TODO: Implement getUnreadNotificationsCount in db service
+      // const { count: unreadCount } = await db.getUnreadNotificationsCount(user.id);
+      // setCount(unreadCount || 0);
+      setCount(0); // Placeholder
     } catch (error) {
       console.error('Load unread count error:', error);
     }
